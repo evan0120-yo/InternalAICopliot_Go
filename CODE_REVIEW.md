@@ -19,7 +19,7 @@
 
 - **前台使用者**：公司內部員工，透過 Web 介面選 Builder、輸入文字、上傳附件、取得 AI 分析結果
 - **外部系統**：透過 X-App-Id 認證的第三方 App（限制只能用特定 Builder）
-- **LinkChat**：透過 gRPC 串接，特別是 ProfileConsult——傳入結構化的人員資料讓 AI 分析
+- **LinkChat**：主要透過 gRPC 的 ProfileConsult 串接；另外也有 public/local-dev 用的 HTTP `/api/profile-consult` 測試入口
 - **管理員**：透過 Admin API 設定 Builder 的 prompt 結構和 Template 庫
 
 ## 規模想像
@@ -92,6 +92,7 @@
 
 入口格式是 multipart/form-data，帶這些欄位：
 - `builderId`（必填，數字）
+- `appId`（選填，只當 prompt strategy hint，不做 external auth）
 - `text`（選填，使用者輸入的文字）
 - `outputFormat`（選填，"markdown" 或 "xlsx"）
 - `files`（選填，多檔上傳）
@@ -172,6 +173,7 @@
   │     (沒打就寫「用戶沒有額外需求」)               │
   │                                                  │
   │  3. [SUBJECT_PROFILE] ← 只有 Profile 模式才有   │
+  │     [THEORY_CODEBOOK] ← LinkChat strategy 可能有 │
   │                                                  │
   │  4. [SOURCE-1], [SOURCE-2], ...                  │
   │     按順序排列的 prompt 片段                      │
@@ -206,6 +208,31 @@
 
 > **外部 App 版本** (POST /api/external/consult)：驗證前多一步 X-App-Id 驗證 + Builder 白名單檢查（不通過 → APP_BUILDER_FORBIDDEN），之後走同一個 Consult 引擎。
 
+> **公開版補充**：`POST /api/consult` 現在可帶選填 `appId`。程式會把它一路傳到 builder，但因為 generic consult 沒有 `subjectProfile`，目前通常不會產生可見差異；這個欄位比較像是預留給 local/dev prompt strategy 測試。
+
+---
+
+## B-2. 前台本地測試：Profile Consult
+
+**POST /api/profile-consult**
+
+這條是 public/local-dev 的測試入口，讓你不用先接 gRPC，就能直接用 HTTP 丟 structured profile 測 prompt。
+
+格式是 `application/json`，主要欄位：
+- `appId`（選填，只當 prompt strategy hint）
+- `builderId`（必填）
+- `analysisModules`（必填）
+- `subjectProfile`（選填）
+- `text`（選填）
+
+它和 gRPC `ProfileConsult` 的差別是：
+
+1. **不做 external app auth**——`appId` 只是 strategy hint，不代表通過 LinkChat 權限驗證
+2. **用途是本地/開發測 prompt**——如果直接暴露到 production，任何人都能帶任意 `appId` 走對應 strategy
+3. **下游還是走同一套 profile consult flow**——會做同樣的 `analysisModules / subjectProfile` 驗證，再進 builder
+
+所以它不是正式整合入口，比較像「給你先寫 prompt、先驗證 code mapping 的捷徑」。
+
 ---
 
 ## C. gRPC：ListBuilders / Consult
@@ -219,18 +246,21 @@ gRPC 版本的查詢和諮詢。行為上跟 HTTP 版本完全一致，差別在
 3. **Consult 的 File 傳輸方式不同**：gRPC 回應裡 file 是原始 bytes（backend 會把 base64 解開再傳）
 4. **BuilderID 有截斷風險**：Go 內部是 int，gRPC proto 是 int32，超過 2^31 會截斷
 
+補充：generic gRPC `Consult` 現在也會把 `app_id` 往下傳到 builder。和公開版 HTTP 一樣，因為 generic consult 沒有 `subjectProfile`，目前多半沒有可見差異，但欄位已保留。
+
 ---
 
 ## D. gRPC：ProfileConsult
 
 **rpc ProfileConsult**
 
-這是 gRPC 獨有的（沒有 HTTP 版本）。設計給 LinkChat 用，傳入結構化的「人員/主體」資料讓 AI 分析。
+正式整合主路徑是 gRPC。現在雖然也有 public/local-dev 的 HTTP `/api/profile-consult`，但那條只是測試入口；真正給 LinkChat 走的還是這條。
 
 跟普通 Consult 的根本差異：
 
 1. **沒有附件和 outputFormat**——只有文字 + 結構化 profile
 2. **Sources 會被過濾**——只留下跟 analysis_modules 相關的
+3. **每個 module payload 可帶 theoryVersion**——builder 可以依 theoryVersion 決定要不要做 code mapping
 
 ### 驗證流程（比普通 Consult 多很多）
 
@@ -248,6 +278,7 @@ gRPC 版本的查詢和諮詢。行為上跟 HTTP 版本完全一致，差別在
   │     └── 每個 payload 的 moduleKey：
   │           ├── 必須在 analysisModules 裡 → 不在就擋
   │           ├── 不能重複 → 重複就擋
+  │           ├── theoryVersion 如果有給，空白就擋
   │           └── 每個 fact 的 factKey 不能空/重複，values 不能空白
   │
   └── 三個都沒有（modules=空, text=空, profile=null）→ 擋
@@ -274,8 +305,19 @@ gRPC 版本的查詢和諮詢。行為上跟 HTTP 版本完全一致，差別在
   過濾完都沒了？→ 500 錯誤
 ```
 
-**第三步 prompt 裡多了 [SUBJECT_PROFILE] 區塊**：
-把 subjectId、每個 module 的 facts 按 moduleKey 排序寫入。values 用 `|` 連接，`\` 和 `|` 會被跳脫。
+**第三步 prompt 裡多了 app-aware profile/context block**：
+
+- default strategy：只產生 `[SUBJECT_PROFILE]`
+- LinkChat strategy：
+  - 有 theoryVersion 的 payload 會先查 code mapping，把 raw value 轉成 Internal private code
+  - 再多產生一段 `[THEORY_CODEBOOK]`，告訴模型每個 code 對應的 interpretation
+  - 沒有 theoryVersion 的 payload 目前會原樣 passthrough，不強制轉碼
+
+所以現在同一個 ProfileConsult 裡，理論上可以混用：
+- 已轉碼的 module
+- 未轉碼的 module
+
+這是目前 code 的真實行為，不代表最後產品規則一定會這樣定。
 
 ### 回應的重要限制
 
@@ -569,6 +611,11 @@ gatekeeper.Handler.consult
   → infra.WriteJSON (200)
 ```
 
+補充：
+- `POST /api/consult` 會讀 form 裡的 `appId`
+- 這個 `appId` 會一路帶進 `builder.ConsultCommand.AppID`
+- 但 generic consult 沒有 `subjectProfile`，所以目前通常只是在 strategy dispatch 上「走過流程但不產生內容」
+
 **錯誤碼清單（依檢查順序）**
 
 | 錯誤碼 | HTTP | 觸發條件 |
@@ -661,6 +708,38 @@ gatekeeper.Handler.externalConsult
 
 ---
 
+## B-2. POST /api/profile-consult 技術補充
+
+**呼叫鏈**
+```
+gatekeeper.Handler.profileConsult
+  → json.Decoder + DisallowUnknownFields
+  → profileConsultRequest.toSubjectProfile
+  → gatekeeper.GuardService.ResolveClientIP
+  → gatekeeper.UseCase.PublicProfileConsult
+    → gatekeeper.GuardService.ValidateProfileConsult
+    → builder.ConsultUseCase.Consult (ConsultModeProfile)
+  → infra.WriteJSON (200)
+```
+
+**這條路徑的特性**
+```
+- appId 是 optional，而且只當 prompt strategy hint
+- 不走 ValidateExternalApp
+- 不做 appAllowsBuilder 白名單檢查
+- 用途是本地 / 開發階段直接測 profile prompt
+```
+
+**錯誤碼**
+
+| 錯誤碼 | HTTP | 觸發條件 |
+|--------|------|---------|
+| INVALID_JSON | 400 | body 不是合法 JSON 或帶未知欄位 |
+| THEORY_VERSION_MISSING | 400 | theoryVersion 有傳但 trim 後是空字串 |
+| 其餘 ProfileConsult 驗證錯誤 | 同 gRPC | 共用 ValidateProfileConsult |
+
+---
+
 ## C. gRPC ListBuilders / Consult 技術補充
 
 **ListBuilders 呼叫鏈**
@@ -722,12 +801,18 @@ HTTP 504 → codes.DeadlineExceeded
 grpcapi.Service.ProfileConsult
   → resolveClientIP
   → toSubjectProfile (grpcpb → builder.SubjectProfile 深拷貝)
+     → theoryVersion 也會深拷貝
   → gatekeeper.UseCase.ProfileConsult
     → appID 為空? → GuardService.ValidateProfileConsult
     → appID 有值? → GuardService.ValidateExternalProfileConsult
       → ValidateExternalApp + ValidateProfileConsult + appAllowsBuilder
     → builder.ConsultUseCase.Consult (ConsultModeProfile)
       → filterSourcesForProfileConsult
+      → AssembleService.buildProfileContextBlock
+         → resolveProfileContextStrategy
+            → appId="" 或查不到 config → default
+            → appId=linkchat → LinkChat strategy
+         → 需要時做 theory mapping / codebook 組裝
       → 其餘同 Generic
   → 回應只取 status/statusAns/response (丟棄 File)
 ```
@@ -748,6 +833,7 @@ grpcapi.Service.ProfileConsult
 | SUBJECT_FACT_KEY_MISSING | 400 | factKey 為空 |
 | DUPLICATE_FACT_KEY | 400 | 同 module 內 factKey 重複 |
 | SUBJECT_FACT_VALUE_MISSING | 400 | value 空白或 values 為空 |
+| THEORY_VERSION_MISSING | 400 | theoryVersion 有傳但 trim 後為空 |
 | PROFILE_INPUT_EMPTY | 400 | modules + text + profile 全空 |
 | APP_BUILDER_FORBIDDEN | 403 | Builder 不在 App 白名單 (external) |
 
@@ -780,6 +866,42 @@ subject: {subjectId}
 
 (modulePayloads 按 moduleKey 排序，facts 按 factKey 排序)
 (values 中的 \ 跳脫為 \\，| 跳脫為 \|)
+```
+
+**LinkChat strategy 的額外 block**
+```
+## [SUBJECT_PROFILE]
+subject: {subjectId}
+
+### [module:astrology]
+theory_version: astro-v1
+moon_sign: ASTRO_MOON_PIS_01
+sun_sign: ASTRO_SUN_SCO_01
+
+## [THEORY_CODEBOOK]
+### [module:astrology][theory:astro-v1]
+moon_sign: ASTRO_MOON_PIS_01 => intuitive|empathetic|fluid
+sun_sign: ASTRO_SUN_SCO_01 => intense|probing|controlled
+```
+
+**app-aware strategy/runtime 錯誤碼**
+
+| 錯誤碼 | HTTP | 觸發條件 |
+|--------|------|---------|
+| UNKNOWN_PROMPT_STRATEGY | 500 | appPromptConfigs 裡的 strategyKey 不認得 |
+| THEORY_MAPPING_STORE_UNAVAILABLE | 500 | strategy 需要 mapping，但 store 不可用 |
+| THEORY_MAPPING_SCOPE_NOT_FOUND | 500 | 找不到 appId + moduleKey + theoryVersion 這個 mapping scope |
+| THEORY_MAPPING_SLOT_NOT_FOUND | 500 | 找不到對應 factKey 的 slot mapping |
+| THEORY_MAPPING_NOT_FOUND | 500 | 找不到 raw value 對應的 internal code |
+| INVALID_THEORY_MAPPING | 500 | mapping row 缺 slot/raw/internalCode |
+| DUPLICATE_THEORY_MAPPING | 500 | 同一個 slot/rawValue 重複 |
+
+**目前的限制 / 刻意設計**
+```
+1. LinkChat strategy 的 THEORY_CODEBOOK 會放在 SUBJECT_PROFILE 後、第一個 source block 前
+2. appPromptConfig 與 theoryMappings 有 process-local cache，但沒有 TTL / invalidation
+3. Firestore 裡改了 strategy 或 mapping，要重啟服務才保證吃到最新值
+4. code 目前只擋「空白 theoryVersion」；像 astrology 是否一定要帶 theoryVersion，文件已鎖規則，但 production code 還沒在 gatekeeper 寫死
 ```
 
 ---
@@ -1122,11 +1244,13 @@ Router (http.ServeMux)
 **Firestore 持久化結構**
 ```
 apps/{appId}                                      AppAccess
+appPromptConfigs/{appId}                          AppPromptConfig
 builders/{builderId}                              BuilderConfig
 builders/{builderId}/sources/{sourceId}            Source
 builders/{builderId}/sources/{sourceId}/sourceRags/{ragId}  RagSupplement
 templates/{templateId}                            Template
 templates/{templateId}/templateRags/{ragId}        TemplateRag
+theoryMappings/{mappingId}                        TheoryMapping
 _meta/counters                                    {nextSourceId, nextRagId, nextTemplateId, nextTemplateRagId}
 _sourceLookup/{sourceId}                          {sourceId, builderId}
 ```
