@@ -1,0 +1,212 @@
+package app
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"com.citrus.internalaicopilot/internal/builder"
+	"com.citrus.internalaicopilot/internal/gatekeeper"
+	"com.citrus.internalaicopilot/internal/infra"
+)
+
+func TestAppSupportsBuilderListAndConsultFlow(t *testing.T) {
+	app, err := New(newIntegrationTestConfig(t))
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+
+	buildersResponse, err := http.Get(server.URL + "/api/builders")
+	if err != nil {
+		t.Fatalf("GET /api/builders returned error: %v", err)
+	}
+	defer buildersResponse.Body.Close()
+	if buildersResponse.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/builders returned status %d", buildersResponse.StatusCode)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("builderId", "2"); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+	if err := writer.WriteField("text", "請幫我產出 Rewards 冒煙測試"); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close returned error: %v", err)
+	}
+
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/consult", &body)
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST /api/consult returned error: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		bytes, _ := io.ReadAll(response.Body)
+		t.Fatalf("POST /api/consult returned status %d body=%s", response.StatusCode, string(bytes))
+	}
+
+	var envelope infra.APIResponse
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		t.Fatalf("Decode returned error: %v", err)
+	}
+	dataBytes, _ := json.Marshal(envelope.Data)
+	var consultResponse infra.ConsultBusinessResponse
+	if err := json.Unmarshal(dataBytes, &consultResponse); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+
+	if !consultResponse.Status {
+		t.Fatalf("expected consult to succeed, got %+v", consultResponse)
+	}
+	if consultResponse.File == nil || !strings.HasSuffix(consultResponse.File.FileName, ".xlsx") {
+		t.Fatalf("expected xlsx file payload, got %+v", consultResponse.File)
+	}
+}
+
+func TestAppSupportsExternalBuilderListAndConsultFlow(t *testing.T) {
+	app, err := New(newIntegrationTestConfig(t))
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+
+	buildersRequest, err := http.NewRequest(http.MethodGet, server.URL+"/api/external/builders", nil)
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+	buildersRequest.Header.Set(gatekeeper.ExternalAppIDHeader, "linkchat")
+	buildersResponse, err := http.DefaultClient.Do(buildersRequest)
+	if err != nil {
+		t.Fatalf("GET /api/external/builders returned error: %v", err)
+	}
+	defer buildersResponse.Body.Close()
+	if buildersResponse.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(buildersResponse.Body)
+		t.Fatalf("GET /api/external/builders returned status %d body=%s", buildersResponse.StatusCode, string(body))
+	}
+
+	var buildersEnvelope infra.APIResponse
+	if err := json.NewDecoder(buildersResponse.Body).Decode(&buildersEnvelope); err != nil {
+		t.Fatalf("Decode builders returned error: %v", err)
+	}
+	buildersBytes, _ := json.Marshal(buildersEnvelope.Data)
+	var builders []builder.BuilderSummary
+	if err := json.Unmarshal(buildersBytes, &builders); err != nil {
+		t.Fatalf("Unmarshal builders returned error: %v", err)
+	}
+	if len(builders) != 2 {
+		t.Fatalf("expected 2 builders for linkchat, got %+v", builders)
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("builderId", "2"); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+	if err := writer.WriteField("text", "請幫我產出 Rewards 冒煙測試"); err != nil {
+		t.Fatalf("WriteField returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("writer.Close returned error: %v", err)
+	}
+
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/external/consult", &body)
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.Header.Set(gatekeeper.ExternalAppIDHeader, "linkchat")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST /api/external/consult returned error: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		bytes, _ := io.ReadAll(response.Body)
+		t.Fatalf("POST /api/external/consult returned status %d body=%s", response.StatusCode, string(bytes))
+	}
+
+	var envelope infra.APIResponse
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		t.Fatalf("Decode consult returned error: %v", err)
+	}
+	dataBytes, _ := json.Marshal(envelope.Data)
+	var consultResponse infra.ConsultBusinessResponse
+	if err := json.Unmarshal(dataBytes, &consultResponse); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if !consultResponse.Status {
+		t.Fatalf("expected external consult to succeed, got %+v", consultResponse)
+	}
+}
+
+func TestAppSupportsCORSPreflightAndTemplateCreateStatus(t *testing.T) {
+	app, err := New(newIntegrationTestConfig(t))
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = app.Close() })
+
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+
+	optionsRequest, err := http.NewRequest(http.MethodOptions, server.URL+"/api/builders", nil)
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+	optionsRequest.Header.Set("Origin", "http://localhost:3000")
+	optionsResponse, err := http.DefaultClient.Do(optionsRequest)
+	if err != nil {
+		t.Fatalf("OPTIONS /api/builders returned error: %v", err)
+	}
+	defer optionsResponse.Body.Close()
+	if optionsResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("expected 204 for preflight, got %d", optionsResponse.StatusCode)
+	}
+	if optionsResponse.Header.Get("Access-Control-Allow-Origin") != "http://localhost:3000" {
+		t.Fatalf("expected CORS header, got %q", optionsResponse.Header.Get("Access-Control-Allow-Origin"))
+	}
+
+	requestBody := strings.NewReader(`{"templateKey":"qa-created","name":"QA Created","groupKey":"qa","orderNo":1,"prompts":"prompt"}`)
+	createResponse, err := http.Post(server.URL+"/api/admin/templates", "application/json", requestBody)
+	if err != nil {
+		t.Fatalf("POST /api/admin/templates returned error: %v", err)
+	}
+	defer createResponse.Body.Close()
+	if createResponse.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(createResponse.Body)
+		t.Fatalf("expected 201 for create template, got %d body=%s", createResponse.StatusCode, string(body))
+	}
+}
+
+func newIntegrationTestConfig(t *testing.T) infra.Config {
+	t.Helper()
+	return infra.Config{
+		ConsultMaxFiles:     10,
+		ConsultMaxFileSize:  20 * 1024 * 1024,
+		ConsultMaxTotalSize: 50 * 1024 * 1024,
+		FirestoreProjectID:  fmt.Sprintf("internal-ai-copilot-app-test-%d", time.Now().UnixNano()),
+		StoreResetOnStart:   true,
+	}
+}

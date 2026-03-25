@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package internalaicopilot.integration.v1;
+
+option go_package = "com.citrus.internalaicopilot/internal/grpcapi/pb;grpcpb";
+
+service IntegrationService {
+  rpc ListBuilders(ListBuildersRequest) returns (ListBuildersResponse);
+  rpc Consult(ConsultRequest) returns (ConsultResponse);
+  rpc ProfileConsult(ProfileConsultRequest) returns (ProfileConsultResponse);
+}
+
+message ListBuildersRequest {
+  string app_id = 1;
+}
+
+message ListBuildersResponse {
+  repeated BuilderSummary builders = 1;
+}
+
+message BuilderSummary {
+  int32 builder_id = 1;
+  string builder_code = 2;
+  optional string group_key = 3;
+  string group_label = 4;
+  string name = 5;
+  string description = 6;
+  bool include_file = 7;
+  optional string default_output_format = 8;
+}
+
+message ConsultRequest {
+  string app_id = 1;
+  int32 builder_id = 2;
+  string text = 3;
+  string output_format = 4;
+  repeated Attachment attachments = 5;
+  string client_ip = 6;
+}
+
+message Attachment {
+  string file_name = 1;
+  string content_type = 2;
+  bytes data = 3;
+}
+
+message ConsultResponse {
+  bool status = 1;
+  string status_ans = 2;
+  string response = 3;
+  FilePayload file = 4;
+}
+
+message ProfileConsultRequest {
+  string app_id = 1;
+  int32 builder_id = 2;
+  repeated string analysis_modules = 3;
+  SubjectProfile subject_profile = 4;
+  string text = 5;
+  string client_ip = 6;
+}
+
+message SubjectProfile {
+  string subject_id = 1;
+  repeated SubjectModulePayload module_payloads = 2;
+}
+
+message SubjectModulePayload {
+  string module_key = 1;
+  repeated SubjectFact facts = 2;
+  optional string theory_version = 3;
+}
+
+message SubjectFact {
+  string fact_key = 1;
+  repeated string values = 2;
+}
+
+message ProfileConsultResponse {
+  bool status = 1;
+  string status_ans = 2;
+  string response = 3;
+}
+
+message FilePayload {
+  string file_name = 1;
+  string content_type = 2;
+  bytes data = 3;
+}
