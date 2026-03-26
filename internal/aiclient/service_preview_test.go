@@ -98,11 +98,8 @@ subject: user-123
 
 ### [analysis:astrology]
 theory_version: astro-v1
-sun_sign: ASTRO_SUN_SCO_01
-
-## [THEORY_CODEBOOK]
-### [analysis:astrology][theory:astro-v1]
-sun_sign: ASTRO_SUN_SCO_01 => intense|probing|controlled`
+人生主軸: 深層洞察
+情緒本能: 敏感共感`
 
 	response, err := service.Analyze(context.Background(), "gpt-4o", "profile text", instructions, nil)
 	if err != nil {
@@ -114,11 +111,14 @@ sun_sign: ASTRO_SUN_SCO_01 => intense|probing|controlled`
 	for _, fragment := range []string{
 		`"instructions": "## [SUBJECT_PROFILE]`,
 		`### [analysis:astrology]`,
-		`## [THEORY_CODEBOOK]`,
-		`ASTRO_SUN_SCO_01 =\u003e intense|probing|controlled`,
+		`人生主軸: 深層洞察`,
+		`情緒本能: 敏感共感`,
 	} {
 		if !strings.Contains(response.Response, fragment) {
 			t.Fatalf("expected preview response to preserve structured prompt block %q, got %s", fragment, response.Response)
 		}
+	}
+	if strings.Contains(response.Response, "THEORY_CODEBOOK") || strings.Contains(response.Response, "ASTRO_SUN_SCO_01") {
+		t.Fatalf("did not expect obsolete codebook content, got %s", response.Response)
 	}
 }

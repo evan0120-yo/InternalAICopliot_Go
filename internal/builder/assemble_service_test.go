@@ -214,16 +214,16 @@ func TestAssemblePromptUsesLinkChatStrategyForTheoryMappedModules(t *testing.T) 
 	if !strings.Contains(result.Instructions, "theory_version: astro-v1") {
 		t.Fatalf("expected theory version in linkchat subject profile block, got: %s", result.Instructions)
 	}
-	if !strings.Contains(result.Instructions, "moon_sign: ASTRO_MOON_PIS_01\nsun_sign: ASTRO_SUN_SCO_01\n") {
-		t.Fatalf("expected astrology values to be code-mapped, got: %s", result.Instructions)
+	if !strings.Contains(result.Instructions, "人生主軸: 深層洞察\n情緒本能: 敏感共感\n") {
+		t.Fatalf("expected astrology values to be translated into semantic prompts, got: %s", result.Instructions)
 	}
 	if !strings.Contains(result.Instructions, "type: INTJ\n") {
 		t.Fatalf("expected unmapped module to preserve raw value, got: %s", result.Instructions)
 	}
-	if !strings.Contains(result.Instructions, "## [THEORY_CODEBOOK]") {
-		t.Fatalf("expected theory codebook block, got: %s", result.Instructions)
+	if strings.Contains(result.Instructions, "## [THEORY_CODEBOOK]") {
+		t.Fatalf("did not expect theory codebook block, got: %s", result.Instructions)
 	}
-	if !strings.Contains(result.Instructions, "sun_sign: ASTRO_SUN_SCO_01 => intense|probing|transformative") {
-		t.Fatalf("expected theory codebook interpretation, got: %s", result.Instructions)
+	if strings.Contains(result.Instructions, "Scorpio") || strings.Contains(result.Instructions, "雙魚") {
+		t.Fatalf("did not expect raw theory words to leak into instructions, got: %s", result.Instructions)
 	}
 }

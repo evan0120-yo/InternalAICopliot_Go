@@ -178,7 +178,8 @@
   │     (沒打就寫「用戶沒有額外需求」)               │
   │                                                  │
   │  3. [SUBJECT_PROFILE] ← 只有 Profile 模式才有   │
-  │     [THEORY_CODEBOOK] ← LinkChat strategy 可能有 │
+  │     LinkChat strategy 會先做理論翻譯             │
+  │     再把最終語意片段直接組進這個 block           │
   │                                                  │
   │  4. [SOURCE-1], [SOURCE-2], ...                  │
   │     按順序排列的 prompt 片段                      │
@@ -246,7 +247,7 @@
 2. **用途是本地/開發測 prompt**——如果直接暴露到 production，任何人都能帶任意 `appId` 走對應 strategy
 3. **下游還是走同一套 profile consult flow**——會做同樣的 `subjectProfile / analysisPayloads` 驗證，再進 builder
 
-所以它不是正式整合入口，比較像「給你先寫 prompt、先驗證 code mapping 的捷徑」。
+所以它不是正式整合入口，比較像「給你先寫 prompt、先驗證 theory translation 的捷徑」。
 
 ---
 
@@ -275,7 +276,7 @@ gRPC 版本的查詢和諮詢。行為上跟 HTTP 版本完全一致，差別在
 
 1. **沒有附件和 outputFormat**——只有文字 + 結構化 profile
 2. **Sources 會被過濾**——但現在是依 `subjectProfile.analysisPayloads` 推導 tag，不再靠 top-level `analysisModules`
-3. **每個 analysis payload 可帶 theoryVersion**——builder 可以依 theoryVersion 決定要不要做 code mapping
+3. **每個 analysis payload 可帶 theoryVersion**——builder 可以依 theoryVersion 決定要不要做 theory translation
 
 ### 驗證流程（比普通 Consult 多很多）
 
@@ -329,13 +330,13 @@ gRPC 版本的查詢和諮詢。行為上跟 HTTP 版本完全一致，差別在
 - default strategy：只產生 `[SUBJECT_PROFILE]`，把 `analysisPayloads` flatten 成 deterministic block
 - LinkChat strategy：
   - 目前只支援 `astrology` 與 `mbti` 兩種 analysisType；其他值會直接報 `UNSUPPORTED_ANALYSIS_TYPE`
-  - `astrology` 會先查 code mapping，把 raw value 轉成 Internal private code
-  - 再多產生一段 `[THEORY_CODEBOOK]`，告訴模型每個 code 對應的 interpretation
-  - `mbti` 目前直接 raw render，不做 Internal-side code mapping
+  - `astrology` 會先查 theoryMappings，把 slot 與 raw value 翻成最終語意片段
+  - AI 最後只看到翻譯後的語意，不會看到 raw theory 詞，也不會看到 Internal private code
+  - `mbti` 目前直接 raw render，不做 Internal-side theory translation
 
 所以現在同一個 ProfileConsult 裡，理論上可以混用：
-- 已轉碼的 analysis payload（例如 astrology）
-- 未轉碼的 analysis payload（例如 mbti）
+- 已完成 theory translation 的 analysis payload（例如 astrology）
+- 未做 theory translation 的 analysis payload（例如 mbti）
 
 這是目前 code 的真實行為，不代表最後產品規則一定會這樣定。
 
@@ -681,6 +682,9 @@ gatekeeper.Handler.consult
    - response=完整 request preview JSON
 3. response.File 不會產生
 4. Preview 是 internal flag（json:"-"），不會多吐一個前端欄位
+5. preview 只原樣保留 builder 已組好的 instructions
+   - 如果 builder 已做 theory translation，preview 看到的是最終語意 prompt
+   - 不會額外補出舊版 THEORY_CODEBOOK
 ```
 
 **Prompt injection 檢查關鍵字 (mock 模式)**
@@ -853,7 +857,7 @@ grpcapi.Service.ProfileConsult
          → resolveProfileContextStrategy
             → appId=""、查不到 config、config inactive、strategyKey="" → default
             → appPromptConfig.strategyKey=linkchat → LinkChat strategy
-         → 需要時做 theory mapping / codebook 組裝
+         → 需要時做 theory mapping / semantic translation 組裝
       → 其餘同 Generic
   → 回應只取 status/statusAns/response (丟棄 File)
 ```
@@ -931,13 +935,16 @@ subject: {subjectId}
 
 ### [analysis:astrology]
 theory_version: astro-v1
-moon_sign: ASTRO_MOON_PIS_01
-sun_sign: ASTRO_SUN_SCO_01
+人生主軸: 深層洞察
+情緒本能: 敏感共感
+```
 
-## [THEORY_CODEBOOK]
-### [analysis:astrology][theory:astro-v1]
-moon_sign: ASTRO_MOON_PIS_01 => intuitive|empathetic|fluid
-sun_sign: ASTRO_SUN_SCO_01 => intense|probing|controlled
+這段不是 AI 自己解碼得出的結果，而是 builder 先做：
+```text
+slotKey + rawValue
+  ├─ slot mapping -> slot semantic prompt
+  ├─ value mapping -> value semantic prompt
+  └─ Internal 直接組成最終語意行
 ```
 
 **app-aware strategy/runtime 錯誤碼**
@@ -947,16 +954,16 @@ sun_sign: ASTRO_SUN_SCO_01 => intense|probing|controlled
 | UNKNOWN_PROMPT_STRATEGY | 500 | appPromptConfigs 裡的 strategyKey 不認得 |
 | THEORY_MAPPING_STORE_UNAVAILABLE | 500 | strategy 需要 mapping，但 store 不可用 |
 | THEORY_MAPPING_SCOPE_NOT_FOUND | 500 | 找不到 appId + analysisType（Firestore 欄位名仍是 moduleKey）+ theoryVersion 這個 mapping scope |
-| THEORY_MAPPING_SLOT_NOT_FOUND | 500 | 找不到對應 payload line key 的 slot mapping |
-| THEORY_MAPPING_NOT_FOUND | 500 | 找不到 raw value 對應的 internal code |
-| INVALID_THEORY_MAPPING | 500 | mapping row 缺 slot/raw/internalCode |
+| THEORY_MAPPING_SLOT_NOT_FOUND | 500 | 找不到對應 payload line key 的 slot semantic mapping，或該 slot 完全沒有 value mappings |
+| THEORY_MAPPING_NOT_FOUND | 500 | 找不到 raw value 對應的 value semantic mapping |
+| INVALID_THEORY_MAPPING | 500 | mapping row 缺 slotKey / semanticPrompt / mappingType，或 slot/value row 欄位組合錯誤 |
 | DUPLICATE_THEORY_MAPPING | 500 | 同一個 slot/rawValue 重複 |
 | UNSUPPORTED_ANALYSIS_TYPE | 400 | LinkChat strategy 不認得 analysisType |
 | INVALID_ANALYSIS_PAYLOAD | 400 | payload 值無法展平，且 json.Marshal 也失敗 |
 
 **目前的限制 / 刻意設計**
 ```
-1. LinkChat strategy 的 THEORY_CODEBOOK 會放在 SUBJECT_PROFILE 後、第一個 source block 前
+1. LinkChat astrology 現在會把理論資料直接翻成最終語意片段，放在 SUBJECT_PROFILE 內
 2. appPromptConfig 與 theoryMappings 有 process-local cache，但沒有 TTL / invalidation
 3. Firestore 裡改了 strategy 或 mapping，要重啟服務才保證吃到最新值
 4. `appId=linkchat` 且 `analysisType=astrology` 時，gatekeeper 與 builder renderer 都會要求 theoryVersion

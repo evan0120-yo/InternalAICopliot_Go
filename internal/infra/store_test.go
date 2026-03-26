@@ -183,4 +183,24 @@ func TestStoreReadsAppPromptConfigAndTheoryMappings(t *testing.T) {
 	if len(mappings) == 0 {
 		t.Fatalf("expected theory mappings for linkchat astrology astro-v1")
 	}
+	foundSlot := false
+	foundValue := false
+	for _, mapping := range mappings {
+		switch mapping.MappingType {
+		case TheoryMappingTypeSlot:
+			if mapping.SlotKey == "sun_sign" && mapping.RawValue == "" && mapping.SemanticPrompt == "人生主軸" {
+				foundSlot = true
+			}
+		case TheoryMappingTypeValue:
+			if mapping.SlotKey == "sun_sign" && mapping.RawValue == "Capricorn" && mapping.SemanticPrompt == "工作狂" {
+				foundValue = true
+			}
+		}
+	}
+	if !foundSlot {
+		t.Fatalf("expected slot semantic mapping for sun_sign")
+	}
+	if !foundValue {
+		t.Fatalf("expected value semantic mapping for sun_sign Capricorn")
+	}
 }

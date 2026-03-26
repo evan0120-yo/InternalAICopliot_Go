@@ -128,15 +128,20 @@ type TemplateRag struct {
 	RetrievalMode string `json:"retrievalMode" firestore:"retrievalMode"`
 }
 
-// TheoryMapping is the Internal codebook mapping table row.
+const (
+	TheoryMappingTypeSlot  = "slot"
+	TheoryMappingTypeValue = "value"
+)
+
+// TheoryMapping is the Internal theory translation table row.
 type TheoryMapping struct {
 	MappingID      string `json:"mappingId" firestore:"mappingId"`
 	AppID          string `json:"appId" firestore:"appId"`
 	ModuleKey      string `json:"moduleKey" firestore:"moduleKey"`
 	TheoryVersion  string `json:"theoryVersion" firestore:"theoryVersion"`
+	MappingType    string `json:"mappingType" firestore:"mappingType"`
 	SlotKey        string `json:"slotKey" firestore:"slotKey"`
-	RawValue       string `json:"rawValue" firestore:"rawValue"`
-	InternalCode   string `json:"internalCode" firestore:"internalCode"`
-	Interpretation string `json:"interpretation" firestore:"interpretation"`
+	RawValue       string `json:"rawValue,omitempty" firestore:"rawValue,omitempty"`
+	SemanticPrompt string `json:"semanticPrompt" firestore:"semanticPrompt"`
 	Active         bool   `json:"active" firestore:"active"`
 }

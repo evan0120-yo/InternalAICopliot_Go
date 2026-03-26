@@ -25,14 +25,6 @@ type promptConfigCacheEntry struct {
 	Loaded bool
 }
 
-type theoryCodebookEntry struct {
-	AnalysisKey    string
-	TheoryVersion  string
-	SlotKey        string
-	InternalCode   string
-	Interpretation string
-}
-
 type renderedSubjectProfile struct {
 	SubjectID      string
 	AnalysisBlocks []renderedAnalysisBlock
@@ -49,6 +41,11 @@ type renderedProfileLine struct {
 	Values []string
 }
 
+type theoryTranslationIndex struct {
+	slotPrompts  map[string]string
+	valuePrompts map[string]map[string]string
+}
+
 type profileContextStrategy interface {
 	FilterSources(ctx context.Context, service *AssembleService, appID string, sources []infra.Source, subjectProfile *SubjectProfile) ([]infra.Source, error)
 	Build(ctx context.Context, service *AssembleService, appID string, subjectProfile *SubjectProfile) (string, error)
@@ -61,7 +58,7 @@ type linkChatProfileContextStrategy struct{}
 type linkChatAnalysisRenderer interface {
 	AnalysisType() string
 	SourceTags(payload SubjectAnalysisPayload) ([]string, error)
-	Build(ctx context.Context, service *AssembleService, appID string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, []theoryCodebookEntry, error)
+	Build(ctx context.Context, service *AssembleService, appID string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, error)
 }
 
 type astrologyLinkChatAnalysisRenderer struct{}
@@ -254,16 +251,11 @@ func (linkChatProfileContextStrategy) Build(ctx context.Context, service *Assemb
 		return "", nil
 	}
 
-	renderedProfile, codebookEntries, err := service.renderLinkChatSubjectProfile(ctx, appID, subjectProfile)
+	renderedProfile, err := service.renderLinkChatSubjectProfile(ctx, appID, subjectProfile)
 	if err != nil {
 		return "", err
 	}
-
-	block := buildRenderedSubjectProfileSection(renderedProfile, true)
-	if len(codebookEntries) == 0 {
-		return block, nil
-	}
-	return block + buildTheoryCodebookSection(codebookEntries), nil
+	return buildRenderedSubjectProfileSection(renderedProfile, true), nil
 }
 
 func (s *AssembleService) linkChatSourceTags(subjectProfile *SubjectProfile) ([]string, error) {
@@ -300,31 +292,29 @@ func (s *AssembleService) linkChatSourceTags(subjectProfile *SubjectProfile) ([]
 	return tags, nil
 }
 
-func (s *AssembleService) renderLinkChatSubjectProfile(ctx context.Context, appID string, subjectProfile *SubjectProfile) (*renderedSubjectProfile, []theoryCodebookEntry, error) {
+func (s *AssembleService) renderLinkChatSubjectProfile(ctx context.Context, appID string, subjectProfile *SubjectProfile) (*renderedSubjectProfile, error) {
 	if subjectProfile == nil {
-		return nil, nil, nil
+		return nil, nil
 	}
 
 	rendered := &renderedSubjectProfile{
 		SubjectID:      strings.TrimSpace(subjectProfile.SubjectID),
 		AnalysisBlocks: make([]renderedAnalysisBlock, 0, len(subjectProfile.AnalysisPayloads)),
 	}
-	codebookEntries := make([]theoryCodebookEntry, 0)
 
 	for _, payload := range subjectProfile.AnalysisPayloads {
 		renderer, err := s.linkChatAnalysisRenderer(payload.AnalysisType)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		block, entries, err := renderer.Build(ctx, s, appID, payload)
+		block, err := renderer.Build(ctx, s, appID, payload)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		rendered.AnalysisBlocks = append(rendered.AnalysisBlocks, block)
-		codebookEntries = append(codebookEntries, entries...)
 	}
 
-	return rendered, dedupeTheoryCodebookEntries(codebookEntries), nil
+	return rendered, nil
 }
 
 func (s *AssembleService) linkChatAnalysisRenderer(analysisType string) (linkChatAnalysisRenderer, error) {
@@ -346,59 +336,56 @@ func (astrologyLinkChatAnalysisRenderer) SourceTags(_ SubjectAnalysisPayload) ([
 	return []string{"astrology"}, nil
 }
 
-func (r astrologyLinkChatAnalysisRenderer) Build(ctx context.Context, service *AssembleService, appID string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, []theoryCodebookEntry, error) {
+func (r astrologyLinkChatAnalysisRenderer) Build(ctx context.Context, service *AssembleService, appID string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, error) {
 	lines, err := flattenPayloadToLines(payload.Payload)
 	if err != nil {
-		return renderedAnalysisBlock{}, nil, err
+		return renderedAnalysisBlock{}, err
 	}
 	if payload.TheoryVersion == nil || strings.TrimSpace(*payload.TheoryVersion) == "" {
-		return renderedAnalysisBlock{}, nil, infra.NewError("THEORY_VERSION_REQUIRED", "theoryVersion is required for linkchat astrology.", 400)
+		return renderedAnalysisBlock{}, infra.NewError("THEORY_VERSION_REQUIRED", "theoryVersion is required for linkchat astrology.", 400)
 	}
 
 	trimmedTheoryVersion := strings.TrimSpace(*payload.TheoryVersion)
 	scopeMappings, err := service.theoryMappings(ctx, appID, r.AnalysisType(), trimmedTheoryVersion)
 	if err != nil {
-		return renderedAnalysisBlock{}, nil, err
+		return renderedAnalysisBlock{}, err
 	}
 	if len(scopeMappings) == 0 {
-		return renderedAnalysisBlock{}, nil, infra.NewError("THEORY_MAPPING_SCOPE_NOT_FOUND", "Theory mapping scope was not found for the requested analysis type.", 500)
+		return renderedAnalysisBlock{}, infra.NewError("THEORY_MAPPING_SCOPE_NOT_FOUND", "Theory mapping scope was not found for the requested analysis type.", 500)
 	}
 
-	mappingIndex, err := buildTheoryMappingIndex(scopeMappings)
+	translationIndex, err := buildTheoryTranslationIndex(scopeMappings)
 	if err != nil {
-		return renderedAnalysisBlock{}, nil, err
+		return renderedAnalysisBlock{}, err
 	}
 
-	codedLines := make([]renderedProfileLine, 0, len(lines))
-	codebookEntries := make([]theoryCodebookEntry, 0)
+	translatedLines := make([]renderedProfileLine, 0, len(lines))
 	for _, line := range lines {
-		slotMappings := mappingIndex[line.Key]
-		if len(slotMappings) == 0 {
-			return renderedAnalysisBlock{}, nil, infra.NewError("THEORY_MAPPING_SLOT_NOT_FOUND", "Theory mapping slot was not found for the requested key.", 500)
+		slotPrompt, ok := translationIndex.slotPrompts[line.Key]
+		if !ok {
+			return renderedAnalysisBlock{}, infra.NewError("THEORY_MAPPING_SLOT_NOT_FOUND", "Theory mapping slot was not found for the requested key.", 500)
 		}
-		codedValues := make([]string, 0, len(line.Values))
+		valueMappings := translationIndex.valuePrompts[line.Key]
+		if len(valueMappings) == 0 {
+			return renderedAnalysisBlock{}, infra.NewError("THEORY_MAPPING_SLOT_NOT_FOUND", "Theory mapping slot was not found for the requested key.", 500)
+		}
+
+		translatedValues := make([]string, 0, len(line.Values))
 		for _, value := range line.Values {
-			mapping, ok := slotMappings[canonicalTheoryRawValue(value)]
+			translatedValue, ok := valueMappings[canonicalTheoryRawValue(value)]
 			if !ok {
-				return renderedAnalysisBlock{}, nil, infra.NewError("THEORY_MAPPING_NOT_FOUND", "Theory mapping entry was not found for the requested value.", 500)
+				return renderedAnalysisBlock{}, infra.NewError("THEORY_MAPPING_NOT_FOUND", "Theory mapping entry was not found for the requested value.", 500)
 			}
-			codedValues = append(codedValues, mapping.InternalCode)
-			codebookEntries = append(codebookEntries, theoryCodebookEntry{
-				AnalysisKey:    payload.AnalysisType,
-				TheoryVersion:  trimmedTheoryVersion,
-				SlotKey:        line.Key,
-				InternalCode:   mapping.InternalCode,
-				Interpretation: mapping.Interpretation,
-			})
+			translatedValues = append(translatedValues, translatedValue)
 		}
-		codedLines = append(codedLines, renderedProfileLine{Key: line.Key, Values: codedValues})
+		translatedLines = append(translatedLines, renderedProfileLine{Key: slotPrompt, Values: translatedValues})
 	}
 
 	return renderedAnalysisBlock{
 		AnalysisType:  payload.AnalysisType,
 		TheoryVersion: &trimmedTheoryVersion,
-		Lines:         codedLines,
-	}, codebookEntries, nil
+		Lines:         translatedLines,
+	}, nil
 }
 
 func (mbtiLinkChatAnalysisRenderer) AnalysisType() string {
@@ -409,110 +396,64 @@ func (mbtiLinkChatAnalysisRenderer) SourceTags(_ SubjectAnalysisPayload) ([]stri
 	return []string{"mbti"}, nil
 }
 
-func (mbtiLinkChatAnalysisRenderer) Build(_ context.Context, _ *AssembleService, _ string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, []theoryCodebookEntry, error) {
+func (mbtiLinkChatAnalysisRenderer) Build(_ context.Context, _ *AssembleService, _ string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, error) {
 	lines, err := flattenPayloadToLines(payload.Payload)
 	if err != nil {
-		return renderedAnalysisBlock{}, nil, err
+		return renderedAnalysisBlock{}, err
 	}
 
 	return renderedAnalysisBlock{
 		AnalysisType:  payload.AnalysisType,
 		TheoryVersion: normalizeOptionalString(payload.TheoryVersion),
 		Lines:         lines,
-	}, nil, nil
+	}, nil
 }
 
-func buildTheoryMappingIndex(mappings []infra.TheoryMapping) (map[string]map[string]infra.TheoryMapping, error) {
-	index := make(map[string]map[string]infra.TheoryMapping)
+func buildTheoryTranslationIndex(mappings []infra.TheoryMapping) (theoryTranslationIndex, error) {
+	index := theoryTranslationIndex{
+		slotPrompts:  make(map[string]string),
+		valuePrompts: make(map[string]map[string]string),
+	}
+
 	for _, mapping := range mappings {
 		slotKey := strings.TrimSpace(mapping.SlotKey)
-		rawValueKey := canonicalTheoryRawValue(mapping.RawValue)
-		if slotKey == "" || rawValueKey == "" {
-			return nil, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define slotKey and rawValue.", 500)
+		if slotKey == "" {
+			return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define slotKey.", 500)
 		}
-		if strings.TrimSpace(mapping.InternalCode) == "" {
-			return nil, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define internalCode.", 500)
+		semanticPrompt := sanitizeSemanticPrompt(mapping.SemanticPrompt)
+		if semanticPrompt == "" {
+			return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define semanticPrompt.", 500)
 		}
-		slotMappings, ok := index[slotKey]
-		if !ok {
-			slotMappings = make(map[string]infra.TheoryMapping)
-			index[slotKey] = slotMappings
+
+		switch strings.TrimSpace(mapping.MappingType) {
+		case infra.TheoryMappingTypeSlot:
+			if raw := strings.TrimSpace(mapping.RawValue); raw != "" {
+				return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Slot theory mapping rows must not define rawValue.", 500)
+			}
+			if _, exists := index.slotPrompts[slotKey]; exists {
+				return theoryTranslationIndex{}, infra.NewError("DUPLICATE_THEORY_MAPPING", "Theory mapping rows must not repeat the same slot mapping.", 500)
+			}
+			index.slotPrompts[slotKey] = semanticPrompt
+		case infra.TheoryMappingTypeValue:
+			rawValueKey := canonicalTheoryRawValue(mapping.RawValue)
+			if rawValueKey == "" {
+				return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Value theory mapping rows must define rawValue.", 500)
+			}
+			slotMappings, ok := index.valuePrompts[slotKey]
+			if !ok {
+				slotMappings = make(map[string]string)
+				index.valuePrompts[slotKey] = slotMappings
+			}
+			if _, exists := slotMappings[rawValueKey]; exists {
+				return theoryTranslationIndex{}, infra.NewError("DUPLICATE_THEORY_MAPPING", "Theory mapping rows must not repeat the same slot/rawValue pair.", 500)
+			}
+			slotMappings[rawValueKey] = semanticPrompt
+		default:
+			return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define a valid mappingType.", 500)
 		}
-		if _, exists := slotMappings[rawValueKey]; exists {
-			return nil, infra.NewError("DUPLICATE_THEORY_MAPPING", "Theory mapping rows must not repeat the same slot/rawValue pair.", 500)
-		}
-		slotMappings[rawValueKey] = mapping
 	}
+
 	return index, nil
-}
-
-func buildTheoryCodebookSection(entries []theoryCodebookEntry) string {
-	if len(entries) == 0 {
-		return ""
-	}
-
-	cloned := append([]theoryCodebookEntry(nil), entries...)
-	sort.Slice(cloned, func(i, j int) bool {
-		if cloned[i].AnalysisKey != cloned[j].AnalysisKey {
-			return cloned[i].AnalysisKey < cloned[j].AnalysisKey
-		}
-		if cloned[i].TheoryVersion != cloned[j].TheoryVersion {
-			return cloned[i].TheoryVersion < cloned[j].TheoryVersion
-		}
-		if cloned[i].SlotKey != cloned[j].SlotKey {
-			return cloned[i].SlotKey < cloned[j].SlotKey
-		}
-		return cloned[i].InternalCode < cloned[j].InternalCode
-	})
-
-	var builder strings.Builder
-	builder.WriteString("\n## [THEORY_CODEBOOK]\n")
-
-	lastModuleKey := ""
-	lastTheoryVersion := ""
-	for _, entry := range cloned {
-		if entry.AnalysisKey != lastModuleKey || entry.TheoryVersion != lastTheoryVersion {
-			builder.WriteString("\n### [analysis:")
-			builder.WriteString(entry.AnalysisKey)
-			builder.WriteString("][theory:")
-			builder.WriteString(entry.TheoryVersion)
-			builder.WriteString("]\n")
-			lastModuleKey = entry.AnalysisKey
-			lastTheoryVersion = entry.TheoryVersion
-		}
-		builder.WriteString(entry.SlotKey)
-		builder.WriteString(": ")
-		builder.WriteString(entry.InternalCode)
-		if interpretation := sanitizeInterpretation(entry.Interpretation); interpretation != "" {
-			builder.WriteString(" => ")
-			builder.WriteString(interpretation)
-		}
-		builder.WriteString("\n")
-	}
-
-	return builder.String()
-}
-
-func dedupeTheoryCodebookEntries(entries []theoryCodebookEntry) []theoryCodebookEntry {
-	if len(entries) == 0 {
-		return nil
-	}
-
-	deduped := make([]theoryCodebookEntry, 0, len(entries))
-	seen := make(map[string]struct{}, len(entries))
-	for _, entry := range entries {
-		key := theoryCodebookKey(entry)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		deduped = append(deduped, entry)
-	}
-	return deduped
-}
-
-func theoryCodebookKey(entry theoryCodebookEntry) string {
-	return strings.Join([]string{entry.AnalysisKey, entry.TheoryVersion, entry.SlotKey, entry.InternalCode, entry.Interpretation}, "\x00")
 }
 
 func theoryMappingScopeKey(appID, moduleKey, theoryVersion string) string {
@@ -523,7 +464,7 @@ func canonicalTheoryRawValue(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
 }
 
-func sanitizeInterpretation(raw string) string {
+func sanitizeSemanticPrompt(raw string) string {
 	singleLine := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
 	return singleLine
 }

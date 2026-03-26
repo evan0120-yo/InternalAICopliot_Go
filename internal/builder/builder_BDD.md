@@ -110,25 +110,27 @@ AssemblePrompt
   When `[SUBJECT_PROFILE]` 被 render
   Then 各 analysis payload 的輸出必須 deterministic，且由對應 analysis factory 決定內部排序規則
 
-- Given LinkChat strategy 遇到需要 code mapping 的 analysis type
+- Given LinkChat strategy 遇到需要 theory translation 的 analysis type
   When app-aware profile/context block 被 render
-  Then 應依 `appId + analysis scope key + theoryVersion + slot key` 將 raw value 轉成 Internal private code 後再輸出
+  Then 應依 `appId + analysis scope key + theoryVersion + slot key` 查詢 slot/value semantic fragments
+  And 應由 Internal 直接組成最終語意 prompt 後再輸出
 
-- Given 某個 analysis type 沒有配置 code mapping
+- Given 某個 analysis type 沒有配置 theory translation
   When app-aware profile/context block 被 render
   Then 應保留原始值，不強制轉成 code
 
 - Given `appId=linkchat` 且 `analysisType=astrology`
   When app-aware profile/context block 被 render
-  Then 該 analysis type 應視為 codebook-enabled analysis，必須帶 `theoryVersion`
+  Then 該 analysis type 應視為 theory-translation-enabled analysis，必須帶 `theoryVersion`
 
 - Given `appId=linkchat` 且 `analysisType=mbti`
   When app-aware profile/context block 被 render
   Then 該 analysis type 目前可保留 raw value render，不要求 `theoryVersion`
 
-- Given LinkChat strategy 已產生 `THEORY_CODEBOOK`
+- Given LinkChat strategy 已完成 theory translation
   When profile/context block 被插入 shared prompt skeleton
-  Then `THEORY_CODEBOOK` 應位於 `[SUBJECT_PROFILE]` 後、第一個 source block 前
+  Then AI 應只看到翻譯後的語意結果
+  And 不應直接看到 raw theory 詞或 Internal private code
 
 - Given LinkChat 之後需要以 `analysisType` / slot key / value key 做更細的語意片段組裝
   When builder 執行 LinkChat prompt strategy
@@ -270,4 +272,4 @@ Template command
 ## Open Questions
 - consult orchestration 目前使用 `sync.WaitGroup` 與 goroutine；未來是否改為 `errgroup` 尚未定案
 - template 與 graph 的 handler 層尚未有完整 HTTP 測試，部分驗收目前仍由 service / usecase 測試間接保護
-- `ProfileConsult`、app-aware strategy、LinkChat 第二層 factory 與 codebook render 已落成 production code；其餘 analysis type 的擴充仍需後續補測
+- `ProfileConsult`、app-aware strategy、LinkChat 第二層 factory 與完整版 theory translation prompt 組裝已落成 production code；後續只剩內容擴寫與更多 analysis type 補測
