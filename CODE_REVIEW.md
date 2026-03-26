@@ -221,15 +221,21 @@
 格式是 `application/json`，主要欄位：
 - `appId`（選填，只當 prompt strategy hint）
 - `builderId`（必填）
-- `analysisModules`（必填）
 - `subjectProfile`（選填）
 - `text`（選填）
+
+其中 `subjectProfile` 現在的實際 shape 是：
+- `subjectId`
+- `analysisPayloads[]`
+  - `analysisType`
+  - `theoryVersion`（選填，但 LinkChat astrology 會被要求）
+  - `payload`（任意 JSON 物件）
 
 它和 gRPC `ProfileConsult` 的差別是：
 
 1. **不做 external app auth**——`appId` 只是 strategy hint，不代表通過 LinkChat 權限驗證
 2. **用途是本地/開發測 prompt**——如果直接暴露到 production，任何人都能帶任意 `appId` 走對應 strategy
-3. **下游還是走同一套 profile consult flow**——會做同樣的 `analysisModules / subjectProfile` 驗證，再進 builder
+3. **下游還是走同一套 profile consult flow**——會做同樣的 `subjectProfile / analysisPayloads` 驗證，再進 builder
 
 所以它不是正式整合入口，比較像「給你先寫 prompt、先驗證 code mapping 的捷徑」。
 
@@ -259,8 +265,8 @@ gRPC 版本的查詢和諮詢。行為上跟 HTTP 版本完全一致，差別在
 跟普通 Consult 的根本差異：
 
 1. **沒有附件和 outputFormat**——只有文字 + 結構化 profile
-2. **Sources 會被過濾**——只留下跟 analysis_modules 相關的
-3. **每個 module payload 可帶 theoryVersion**——builder 可以依 theoryVersion 決定要不要做 code mapping
+2. **Sources 會被過濾**——但現在是依 `subjectProfile.analysisPayloads` 推導 tag，不再靠 top-level `analysisModules`
+3. **每個 analysis payload 可帶 theoryVersion**——builder 可以依 theoryVersion 決定要不要做 code mapping
 
 ### 驗證流程（比普通 Consult 多很多）
 
@@ -268,20 +274,17 @@ gRPC 版本的查詢和諮詢。行為上跟 HTTP 版本完全一致，差別在
   ├── client IP 必須有
   ├── Builder 必須存在且啟用
   │
-  ├── analysisModules 每一個都要：
-  │     trim → 轉小寫 → 符合 ^[a-z0-9][a-z0-9_-]*$ → 不能是 "common"
-  │     重複的自動去掉
-  │
   ├── subjectProfile 如果有傳：
-  │     ├── subjectId + payloads 都空 → 當沒傳
-  │     ├── 有 payloads 但沒 subjectId → 擋
-  │     └── 每個 payload 的 moduleKey：
-  │           ├── 必須在 analysisModules 裡 → 不在就擋
-  │           ├── 不能重複 → 重複就擋
+  │     ├── subjectId + analysisPayloads 都空 → 當沒傳
+  │     ├── 有 analysisPayloads 但沒 subjectId → 擋
+  │     └── 每個 analysis payload：
+  │           ├── analysisType：trim → lowercase → 符合 ^[a-z0-9][a-z0-9_-]*$
+  │           ├── analysisType 不能是 "common"
+  │           ├── analysisType 不能重複
   │           ├── theoryVersion 如果有給，空白就擋
-  │           └── 每個 fact 的 factKey 不能空/重複，values 不能空白
+  │           └── appId=linkchat 且 analysisType=astrology → theoryVersion 必填
   │
-  └── 三個都沒有（modules=空, text=空, profile=null）→ 擋
+  └── text 空 + profile 空 → 擋
 ```
 
 ### 進入 Consult 引擎後的差異
@@ -298,7 +301,14 @@ gRPC 版本的查詢和諮詢。行為上跟 HTTP 版本完全一致，差別在
        ├── moduleKey 為空 (包含 "common" 折疊成空)
        │     → 保留（通用 source，所有模組都吃得到）
        │
-       ├── moduleKey 在 analysisModules 裡？→ 保留
+       ├── default strategy：
+       │     取 analysisPayloads[].analysisType 正規化後的 tags
+       │     moduleKey 在 tags 裡？→ 保留
+       │
+       ├── LinkChat strategy：
+       │     先依 analysisType 挑 renderer
+       │     renderer.SourceTags() 產生 tags
+       │     moduleKey 在 tags 裡？→ 保留
        │
        └── 不在？→ 過濾掉
 
@@ -307,15 +317,16 @@ gRPC 版本的查詢和諮詢。行為上跟 HTTP 版本完全一致，差別在
 
 **第三步 prompt 裡多了 app-aware profile/context block**：
 
-- default strategy：只產生 `[SUBJECT_PROFILE]`
+- default strategy：只產生 `[SUBJECT_PROFILE]`，把 `analysisPayloads` flatten 成 deterministic block
 - LinkChat strategy：
-  - 有 theoryVersion 的 payload 會先查 code mapping，把 raw value 轉成 Internal private code
+  - 目前只支援 `astrology` 與 `mbti` 兩種 analysisType；其他值會直接報 `UNSUPPORTED_ANALYSIS_TYPE`
+  - `astrology` 會先查 code mapping，把 raw value 轉成 Internal private code
   - 再多產生一段 `[THEORY_CODEBOOK]`，告訴模型每個 code 對應的 interpretation
-  - 沒有 theoryVersion 的 payload 目前會原樣 passthrough，不強制轉碼
+  - `mbti` 目前直接 raw render，不做 Internal-side code mapping
 
 所以現在同一個 ProfileConsult 裡，理論上可以混用：
-- 已轉碼的 module
-- 未轉碼的 module
+- 已轉碼的 analysis payload（例如 astrology）
+- 未轉碼的 analysis payload（例如 mbti）
 
 這是目前 code 的真實行為，不代表最後產品規則一定會這樣定。
 
@@ -807,11 +818,11 @@ grpcapi.Service.ProfileConsult
     → appID 有值? → GuardService.ValidateExternalProfileConsult
       → ValidateExternalApp + ValidateProfileConsult + appAllowsBuilder
     → builder.ConsultUseCase.Consult (ConsultModeProfile)
-      → filterSourcesForProfileConsult
+      → AssembleService.FilterProfileSources
       → AssembleService.buildProfileContextBlock
          → resolveProfileContextStrategy
-            → appId="" 或查不到 config → default
-            → appId=linkchat → LinkChat strategy
+            → appId=""、查不到 config、config inactive、strategyKey="" → default
+            → appPromptConfig.strategyKey=linkchat → LinkChat strategy
          → 需要時做 theory mapping / codebook 組裝
       → 其餘同 Generic
   → 回應只取 status/statusAns/response (丟棄 File)
@@ -825,19 +836,16 @@ grpcapi.Service.ProfileConsult
 | BUILDER_ID_MISSING | 400 | builderID == 0 |
 | BUILDER_NOT_FOUND | 400 | Builder 不存在 |
 | BUILDER_INACTIVE | 403 | Builder 已停用 |
-| INVALID_MODULE_KEY | 400 | moduleKey 空或格式非法 |
-| RESERVED_MODULE_KEY | 400 | moduleKey 是 "common" |
-| SUBJECT_ID_MISSING | 400 | 有 payloads 但沒 subjectId |
-| DUPLICATE_MODULE_PAYLOAD | 400 | moduleKey 重複 |
-| PROFILE_MODULE_NOT_ALLOWED | 400 | moduleKey 不在 analysisModules |
-| SUBJECT_FACT_KEY_MISSING | 400 | factKey 為空 |
-| DUPLICATE_FACT_KEY | 400 | 同 module 內 factKey 重複 |
-| SUBJECT_FACT_VALUE_MISSING | 400 | value 空白或 values 為空 |
+| INVALID_MODULE_KEY | 400 | analysisType 空或格式非法 |
+| RESERVED_MODULE_KEY | 400 | analysisType 是 "common" |
+| SUBJECT_ID_MISSING | 400 | 有 analysisPayloads 但沒 subjectId |
+| DUPLICATE_ANALYSIS_PAYLOAD | 400 | analysisType 重複 |
 | THEORY_VERSION_MISSING | 400 | theoryVersion 有傳但 trim 後為空 |
-| PROFILE_INPUT_EMPTY | 400 | modules + text + profile 全空 |
+| THEORY_VERSION_REQUIRED | 400 | `appId=linkchat` 且 `analysisType=astrology` 但沒給 theoryVersion |
+| PROFILE_INPUT_EMPTY | 400 | text + profile 全空 |
 | APP_BUILDER_FORBIDDEN | 403 | Builder 不在 App 白名單 (external) |
 
-**filterSourcesForProfileConsult 錯誤碼**
+**FilterProfileSources 錯誤碼**
 
 | 錯誤碼 | HTTP | 觸發條件 |
 |--------|------|---------|
@@ -851,9 +859,11 @@ NormalizeStoredModuleKey(raw):
   "" 或 "common" → 回傳 ""
   不符合 ^[a-z0-9][a-z0-9_-]*$ → INVALID_MODULE_KEY
 
-NormalizeAnalysisModuleKey(raw):
-  同上，但空值 → INVALID_MODULE_KEY (不允許空)
-  "common" → RESERVED_MODULE_KEY (不允許用)
+NormalizeAnalysisTypeKey(raw):
+  trim → lowercase
+  空值 → INVALID_MODULE_KEY
+  "common" → RESERVED_MODULE_KEY
+  不符合 ^[a-z0-9][a-z0-9_-]*$ → INVALID_MODULE_KEY
 ```
 
 **SubjectProfile prompt 組裝格式**
@@ -861,11 +871,27 @@ NormalizeAnalysisModuleKey(raw):
 ## [SUBJECT_PROFILE]
 subject: {subjectId}
 
-### [module:{moduleKey}]
-{factKey}: {value1}|{value2}|{value3}
+### [analysis:{analysisType}]
+theory_version: {theoryVersion}        // 只有 payload.TheoryVersion 非空且 includeTheoryVersion=true 時才會有
+{payloadKey}: {value1}|{value2}|{value3}
 
-(modulePayloads 按 moduleKey 排序，facts 按 factKey 排序)
+(analysisPayloads 按 analysisType 排序，payload keys 按 key 排序)
 (values 中的 \ 跳脫為 \\，| 跳脫為 \|)
+```
+
+**analysis payload flatten 規則**
+```
+payload map[string]any
+  ├── key：trim → lowercase；空白/空字串 key 直接忽略
+  ├── key 中的 space / "-" / "." → "_"
+  ├── string：trim 後非空才保留
+  ├── bool / number：轉字串
+  ├── []string / []any：逐項展平
+  ├── map[string]any：
+  │     ├── 如果含 key 或 value 欄位 → 只取該欄位字串值
+  │     │   其他欄位（例如 weightPercent）目前不進 prompt
+  │     └── 否則遞迴展平成 parent_child_key
+  └── 其他型別：先 json.Marshal；Marshal 失敗才報 INVALID_ANALYSIS_PAYLOAD
 ```
 
 **LinkChat strategy 的額外 block**
@@ -873,13 +899,13 @@ subject: {subjectId}
 ## [SUBJECT_PROFILE]
 subject: {subjectId}
 
-### [module:astrology]
+### [analysis:astrology]
 theory_version: astro-v1
 moon_sign: ASTRO_MOON_PIS_01
 sun_sign: ASTRO_SUN_SCO_01
 
 ## [THEORY_CODEBOOK]
-### [module:astrology][theory:astro-v1]
+### [analysis:astrology][theory:astro-v1]
 moon_sign: ASTRO_MOON_PIS_01 => intuitive|empathetic|fluid
 sun_sign: ASTRO_SUN_SCO_01 => intense|probing|controlled
 ```
@@ -890,18 +916,20 @@ sun_sign: ASTRO_SUN_SCO_01 => intense|probing|controlled
 |--------|------|---------|
 | UNKNOWN_PROMPT_STRATEGY | 500 | appPromptConfigs 裡的 strategyKey 不認得 |
 | THEORY_MAPPING_STORE_UNAVAILABLE | 500 | strategy 需要 mapping，但 store 不可用 |
-| THEORY_MAPPING_SCOPE_NOT_FOUND | 500 | 找不到 appId + moduleKey + theoryVersion 這個 mapping scope |
-| THEORY_MAPPING_SLOT_NOT_FOUND | 500 | 找不到對應 factKey 的 slot mapping |
+| THEORY_MAPPING_SCOPE_NOT_FOUND | 500 | 找不到 appId + analysisType（Firestore 欄位名仍是 moduleKey）+ theoryVersion 這個 mapping scope |
+| THEORY_MAPPING_SLOT_NOT_FOUND | 500 | 找不到對應 payload line key 的 slot mapping |
 | THEORY_MAPPING_NOT_FOUND | 500 | 找不到 raw value 對應的 internal code |
 | INVALID_THEORY_MAPPING | 500 | mapping row 缺 slot/raw/internalCode |
 | DUPLICATE_THEORY_MAPPING | 500 | 同一個 slot/rawValue 重複 |
+| UNSUPPORTED_ANALYSIS_TYPE | 400 | LinkChat strategy 不認得 analysisType |
+| INVALID_ANALYSIS_PAYLOAD | 400 | payload 值無法展平，且 json.Marshal 也失敗 |
 
 **目前的限制 / 刻意設計**
 ```
 1. LinkChat strategy 的 THEORY_CODEBOOK 會放在 SUBJECT_PROFILE 後、第一個 source block 前
 2. appPromptConfig 與 theoryMappings 有 process-local cache，但沒有 TTL / invalidation
 3. Firestore 裡改了 strategy 或 mapping，要重啟服務才保證吃到最新值
-4. code 目前只擋「空白 theoryVersion」；像 astrology 是否一定要帶 theoryVersion，文件已鎖規則，但 production code 還沒在 gatekeeper 寫死
+4. `appId=linkchat` 且 `analysisType=astrology` 時，gatekeeper 與 builder renderer 都會要求 theoryVersion
 ```
 
 ---
