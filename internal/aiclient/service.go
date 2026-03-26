@@ -52,10 +52,27 @@ func (s *AnalyzeService) Analyze(ctx context.Context, model, text, instructions 
 		Instructions: instructions,
 		Attachments:  attachments,
 	}
+	if s.config.AIPreviewMode {
+		return s.previewAnalyze(request)
+	}
 	if strings.TrimSpace(s.config.OpenAIAPIKey) == "" {
 		return s.mockAnalyze(request), nil
 	}
 	return s.openAIAnalyze(ctx, request)
+}
+
+func (s *AnalyzeService) previewAnalyze(request analyzeRequest) (infra.ConsultBusinessResponse, error) {
+	payload := s.buildPreviewPayload(request)
+	body, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return infra.ConsultBusinessResponse{}, err
+	}
+	return infra.ConsultBusinessResponse{
+		Status:    true,
+		StatusAns: "PROMPT_PREVIEW",
+		Response:  string(body),
+		Preview:   true,
+	}, nil
 }
 
 func (s *AnalyzeService) mockAnalyze(request analyzeRequest) infra.ConsultBusinessResponse {
@@ -97,58 +114,11 @@ func (s *AnalyzeService) mockAnalyze(request analyzeRequest) infra.ConsultBusine
 }
 
 func (s *AnalyzeService) openAIAnalyze(ctx context.Context, request analyzeRequest) (infra.ConsultBusinessResponse, error) {
-	content := make([]map[string]any, 0, 1+len(request.Attachments))
-	content = append(content, map[string]any{
-		"type": "input_text",
-		"text": request.UserText,
-	})
-
-	for _, attachment := range request.Attachments {
-		fileID, kind, err := s.uploadFile(ctx, attachment)
-		if err != nil {
-			return infra.ConsultBusinessResponse{}, err
-		}
-		if kind == "image" {
-			content = append(content, map[string]any{
-				"type":    "input_image",
-				"file_id": fileID,
-				"detail":  "auto",
-			})
-			continue
-		}
-		content = append(content, map[string]any{
-			"type":    "input_file",
-			"file_id": fileID,
-		})
+	content, err := s.buildOpenAIInputContent(ctx, request)
+	if err != nil {
+		return infra.ConsultBusinessResponse{}, err
 	}
-
-	payload := map[string]any{
-		"model":        request.Model,
-		"instructions": request.Instructions,
-		"store":        false,
-		"text": map[string]any{
-			"format": map[string]any{
-				"type": "json_schema",
-				"name": "consult_response",
-				"schema": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"status":    map[string]any{"type": "boolean"},
-						"statusAns": map[string]any{"type": "string"},
-						"response":  map[string]any{"type": "string"},
-					},
-					"required":             []string{"status", "statusAns", "response"},
-					"additionalProperties": false,
-				},
-			},
-		},
-		"input": []map[string]any{
-			{
-				"role":    "user",
-				"content": content,
-			},
-		},
-	}
+	payload := buildResponsesPayload(request, content)
 
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -196,6 +166,89 @@ func (s *AnalyzeService) openAIAnalyze(ctx context.Context, request analyzeReque
 		return infra.ConsultBusinessResponse{}, infra.NewError("OPENAI_ANALYSIS_FAILED", "OpenAI response did not match the expected JSON contract.", http.StatusBadGateway)
 	}
 	return businessResponse, nil
+}
+
+func (s *AnalyzeService) buildOpenAIInputContent(ctx context.Context, request analyzeRequest) ([]map[string]any, error) {
+	content := make([]map[string]any, 0, 1+len(request.Attachments))
+	content = append(content, map[string]any{
+		"type": "input_text",
+		"text": request.UserText,
+	})
+
+	for _, attachment := range request.Attachments {
+		fileID, kind, err := s.uploadFile(ctx, attachment)
+		if err != nil {
+			return nil, err
+		}
+		if kind == "image" {
+			content = append(content, map[string]any{
+				"type":    "input_image",
+				"file_id": fileID,
+				"detail":  "auto",
+			})
+			continue
+		}
+		content = append(content, map[string]any{
+			"type":    "input_file",
+			"file_id": fileID,
+		})
+	}
+	return content, nil
+}
+
+func (s *AnalyzeService) buildPreviewPayload(request analyzeRequest) map[string]any {
+	content := make([]map[string]any, 0, 1+len(request.Attachments))
+	content = append(content, map[string]any{
+		"type": "input_text",
+		"text": request.UserText,
+	})
+	for _, attachment := range request.Attachments {
+		entry := map[string]any{
+			"type":                 "input_file",
+			"preview_file_name":    attachment.FileName,
+			"preview_content_type": attachment.ContentType,
+			"preview_size_bytes":   len(attachment.Data),
+		}
+		if isImageName(attachment.FileName) {
+			entry["type"] = "input_image"
+			entry["detail"] = "auto"
+		}
+		content = append(content, entry)
+	}
+	payload := buildResponsesPayload(request, content)
+	payload["preview"] = true
+	payload["preview_note"] = "OpenAI was not called. Attachment entries are local summaries without uploaded file_id."
+	return payload
+}
+
+func buildResponsesPayload(request analyzeRequest, content []map[string]any) map[string]any {
+	return map[string]any{
+		"model":        request.Model,
+		"instructions": request.Instructions,
+		"store":        false,
+		"text": map[string]any{
+			"format": map[string]any{
+				"type": "json_schema",
+				"name": "consult_response",
+				"schema": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"status":    map[string]any{"type": "boolean"},
+						"statusAns": map[string]any{"type": "string"},
+						"response":  map[string]any{"type": "string"},
+					},
+					"required":             []string{"status", "statusAns", "response"},
+					"additionalProperties": false,
+				},
+			},
+		},
+		"input": []map[string]any{
+			{
+				"role":    "user",
+				"content": content,
+			},
+		},
+	}
 }
 
 func (s *AnalyzeService) uploadFile(ctx context.Context, attachment infra.Attachment) (string, string, error) {

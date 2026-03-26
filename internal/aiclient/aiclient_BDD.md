@@ -8,6 +8,12 @@
 - aiclient usecase：對 builder 暴露單一 analyze 入口
 
 ## Scenario Group: Analyze Mode Selection
+- Given preview mode 開關為 true
+  When `AnalyzeService.Analyze` 執行
+  Then 不應呼叫外部 OpenAI API
+  And 應直接回傳 `status=true`、`statusAns=PROMPT_PREVIEW`
+  And `response` 應包含完整 AI request preview
+
 - Given `OpenAIAPIKey` 為空
   When `AnalyzeService.Analyze` 執行
   Then 應走 mock analyze 流程，不呼叫外部 OpenAI API
@@ -15,6 +21,11 @@
 - Given `OpenAIAPIKey` 有值
   When `AnalyzeService.Analyze` 執行
   Then 應走 OpenAI Responses API 與 Files API 流程
+
+- Given preview mode 開關為 true 且 `OpenAIAPIKey` 有值
+  When `AnalyzeService.Analyze` 執行
+  Then 仍應優先走 preview mode
+  And 不應上傳附件到 Files API
 
 ## Scenario Group: Mock Analyze
 - Given instructions 中的 `[RAW_USER_TEXT]` 看起來像 prompt injection
@@ -35,8 +46,11 @@
 
 ## Scenario Group: OpenAI Analyze
 ```text
-OpenAI analyze
+analyze
      │
+     ├─ preview mode？
+     │   ├─ 是 -> 直接回 preview response
+     │   └─ 否
      ├─ normalize instructions / user text
      ├─ attachments 存在？
      │   ├─ 是 -> upload Files API
@@ -47,6 +61,21 @@ OpenAI analyze
      ├─ parse structured JSON
      └─ map OpenAI errors -> business errors
 ```
+
+## Scenario Group: Prompt Preview
+- Given preview mode 開關為 true
+  When analyze 執行
+  Then `response` 應包含 model、instructions、user message text
+
+- Given preview mode 開關為 true 且有附件
+  When analyze 執行
+  Then `response` 應包含附件摘要
+  And 不應包含真實 OpenAI file id
+
+- Given preview mode 開關為 true
+  When builder 已將 structured profile data 組進 instructions
+  Then preview 內容應原樣保留這些組裝結果
+  And aiclient 不應額外理解 module 業務語意
 
 - Given OpenAI 模式啟用
   When analyze 執行
@@ -79,6 +108,7 @@ OpenAI analyze
 ## Acceptance Notes
 - aiclient 對外行為結果固定為 `infra.ConsultBusinessResponse`
 - mock mode 是目前本地開發與測試的重要 fallback，不是暫時性 stub
+- preview mode 是 local/dev 觀察 prompt 的正式模式，不是臨時 debug print
 - LinkChat profile-analysis 的 module 組合與理論資料，由 builder 負責組 prompt，aiclient 不應理解其業務語意
 
 ## Code-Backed Tests

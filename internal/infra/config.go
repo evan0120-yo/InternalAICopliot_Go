@@ -21,6 +21,7 @@ type Config struct {
 	ServerReadTimeout     time.Duration
 	ServerWriteTimeout    time.Duration
 	OpenAITimeout         time.Duration
+	AIPreviewMode         bool
 	OpenAIAPIKey          string
 	OpenAIBaseURL         string
 	OpenAIModel           string
@@ -41,6 +42,7 @@ func LoadConfigFromEnv() Config {
 		ServerReadTimeout:     getenvDurationCompat("INTERNAL_AI_COPILOT_SERVER_READ_TIMEOUT", "REWARDBRIDGE_SERVER_READ_TIMEOUT", 10*time.Second),
 		ServerWriteTimeout:    getenvDurationCompat("INTERNAL_AI_COPILOT_SERVER_WRITE_TIMEOUT", "REWARDBRIDGE_SERVER_WRITE_TIMEOUT", 180*time.Second),
 		OpenAITimeout:         getenvDurationCompat("INTERNAL_AI_COPILOT_OPENAI_TIMEOUT", "REWARDBRIDGE_OPENAI_TIMEOUT", 120*time.Second),
+		AIPreviewMode:         getenvBoolCompat("INTERNAL_AI_COPILOT_AI_PREVIEW_MODE", "REWARDBRIDGE_AI_PREVIEW_MODE", false),
 		OpenAIAPIKey:          os.Getenv("OPENAI_API_KEY"),
 		OpenAIBaseURL:         getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
 		OpenAIModel:           getenvCompat("INTERNAL_AI_COPILOT_AI_MODEL", "REWARDBRIDGE_AI_MODEL", "gpt-4o"),

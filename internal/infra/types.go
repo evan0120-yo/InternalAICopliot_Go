@@ -35,6 +35,7 @@ type ConsultBusinessResponse struct {
 	StatusAns string              `json:"statusAns"`
 	Response  string              `json:"response"`
 	File      *ConsultFilePayload `json:"file,omitempty"`
+	Preview   bool                `json:"-"`
 }
 
 // Attachment represents a single consult upload.

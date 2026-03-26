@@ -62,3 +62,32 @@ func TestRenderMarkdownRenderer(t *testing.T) {
 		t.Fatalf("unexpected markdown file: %+v", file)
 	}
 }
+
+func TestRenderSkipsFileGenerationForPreviewResponse(t *testing.T) {
+	service := NewRenderService()
+	defaultFormat := "markdown"
+
+	response, err := service.Render(RenderCommand{
+		BuilderConfig: infra.BuilderConfig{
+			BuilderID:           1,
+			IncludeFile:         true,
+			DefaultOutputFormat: &defaultFormat,
+			FilePrefix:          "pm-estimate",
+		},
+		BusinessResponse: infra.ConsultBusinessResponse{
+			Status:    true,
+			StatusAns: "PROMPT_PREVIEW",
+			Response:  "preview body",
+			Preview:   true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Render returned error: %v", err)
+	}
+	if response.File != nil {
+		t.Fatalf("expected preview response to skip file generation, got %+v", response.File)
+	}
+	if response.Response != "preview body" || response.StatusAns != "PROMPT_PREVIEW" {
+		t.Fatalf("unexpected preview response: %+v", response)
+	}
+}

@@ -22,7 +22,7 @@ func (s *RenderService) Render(command RenderCommand) (infra.ConsultBusinessResp
 	response := command.BusinessResponse
 	response.File = nil
 
-	if !response.Status || !command.BuilderConfig.IncludeFile {
+	if response.Preview || !response.Status || !command.BuilderConfig.IncludeFile {
 		return response, nil
 	}
 

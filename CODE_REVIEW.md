@@ -11,7 +11,9 @@
 
 ## 它是什麼
 
-一個**可設定的 AI 諮詢引擎**。核心概念是「Builder」——每個 Builder 代表一種 AI 諮詢任務（比如需求分析、測試案例生成）。管理員透過後台設定每個 Builder 的 prompt 結構（Sources + RAG 補充），使用者選一個 Builder 丟問題進去，系統把 prompt 拼好丟給 OpenAI，拿到結果回傳。
+一個**可設定的 AI 諮詢引擎**。核心概念是「Builder」——每個 Builder 代表一種 AI 諮詢任務（比如需求分析、測試案例生成）。管理員透過後台設定每個 Builder 的 prompt 結構（Sources + RAG 補充），使用者選一個 Builder 丟問題進去，系統把 prompt 拼好後，依執行模式決定：
+- 正常模式：送 OpenAI / mock analyze
+- preview mode：不呼叫 OpenAI，直接把完整 AI request preview 回給前端
 
 不是聊天機器人。每次諮詢是獨立的一次性請求→回應，沒有對話歷史。
 
@@ -28,7 +30,7 @@
 
 - **QPS**：個位數到兩位數，不會超過 100
 - **Builder 數量**：目前 seed 資料只有 2 個，預期十幾到幾十個
-- **單次請求耗時**：主要瓶頸在 OpenAI API 呼叫（write timeout 設 180 秒），不是 DB 讀寫
+- **單次請求耗時**：正常模式主要瓶頸在 OpenAI API 呼叫（write timeout 設 180 秒），不是 DB 讀寫；preview mode 會短路跳過這段
 - **資料量**：Firestore 裡的 builders/sources/templates 數量都很小，所以很多地方用「全撈再 Go 層過濾」而不是 Firestore query
 
 ## 設計上的刻意選擇
@@ -117,7 +119,10 @@
              │
              ├── 組裝成完整 prompt（有嚴格順序）
              │
-             ├── 丟給 OpenAI（或 mock）
+             ├── AI 執行模式判斷
+             │     ├── preview mode？→ 直接回完整 request preview
+             │     ├── 沒設 API Key？→ mock
+             │     └── 其餘 → OpenAI
              │
              └── 看要不要產生檔案 → 回傳結果
 ```
@@ -189,17 +194,21 @@
   └──────────────────────┬──────────────────────────┘
                          │
                          ▼
-  ┌─ 第四步：呼叫 AI ──────────────────────┐
-  │     ├── 沒設 API Key → mock 模式       │
-  │     └── 有設 → 真實 OpenAI             │
+  ┌─ 第四步：呼叫 AI / preview ─────────────────────────────┐
+  │     ├── AIPreviewMode=true → 不打 OpenAI               │
+  │     │                        直接回 PROMPT_PREVIEW     │
+  │     │                        response 是完整 request JSON │
+  │     ├── 沒設 API Key → mock 模式                       │
+  │     └── 其餘 → 真實 OpenAI                             │
   └──────────────┬─────────────────────────┘
                  │
                  ▼
-  ┌─ 第五步：輸出渲染 ────────────────────┐
-  │     ├── status=false？→ 不產檔案      │
-  │     ├── 沒開 IncludeFile？→ 不產檔案  │
-  │     ├── markdown → 直接轉 bytes       │
-  │     └── xlsx → 解析表格 → 組裝        │
+  ┌─ 第五步：輸出渲染 ───────────────────────────────┐
+  │     ├── response.Preview=true？→ 不產檔案        │
+  │     ├── status=false？→ 不產檔案                 │
+  │     ├── 沒開 IncludeFile？→ 不產檔案             │
+  │     ├── markdown → 直接轉 bytes                  │
+  │     └── xlsx → 解析表格 → 組裝                   │
   └──────────────┬─────────────────────────┘
                  │
                  ▼
@@ -617,8 +626,11 @@ gatekeeper.Handler.consult
       → Stage 3: AssembleService.AssemblePrompt
       → Stage 4: aiclient.AnalyzeUseCase.Analyze
         → aiclient.AnalyzeService.Analyze
+          → AIPreviewMode=true ? 直接回 preview JSON
+          → 否則再走 mock / OpenAI
       → Stage 5: output.RenderUseCase.Render
         → output.RenderService.Render
+          → response.Preview=true ? 跳過 file render
   → infra.WriteJSON (200)
 ```
 
@@ -626,6 +638,13 @@ gatekeeper.Handler.consult
 - `POST /api/consult` 會讀 form 裡的 `appId`
 - 這個 `appId` 會一路帶進 `builder.ConsultCommand.AppID`
 - 但 generic consult 沒有 `subjectProfile`，所以目前通常只是在 strategy dispatch 上「走過流程但不產生內容」
+- `INTERNAL_AI_COPILOT_AI_PREVIEW_MODE=true` 時，這條路徑不會打 OpenAI，而是回 `PROMPT_PREVIEW`
+- preview `response` 內容是完整 AI request JSON：
+  - `model`
+  - `instructions`
+  - `text.format.json_schema`
+  - `input[0].content[]`
+  - 附件只會列本地摘要，不會有真實 `file_id`
 
 **錯誤碼清單（依檢查順序）**
 
@@ -652,6 +671,17 @@ gatekeeper.Handler.consult
 | OPENAI_EMPTY_OUTPUT | 502 | OpenAI 回應無內容 |
 | BUILDER_DEFAULT_OUTPUT_FORMAT_MISSING | 500 | Builder 需要出檔但沒設 defaultOutputFormat |
 | BUILDER_DEFAULT_OUTPUT_FORMAT_INVALID | 500 | Builder 的 defaultOutputFormat 無效 |
+
+**AIPreviewMode 行為**
+```
+1. 優先權最高：比 mock / OpenAI 都早判斷
+2. 直接回 infra.ConsultBusinessResponse
+   - status=true
+   - statusAns="PROMPT_PREVIEW"
+   - response=完整 request preview JSON
+3. response.File 不會產生
+4. Preview 是 internal flag（json:"-"），不會多吐一個前端欄位
+```
 
 **Prompt injection 檢查關鍵字 (mock 模式)**
 ```
@@ -1233,6 +1263,7 @@ builder.AdminHandler.deleteTemplate
 | Server read timeout | INTERNAL_AI_COPILOT_SERVER_READ_TIMEOUT | 10s |
 | Server write timeout | INTERNAL_AI_COPILOT_SERVER_WRITE_TIMEOUT | 180s |
 | OpenAI timeout | INTERNAL_AI_COPILOT_OPENAI_TIMEOUT | 120s |
+| AI preview mode | INTERNAL_AI_COPILOT_AI_PREVIEW_MODE | false |
 | OpenAI API Key | OPENAI_API_KEY | (空→mock) |
 | OpenAI Base URL | OPENAI_BASE_URL | https://api.openai.com/v1 |
 | AI 模型 | INTERNAL_AI_COPILOT_AI_MODEL | gpt-4o |

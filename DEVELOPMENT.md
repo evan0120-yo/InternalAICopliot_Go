@@ -109,6 +109,13 @@ Go 版 local 開發必須支援一種與 Java `create-drop + initData` 等價的
 - `INTERNAL_AI_COPILOT_FIRESTORE_PROJECT_ID`
 - `INTERNAL_AI_COPILOT_FIRESTORE_EMULATOR_HOST`
 - `INTERNAL_AI_COPILOT_STORE_RESET_ON_START`
+- `INTERNAL_AI_COPILOT_AI_PREVIEW_MODE`
+
+AI preview mode 使用原則：
+- 開啟時，aiclient 不呼叫 GPT / OpenAI
+- 直接回傳原本準備送給 AI 的完整 preview 內容
+- 用途是 local/dev 檢查 prompt、user message 與附件摘要
+- 不應在未受保護的 production 環境長期啟用
 
 舊前綴相容：
 - `REWARDBRIDGE_*` 目前仍保留 fallback，相容既有本機與部署設定

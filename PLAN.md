@@ -123,6 +123,12 @@ consult request 進入
   組裝 prompt
         │
         ▼
+┌───────────────────┐
+│ preview mode      │──── 是 ──→ 直接回傳完整 AI request preview
+│ 開啟？            │          （不呼叫 GPT）
+└───────┬───────────┘
+        │ 否
+        ▼
   呼叫 AI
         │
         ▼
