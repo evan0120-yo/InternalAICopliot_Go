@@ -32,7 +32,6 @@ type ConsultCommand struct {
 	OutputFormat     *infra.OutputFormat
 	Attachments      []infra.Attachment
 	ClientIP         string
-	AnalysisModules  []string
 	SubjectProfile   *SubjectProfile
 }
 
@@ -43,21 +42,15 @@ type promptAssemblyResult struct {
 
 // SubjectProfile is the structured profile-analysis payload.
 type SubjectProfile struct {
-	SubjectID      string
-	ModulePayloads []SubjectModulePayload
+	SubjectID        string
+	AnalysisPayloads []SubjectAnalysisPayload
 }
 
-// SubjectModulePayload groups facts for one analysis module.
-type SubjectModulePayload struct {
-	ModuleKey     string
+// SubjectAnalysisPayload is one analysis-type-specific profile payload.
+type SubjectAnalysisPayload struct {
+	AnalysisType  string
 	TheoryVersion *string
-	Facts         []SubjectFact
-}
-
-// SubjectFact is one structured subject fact entry.
-type SubjectFact struct {
-	FactKey string
-	Values  []string
+	Payload       map[string]any
 }
 
 // BuilderGraphBuilderResponse is the builder graph builder payload.

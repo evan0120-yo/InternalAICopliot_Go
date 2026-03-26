@@ -24,6 +24,18 @@
   Then 應回傳 `APP_ID_MISSING`
 
 ## Scenario Group: Generic Consult Request Parsing
+```text
+HTTP multipart request
+      │
+      ├─ parse multipart form
+      ├─ parse builderId / text / outputFormat
+      ├─ read files -> attachments
+      ├─ public route
+      │   └─ optional appId 只作 strategy hint
+      └─ external route
+          └─ X-App-Id 走 external app auth
+```
+
 - Given multipart form parsing 失敗
   When handler 執行 `ParseMultipartForm`
   Then 應回傳 `INVALID_MULTIPART`
@@ -57,43 +69,33 @@
   Then 應回傳 `INVALID_JSON`
 
 ## Scenario Group: Profile Consult Validation
-- Given grpcapi `ProfileConsult` 傳入 `analysisModules=["astrology","mbti"]` 與對應的 structured `subjectProfile`
-  When gatekeeper 驗證 structured profile consult
-  Then 應將這些 modules 視為本次 request 的顯式 module set，並以 `ConsultModeProfile` 轉交 builder usecase
+```text
+ProfileConsult request
+       │
+       ├─ builderId 驗證
+       ├─ subjectProfile 缺值？
+       │   └─ 是 -> 合法 text-only profile
+       └─ subjectProfile 有值
+           ├─ subjectId 必填
+           ├─ analysisPayloads[] 不可重複
+           ├─ analysisType 需合法
+           ├─ theoryVersion 若提供不可空白
+           └─ linkchat + astrology -> theoryVersion 必填
+```
 
-- Given `ProfileConsult` 傳入 `analysisModules=[]` 且 `text` 有值
+- Given grpcapi `ProfileConsult` 傳入帶有多個 analysis payload 的 structured `subjectProfile`
+  When gatekeeper 驗證 structured profile consult
+  Then 應保留 `builderId` 與 `subjectProfile` envelope，並以 `ConsultModeProfile` 轉交 builder usecase
+
+- Given `ProfileConsult` 未帶 `subjectProfile` 但 `text` 有值
   When gatekeeper 驗證 structured profile consult
   Then 不應拒絕該 request，且仍應以 `ConsultModeProfile` 轉交 builder usecase
 
-- Given structured `subjectProfile` 內出現不在 `analysisModules` 內的 module payload
-  When gatekeeper 驗證 structured profile consult
-  Then 應拒絕該 request，視為 malformed structured consult
-
-- Given `analysisModules` 包含 `common`
-  When gatekeeper 驗證 structured profile consult
-  Then 應拒絕該 request，因為 `common` 是保留字
-
-- Given `analysisModules` 內的 module key 不符合 `^[a-z0-9][a-z0-9_-]*$`
+- Given structured `subjectProfile` 內某個 analysis payload 缺少 `analysisType`
   When gatekeeper 驗證 structured profile consult
   Then 應拒絕該 request
 
-- Given structured `subjectProfile` 內同一個 `moduleKey` 出現兩次
-  When gatekeeper 驗證 structured profile consult
-  Then 應拒絕該 request
-
-- Given structured `subjectProfile` 內同一個 module 的 `factKey` 出現兩次
-  When gatekeeper 驗證 structured profile consult
-  Then 應拒絕該 request
-
-- Given structured `subjectProfile` 內的 `factKey` 為空白
-  When gatekeeper 驗證 structured profile consult
-  Then 應拒絕該 request
-
-- Given structured `subjectProfile` 內某個 fact 沒有任何 value
-  When gatekeeper 驗證 structured profile consult
-  Then 應拒絕該 request
-
-- Given structured `subjectProfile` 內某個 value 為空白
+- Given structured `subjectProfile` 內同一個 `analysisType` 出現兩次
   When gatekeeper 驗證 structured profile consult
   Then 應拒絕該 request
 
@@ -101,15 +103,44 @@
   When gatekeeper 驗證 structured profile consult
   Then 應拒絕該 request
 
-- Given `appId=linkchat` 且 `subjectProfile` 內存在 `moduleKey=astrology`
+- Given `appId=linkchat` 且 `subjectProfile` 內存在 `analysisType=astrology`
   When gatekeeper 與下游 strategy 協作處理 structured profile consult
   Then 該 payload 應被視為需要 `theoryVersion` 的 module
 
-- Given LinkChat 已因缺資料而省略某個 module
+- Given `appId=linkchat` 且 `subjectProfile` 內存在 `analysisType=mbti`
+  When gatekeeper 與下游 strategy 協作處理 structured profile consult
+  Then 該 payload 目前可省略 `theoryVersion`
+
+- Given LinkChat 已因缺資料而省略某個 analysis payload
   When gatekeeper 驗證 structured profile consult
-  Then gatekeeper 不應自行補回或推測該 module
+  Then gatekeeper 不應自行補回或推測該 analysis type
+
+- Given analysis payload 內部是 astrology 專屬 shape 或 mbti 專屬 shape
+  When gatekeeper 驗證 structured profile consult
+  Then gatekeeper 只驗共享 envelope，不負責解析各 analysis type 的內部欄位
 
 ## Scenario Group: Client IP Resolution
+
+```text
+Client IP 瀑布回退解析流程
+
+  X-Forwarded-For 存在？
+       │
+       ├── 是 → 取第一個 IP → 回傳 client IP
+       │
+       └── 否
+            │
+            ▼
+       X-Real-IP 存在？
+            │
+            ├── 是 → 使用 X-Real-IP → 回傳 client IP
+            │
+            └── 否
+                 │
+                 ▼
+            回退到 RemoteAddr → 回傳 client IP
+```
+
 - Given request 含 `X-Forwarded-For`
   When guard service 解析 client IP
   Then 應取第一個 IP 作為 client IP
@@ -123,6 +154,19 @@
   Then 應回退到 `RemoteAddr`
 
 ## Scenario Group: Consult Validation
+```text
+Consult 驗證主鏈
+    │
+    ├─ external path ? -> app auth
+    ├─ builder validation
+    ├─ outputFormat validation
+    ├─ file limits validation
+    ├─ client IP resolution
+    └─ mode 決定
+        ├─ generic -> ConsultModeGeneric
+        └─ profile -> ConsultModeProfile
+```
+
 - Given external API 缺少 `appId`
   When `ValidateExternalApp` 或 `ValidateExternalConsult` 執行
   Then 應回傳 `APP_ID_MISSING`
@@ -177,7 +221,7 @@
 
 - Given external app structured profile consult request 合法
   When usecase 執行 consult
-  Then 應將 appId、builderId、analysisModules、optional `subjectProfile`、text、client IP 與 `ConsultModeProfile` 轉交給 builder consult usecase
+  Then 應將 appId、builderId、optional `subjectProfile`、text、client IP 與 `ConsultModeProfile` 轉交給 builder consult usecase
 
 - Given public generic consult request 未帶 `appId`
   When usecase 執行 consult
@@ -190,6 +234,7 @@
 - gatekeeper 的 usecase / service 也應承接 grpcapi 轉進來的 generic `Consult` 與 `ProfileConsult`
 - gatekeeper 不應自行組裝 prompt，也不應直接接觸 repository 細節
 - `POST /api/profile-consult` 的 `appId` 只作為 prompt strategy hint，不代表通過 external app auth
+- LinkChat analysis-specific payload parsing 應落在 builder 內第二層 factory，而不是 gatekeeper
 
 ## Code-Backed Tests
 - `service_test.go`

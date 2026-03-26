@@ -2,7 +2,6 @@ package builder
 
 import (
 	"context"
-	"log"
 	"sync"
 
 	"com.citrus.internalaicopilot/internal/aiclient"
@@ -102,7 +101,7 @@ func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (i
 	}
 
 	if command.Mode == ConsultModeProfile {
-		filteredSources, filterErr := filterSourcesForProfileConsult(sources, command.AnalysisModules)
+		filteredSources, filterErr := u.assembleService.FilterProfileSources(ctx, command.AppID, sources, command.SubjectProfile)
 		if filterErr != nil {
 			return infra.ConsultBusinessResponse{}, filterErr
 		}
@@ -167,32 +166,4 @@ func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (i
 		OutputFormat:     command.OutputFormat,
 		BusinessResponse: businessResponse,
 	})
-}
-
-func filterSourcesForProfileConsult(sources []infra.Source, analysisModules []string) ([]infra.Source, error) {
-	if len(sources) == 0 {
-		return nil, nil
-	}
-
-	allowedModules := make(map[string]struct{}, len(analysisModules))
-	for _, moduleKey := range analysisModules {
-		allowedModules[moduleKey] = struct{}{}
-	}
-
-	filtered := make([]infra.Source, 0, len(sources))
-	for _, source := range sources {
-		moduleKey, err := NormalizeStoredModuleKey(source.ModuleKey)
-		if err != nil {
-			log.Printf("invalid stored source moduleKey ignored in profile consult: sourceId=%d raw=%q err=%v", source.SourceID, source.ModuleKey, err)
-			return nil, infra.NewError("INVALID_SOURCE_MODULE_KEY", "Stored source moduleKey is invalid.", 500)
-		}
-		if moduleKey == "" {
-			filtered = append(filtered, source)
-			continue
-		}
-		if _, ok := allowedModules[moduleKey]; ok {
-			filtered = append(filtered, source)
-		}
-	}
-	return filtered, nil
 }

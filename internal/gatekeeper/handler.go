@@ -68,7 +68,6 @@ func (h *Handler) profileConsult(w http.ResponseWriter, r *http.Request) {
 		r.Context(),
 		strings.TrimSpace(request.AppID),
 		request.BuilderID,
-		append([]string(nil), request.AnalysisModules...),
 		request.toSubjectProfile(),
 		request.Text,
 		clientIP,
@@ -149,27 +148,21 @@ func parseConsultMultipart(w http.ResponseWriter, r *http.Request, multipartMemo
 }
 
 type profileConsultRequest struct {
-	AppID           string                        `json:"appId"`
-	BuilderID       int                           `json:"builderId"`
-	AnalysisModules []string                      `json:"analysisModules"`
-	SubjectProfile  *subjectProfileRequestPayload `json:"subjectProfile"`
-	Text            string                        `json:"text"`
+	AppID          string                        `json:"appId"`
+	BuilderID      int                           `json:"builderId"`
+	SubjectProfile *subjectProfileRequestPayload `json:"subjectProfile"`
+	Text           string                        `json:"text"`
 }
 
 type subjectProfileRequestPayload struct {
-	SubjectID      string                        `json:"subjectId"`
-	ModulePayloads []subjectModuleRequestPayload `json:"modulePayloads"`
+	SubjectID        string                          `json:"subjectId"`
+	AnalysisPayloads []subjectAnalysisRequestPayload `json:"analysisPayloads"`
 }
 
-type subjectModuleRequestPayload struct {
-	ModuleKey     string                   `json:"moduleKey"`
-	TheoryVersion *string                  `json:"theoryVersion,omitempty"`
-	Facts         []subjectFactRequestItem `json:"facts"`
-}
-
-type subjectFactRequestItem struct {
-	FactKey string   `json:"factKey"`
-	Values  []string `json:"values"`
+type subjectAnalysisRequestPayload struct {
+	AnalysisType  string         `json:"analysisType"`
+	TheoryVersion *string        `json:"theoryVersion,omitempty"`
+	Payload       map[string]any `json:"payload"`
 }
 
 func (r profileConsultRequest) toSubjectProfile() *builder.SubjectProfile {
@@ -178,22 +171,16 @@ func (r profileConsultRequest) toSubjectProfile() *builder.SubjectProfile {
 	}
 
 	profile := &builder.SubjectProfile{
-		SubjectID:      r.SubjectProfile.SubjectID,
-		ModulePayloads: make([]builder.SubjectModulePayload, 0, len(r.SubjectProfile.ModulePayloads)),
+		SubjectID:        r.SubjectProfile.SubjectID,
+		AnalysisPayloads: make([]builder.SubjectAnalysisPayload, 0, len(r.SubjectProfile.AnalysisPayloads)),
 	}
-	for _, payload := range r.SubjectProfile.ModulePayloads {
-		modulePayload := builder.SubjectModulePayload{
-			ModuleKey:     payload.ModuleKey,
+	for _, payload := range r.SubjectProfile.AnalysisPayloads {
+		analysisPayload := builder.SubjectAnalysisPayload{
+			AnalysisType:  payload.AnalysisType,
 			TheoryVersion: cloneOptionalString(payload.TheoryVersion),
-			Facts:         make([]builder.SubjectFact, 0, len(payload.Facts)),
+			Payload:       clonePayloadMap(payload.Payload),
 		}
-		for _, fact := range payload.Facts {
-			modulePayload.Facts = append(modulePayload.Facts, builder.SubjectFact{
-				FactKey: fact.FactKey,
-				Values:  append([]string(nil), fact.Values...),
-			})
-		}
-		profile.ModulePayloads = append(profile.ModulePayloads, modulePayload)
+		profile.AnalysisPayloads = append(profile.AnalysisPayloads, analysisPayload)
 	}
 	return profile
 }
@@ -204,4 +191,31 @@ func cloneOptionalString(value *string) *string {
 	}
 	cloned := *value
 	return &cloned
+}
+
+func clonePayloadMap(payload map[string]any) map[string]any {
+	if len(payload) == 0 {
+		return nil
+	}
+
+	cloned := make(map[string]any, len(payload))
+	for key, value := range payload {
+		cloned[key] = clonePayloadValue(value)
+	}
+	return cloned
+}
+
+func clonePayloadValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return clonePayloadMap(typed)
+	case []any:
+		cloned := make([]any, 0, len(typed))
+		for _, item := range typed {
+			cloned = append(cloned, clonePayloadValue(item))
+		}
+		return cloned
+	default:
+		return typed
+	}
 }

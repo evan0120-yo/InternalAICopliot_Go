@@ -74,8 +74,8 @@ func (u *UseCase) Consult(ctx context.Context, appID string, builderID int, text
 
 // PublicProfileConsult validates and forwards a public structured profile consult request.
 // appID is treated as an optional prompt-strategy hint and does not trigger external app authorization.
-func (u *UseCase) PublicProfileConsult(ctx context.Context, appID string, builderID int, analysisModules []string, subjectProfile *builder.SubjectProfile, text, clientIP string) (infra.ConsultBusinessResponse, error) {
-	builderConfig, normalizedModules, normalizedProfile, err := u.guardService.ValidateProfileConsult(ctx, builderID, analysisModules, subjectProfile, text, clientIP)
+func (u *UseCase) PublicProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, text, clientIP string) (infra.ConsultBusinessResponse, error) {
+	builderConfig, normalizedProfile, err := u.guardService.ValidateProfileConsult(ctx, appID, builderID, subjectProfile, text, clientIP)
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
@@ -87,7 +87,6 @@ func (u *UseCase) PublicProfileConsult(ctx context.Context, appID string, builde
 		PreloadedBuilder: &builderConfig,
 		Text:             text,
 		ClientIP:         clientIP,
-		AnalysisModules:  normalizedModules,
 		SubjectProfile:   normalizedProfile,
 	})
 }
@@ -111,17 +110,16 @@ func (u *UseCase) ExternalConsult(ctx context.Context, appID string, builderID i
 }
 
 // ProfileConsult validates and forwards a structured profile consult request.
-func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID int, analysisModules []string, subjectProfile *builder.SubjectProfile, text, clientIP string) (infra.ConsultBusinessResponse, error) {
+func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, text, clientIP string) (infra.ConsultBusinessResponse, error) {
 	var (
 		builderConfig     infra.BuilderConfig
-		normalizedModules []string
 		normalizedProfile *builder.SubjectProfile
 		err               error
 	)
 	if appID == "" {
-		builderConfig, normalizedModules, normalizedProfile, err = u.guardService.ValidateProfileConsult(ctx, builderID, analysisModules, subjectProfile, text, clientIP)
+		builderConfig, normalizedProfile, err = u.guardService.ValidateProfileConsult(ctx, appID, builderID, subjectProfile, text, clientIP)
 	} else {
-		_, builderConfig, normalizedModules, normalizedProfile, err = u.guardService.ValidateExternalProfileConsult(ctx, appID, builderID, analysisModules, subjectProfile, text, clientIP)
+		_, builderConfig, normalizedProfile, err = u.guardService.ValidateExternalProfileConsult(ctx, appID, builderID, subjectProfile, text, clientIP)
 	}
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
@@ -134,7 +132,6 @@ func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID in
 		PreloadedBuilder: &builderConfig,
 		Text:             text,
 		ClientIP:         clientIP,
-		AnalysisModules:  normalizedModules,
 		SubjectProfile:   normalizedProfile,
 	})
 }

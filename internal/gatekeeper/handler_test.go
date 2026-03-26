@@ -140,17 +140,16 @@ func TestProfileConsultHandlerAllowsPromptStrategyHintWithoutExternalAuth(t *tes
 	request := httptest.NewRequest(http.MethodPost, "/api/profile-consult", strings.NewReader(`{
 		"appId":"linkchat",
 		"builderId":1,
-		"analysisModules":["astrology"],
 		"subjectProfile":{
 			"subjectId":"user-123",
-			"modulePayloads":[
+			"analysisPayloads":[
 				{
-					"moduleKey":"astrology",
+					"analysisType":"astrology",
 					"theoryVersion":"astro-v1",
-					"facts":[
-						{"factKey":"sun_sign","values":["Scorpio"]},
-						{"factKey":"moon_sign","values":["雙魚"]}
-					]
+					"payload":{
+						"sun_sign":["Scorpio"],
+						"moon_sign":["雙魚"]
+					}
 				}
 			]
 		},

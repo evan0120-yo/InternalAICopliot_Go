@@ -9,6 +9,7 @@ package grpcpb
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -422,15 +423,14 @@ func (x *ConsultResponse) GetFile() *FilePayload {
 }
 
 type ProfileConsultRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	AppId           string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	BuilderId       int32                  `protobuf:"varint,2,opt,name=builder_id,json=builderId,proto3" json:"builder_id,omitempty"`
-	AnalysisModules []string               `protobuf:"bytes,3,rep,name=analysis_modules,json=analysisModules,proto3" json:"analysis_modules,omitempty"`
-	SubjectProfile  *SubjectProfile        `protobuf:"bytes,4,opt,name=subject_profile,json=subjectProfile,proto3" json:"subject_profile,omitempty"`
-	Text            string                 `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
-	ClientIp        string                 `protobuf:"bytes,6,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	AppId          string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	BuilderId      int32                  `protobuf:"varint,2,opt,name=builder_id,json=builderId,proto3" json:"builder_id,omitempty"`
+	SubjectProfile *SubjectProfile        `protobuf:"bytes,4,opt,name=subject_profile,json=subjectProfile,proto3" json:"subject_profile,omitempty"`
+	Text           string                 `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
+	ClientIp       string                 `protobuf:"bytes,6,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ProfileConsultRequest) Reset() {
@@ -477,13 +477,6 @@ func (x *ProfileConsultRequest) GetBuilderId() int32 {
 	return 0
 }
 
-func (x *ProfileConsultRequest) GetAnalysisModules() []string {
-	if x != nil {
-		return x.AnalysisModules
-	}
-	return nil
-}
-
 func (x *ProfileConsultRequest) GetSubjectProfile() *SubjectProfile {
 	if x != nil {
 		return x.SubjectProfile
@@ -506,11 +499,11 @@ func (x *ProfileConsultRequest) GetClientIp() string {
 }
 
 type SubjectProfile struct {
-	state          protoimpl.MessageState  `protogen:"open.v1"`
-	SubjectId      string                  `protobuf:"bytes,1,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
-	ModulePayloads []*SubjectModulePayload `protobuf:"bytes,2,rep,name=module_payloads,json=modulePayloads,proto3" json:"module_payloads,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state            protoimpl.MessageState    `protogen:"open.v1"`
+	SubjectId        string                    `protobuf:"bytes,1,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
+	AnalysisPayloads []*SubjectAnalysisPayload `protobuf:"bytes,2,rep,name=analysis_payloads,json=analysisPayloads,proto3" json:"analysis_payloads,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *SubjectProfile) Reset() {
@@ -550,36 +543,36 @@ func (x *SubjectProfile) GetSubjectId() string {
 	return ""
 }
 
-func (x *SubjectProfile) GetModulePayloads() []*SubjectModulePayload {
+func (x *SubjectProfile) GetAnalysisPayloads() []*SubjectAnalysisPayload {
 	if x != nil {
-		return x.ModulePayloads
+		return x.AnalysisPayloads
 	}
 	return nil
 }
 
-type SubjectModulePayload struct {
+type SubjectAnalysisPayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ModuleKey     string                 `protobuf:"bytes,1,opt,name=module_key,json=moduleKey,proto3" json:"module_key,omitempty"`
-	Facts         []*SubjectFact         `protobuf:"bytes,2,rep,name=facts,proto3" json:"facts,omitempty"`
-	TheoryVersion *string                `protobuf:"bytes,3,opt,name=theory_version,json=theoryVersion,proto3,oneof" json:"theory_version,omitempty"`
+	AnalysisType  string                 `protobuf:"bytes,1,opt,name=analysis_type,json=analysisType,proto3" json:"analysis_type,omitempty"`
+	TheoryVersion *string                `protobuf:"bytes,2,opt,name=theory_version,json=theoryVersion,proto3,oneof" json:"theory_version,omitempty"`
+	Payload       *structpb.Struct       `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *SubjectModulePayload) Reset() {
-	*x = SubjectModulePayload{}
+func (x *SubjectAnalysisPayload) Reset() {
+	*x = SubjectAnalysisPayload{}
 	mi := &file_api_grpc_internal_ai_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *SubjectModulePayload) String() string {
+func (x *SubjectAnalysisPayload) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*SubjectModulePayload) ProtoMessage() {}
+func (*SubjectAnalysisPayload) ProtoMessage() {}
 
-func (x *SubjectModulePayload) ProtoReflect() protoreflect.Message {
+func (x *SubjectAnalysisPayload) ProtoReflect() protoreflect.Message {
 	mi := &file_api_grpc_internal_ai_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -591,80 +584,28 @@ func (x *SubjectModulePayload) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use SubjectModulePayload.ProtoReflect.Descriptor instead.
-func (*SubjectModulePayload) Descriptor() ([]byte, []int) {
+// Deprecated: Use SubjectAnalysisPayload.ProtoReflect.Descriptor instead.
+func (*SubjectAnalysisPayload) Descriptor() ([]byte, []int) {
 	return file_api_grpc_internal_ai_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *SubjectModulePayload) GetModuleKey() string {
+func (x *SubjectAnalysisPayload) GetAnalysisType() string {
 	if x != nil {
-		return x.ModuleKey
+		return x.AnalysisType
 	}
 	return ""
 }
 
-func (x *SubjectModulePayload) GetFacts() []*SubjectFact {
-	if x != nil {
-		return x.Facts
-	}
-	return nil
-}
-
-func (x *SubjectModulePayload) GetTheoryVersion() string {
+func (x *SubjectAnalysisPayload) GetTheoryVersion() string {
 	if x != nil && x.TheoryVersion != nil {
 		return *x.TheoryVersion
 	}
 	return ""
 }
 
-type SubjectFact struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	FactKey       string                 `protobuf:"bytes,1,opt,name=fact_key,json=factKey,proto3" json:"fact_key,omitempty"`
-	Values        []string               `protobuf:"bytes,2,rep,name=values,proto3" json:"values,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SubjectFact) Reset() {
-	*x = SubjectFact{}
-	mi := &file_api_grpc_internal_ai_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SubjectFact) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SubjectFact) ProtoMessage() {}
-
-func (x *SubjectFact) ProtoReflect() protoreflect.Message {
-	mi := &file_api_grpc_internal_ai_proto_msgTypes[9]
+func (x *SubjectAnalysisPayload) GetPayload() *structpb.Struct {
 	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SubjectFact.ProtoReflect.Descriptor instead.
-func (*SubjectFact) Descriptor() ([]byte, []int) {
-	return file_api_grpc_internal_ai_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *SubjectFact) GetFactKey() string {
-	if x != nil {
-		return x.FactKey
-	}
-	return ""
-}
-
-func (x *SubjectFact) GetValues() []string {
-	if x != nil {
-		return x.Values
+		return x.Payload
 	}
 	return nil
 }
@@ -680,7 +621,7 @@ type ProfileConsultResponse struct {
 
 func (x *ProfileConsultResponse) Reset() {
 	*x = ProfileConsultResponse{}
-	mi := &file_api_grpc_internal_ai_proto_msgTypes[10]
+	mi := &file_api_grpc_internal_ai_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -692,7 +633,7 @@ func (x *ProfileConsultResponse) String() string {
 func (*ProfileConsultResponse) ProtoMessage() {}
 
 func (x *ProfileConsultResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_api_grpc_internal_ai_proto_msgTypes[10]
+	mi := &file_api_grpc_internal_ai_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -705,7 +646,7 @@ func (x *ProfileConsultResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileConsultResponse.ProtoReflect.Descriptor instead.
 func (*ProfileConsultResponse) Descriptor() ([]byte, []int) {
-	return file_api_grpc_internal_ai_proto_rawDescGZIP(), []int{10}
+	return file_api_grpc_internal_ai_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ProfileConsultResponse) GetStatus() bool {
@@ -740,7 +681,7 @@ type FilePayload struct {
 
 func (x *FilePayload) Reset() {
 	*x = FilePayload{}
-	mi := &file_api_grpc_internal_ai_proto_msgTypes[11]
+	mi := &file_api_grpc_internal_ai_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -752,7 +693,7 @@ func (x *FilePayload) String() string {
 func (*FilePayload) ProtoMessage() {}
 
 func (x *FilePayload) ProtoReflect() protoreflect.Message {
-	mi := &file_api_grpc_internal_ai_proto_msgTypes[11]
+	mi := &file_api_grpc_internal_ai_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -765,7 +706,7 @@ func (x *FilePayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilePayload.ProtoReflect.Descriptor instead.
 func (*FilePayload) Descriptor() ([]byte, []int) {
-	return file_api_grpc_internal_ai_proto_rawDescGZIP(), []int{11}
+	return file_api_grpc_internal_ai_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *FilePayload) GetFileName() string {
@@ -793,7 +734,7 @@ var File_api_grpc_internal_ai_proto protoreflect.FileDescriptor
 
 const file_api_grpc_internal_ai_proto_rawDesc = "" +
 	"\n" +
-	"\x1aapi/grpc/internal_ai.proto\x12 internalaicopilot.integration.v1\",\n" +
+	"\x1aapi/grpc/internal_ai.proto\x12 internalaicopilot.integration.v1\x1a\x1cgoogle/protobuf/struct.proto\",\n" +
 	"\x13ListBuildersRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\"d\n" +
 	"\x14ListBuildersResponse\x12L\n" +
@@ -830,28 +771,23 @@ const file_api_grpc_internal_ai_proto_rawDesc = "" +
 	"\n" +
 	"status_ans\x18\x02 \x01(\tR\tstatusAns\x12\x1a\n" +
 	"\bresponse\x18\x03 \x01(\tR\bresponse\x12A\n" +
-	"\x04file\x18\x04 \x01(\v2-.internalaicopilot.integration.v1.FilePayloadR\x04file\"\x84\x02\n" +
+	"\x04file\x18\x04 \x01(\v2-.internalaicopilot.integration.v1.FilePayloadR\x04file\"\xd9\x01\n" +
 	"\x15ProfileConsultRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1d\n" +
 	"\n" +
-	"builder_id\x18\x02 \x01(\x05R\tbuilderId\x12)\n" +
-	"\x10analysis_modules\x18\x03 \x03(\tR\x0fanalysisModules\x12Y\n" +
+	"builder_id\x18\x02 \x01(\x05R\tbuilderId\x12Y\n" +
 	"\x0fsubject_profile\x18\x04 \x01(\v20.internalaicopilot.integration.v1.SubjectProfileR\x0esubjectProfile\x12\x12\n" +
 	"\x04text\x18\x05 \x01(\tR\x04text\x12\x1b\n" +
-	"\tclient_ip\x18\x06 \x01(\tR\bclientIp\"\x90\x01\n" +
+	"\tclient_ip\x18\x06 \x01(\tR\bclientIp\"\x96\x01\n" +
 	"\x0eSubjectProfile\x12\x1d\n" +
 	"\n" +
-	"subject_id\x18\x01 \x01(\tR\tsubjectId\x12_\n" +
-	"\x0fmodule_payloads\x18\x02 \x03(\v26.internalaicopilot.integration.v1.SubjectModulePayloadR\x0emodulePayloads\"\xb9\x01\n" +
-	"\x14SubjectModulePayload\x12\x1d\n" +
-	"\n" +
-	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12C\n" +
-	"\x05facts\x18\x02 \x03(\v2-.internalaicopilot.integration.v1.SubjectFactR\x05facts\x12*\n" +
-	"\x0etheory_version\x18\x03 \x01(\tH\x00R\rtheoryVersion\x88\x01\x01B\x11\n" +
-	"\x0f_theory_version\"@\n" +
-	"\vSubjectFact\x12\x19\n" +
-	"\bfact_key\x18\x01 \x01(\tR\afactKey\x12\x16\n" +
-	"\x06values\x18\x02 \x03(\tR\x06values\"k\n" +
+	"subject_id\x18\x01 \x01(\tR\tsubjectId\x12e\n" +
+	"\x11analysis_payloads\x18\x02 \x03(\v28.internalaicopilot.integration.v1.SubjectAnalysisPayloadR\x10analysisPayloads\"\xaf\x01\n" +
+	"\x16SubjectAnalysisPayload\x12#\n" +
+	"\ranalysis_type\x18\x01 \x01(\tR\fanalysisType\x12*\n" +
+	"\x0etheory_version\x18\x02 \x01(\tH\x00R\rtheoryVersion\x88\x01\x01\x121\n" +
+	"\apayload\x18\x03 \x01(\v2\x17.google.protobuf.StructR\apayloadB\x11\n" +
+	"\x0f_theory_version\"k\n" +
 	"\x16ProfileConsultResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\bR\x06status\x12\x1d\n" +
 	"\n" +
@@ -878,7 +814,7 @@ func file_api_grpc_internal_ai_proto_rawDescGZIP() []byte {
 	return file_api_grpc_internal_ai_proto_rawDescData
 }
 
-var file_api_grpc_internal_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_api_grpc_internal_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_api_grpc_internal_ai_proto_goTypes = []any{
 	(*ListBuildersRequest)(nil),    // 0: internalaicopilot.integration.v1.ListBuildersRequest
 	(*ListBuildersResponse)(nil),   // 1: internalaicopilot.integration.v1.ListBuildersResponse
@@ -888,24 +824,24 @@ var file_api_grpc_internal_ai_proto_goTypes = []any{
 	(*ConsultResponse)(nil),        // 5: internalaicopilot.integration.v1.ConsultResponse
 	(*ProfileConsultRequest)(nil),  // 6: internalaicopilot.integration.v1.ProfileConsultRequest
 	(*SubjectProfile)(nil),         // 7: internalaicopilot.integration.v1.SubjectProfile
-	(*SubjectModulePayload)(nil),   // 8: internalaicopilot.integration.v1.SubjectModulePayload
-	(*SubjectFact)(nil),            // 9: internalaicopilot.integration.v1.SubjectFact
-	(*ProfileConsultResponse)(nil), // 10: internalaicopilot.integration.v1.ProfileConsultResponse
-	(*FilePayload)(nil),            // 11: internalaicopilot.integration.v1.FilePayload
+	(*SubjectAnalysisPayload)(nil), // 8: internalaicopilot.integration.v1.SubjectAnalysisPayload
+	(*ProfileConsultResponse)(nil), // 9: internalaicopilot.integration.v1.ProfileConsultResponse
+	(*FilePayload)(nil),            // 10: internalaicopilot.integration.v1.FilePayload
+	(*structpb.Struct)(nil),        // 11: google.protobuf.Struct
 }
 var file_api_grpc_internal_ai_proto_depIdxs = []int32{
 	2,  // 0: internalaicopilot.integration.v1.ListBuildersResponse.builders:type_name -> internalaicopilot.integration.v1.BuilderSummary
 	4,  // 1: internalaicopilot.integration.v1.ConsultRequest.attachments:type_name -> internalaicopilot.integration.v1.Attachment
-	11, // 2: internalaicopilot.integration.v1.ConsultResponse.file:type_name -> internalaicopilot.integration.v1.FilePayload
+	10, // 2: internalaicopilot.integration.v1.ConsultResponse.file:type_name -> internalaicopilot.integration.v1.FilePayload
 	7,  // 3: internalaicopilot.integration.v1.ProfileConsultRequest.subject_profile:type_name -> internalaicopilot.integration.v1.SubjectProfile
-	8,  // 4: internalaicopilot.integration.v1.SubjectProfile.module_payloads:type_name -> internalaicopilot.integration.v1.SubjectModulePayload
-	9,  // 5: internalaicopilot.integration.v1.SubjectModulePayload.facts:type_name -> internalaicopilot.integration.v1.SubjectFact
+	8,  // 4: internalaicopilot.integration.v1.SubjectProfile.analysis_payloads:type_name -> internalaicopilot.integration.v1.SubjectAnalysisPayload
+	11, // 5: internalaicopilot.integration.v1.SubjectAnalysisPayload.payload:type_name -> google.protobuf.Struct
 	0,  // 6: internalaicopilot.integration.v1.IntegrationService.ListBuilders:input_type -> internalaicopilot.integration.v1.ListBuildersRequest
 	3,  // 7: internalaicopilot.integration.v1.IntegrationService.Consult:input_type -> internalaicopilot.integration.v1.ConsultRequest
 	6,  // 8: internalaicopilot.integration.v1.IntegrationService.ProfileConsult:input_type -> internalaicopilot.integration.v1.ProfileConsultRequest
 	1,  // 9: internalaicopilot.integration.v1.IntegrationService.ListBuilders:output_type -> internalaicopilot.integration.v1.ListBuildersResponse
 	5,  // 10: internalaicopilot.integration.v1.IntegrationService.Consult:output_type -> internalaicopilot.integration.v1.ConsultResponse
-	10, // 11: internalaicopilot.integration.v1.IntegrationService.ProfileConsult:output_type -> internalaicopilot.integration.v1.ProfileConsultResponse
+	9,  // 11: internalaicopilot.integration.v1.IntegrationService.ProfileConsult:output_type -> internalaicopilot.integration.v1.ProfileConsultResponse
 	9,  // [9:12] is the sub-list for method output_type
 	6,  // [6:9] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
@@ -926,7 +862,7 @@ func file_api_grpc_internal_ai_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_grpc_internal_ai_proto_rawDesc), len(file_api_grpc_internal_ai_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

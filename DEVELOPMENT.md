@@ -35,10 +35,39 @@
 
 ## Primary Development Flow
 
-### Step 1: define behavior first
-先以使用情境、行為與驗收條件定義需求，再往下拆成測試與實作。
+```text
+┌─────────────────────────────────────────────┐
+│  Step 1: Define Behavior First              │
+│  先以使用情境、行為與驗收條件定義需求        │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│  Step 2: Document the Agreed Behavior       │
+│  寫入 PLAN / 開發文件 / module 文件         │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│  Step 3: Map Behavior to Tests              │
+│  BDD 定義行為驗收 → TDD 最小步驟落實       │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│  Step 4: Implement the Minimum Code         │
+│  先寫失敗測試 → 再補最小實作讓其通過       │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│  Step 5: Refactor Without Changing Behavior │
+│  只改善結構，不改變既有 scenario 結果       │
+└──────────────────┬──────────────────────────┘
+                   ↓
+┌─────────────────────────────────────────────┐
+│  Step 6: Sync Docs After Change             │
+│  行為若變動 → 同步更新文件                  │
+└─────────────────────────────────────────────┘
+```
 
-至少要先確認：
+**Step 1 至少要先確認：**
 - actor 是誰
 - 目標行為是什麼
 - 成功條件是什麼
@@ -47,31 +76,15 @@
 - 哪些地方要維持 Java 相容
 - external integration 是否走 HTTP 或 gRPC
 
-### Step 2: document the agreed behavior
-需求一旦確認，應先把內容寫入 `PLAN`、開發文件或 module 文件。
-
-文件至少要描述：
+**Step 2 文件至少要描述：**
 - scenario summary
 - acceptance criteria
 - open questions
 - 對應 module boundary
 - request/response contract
 
-### Step 3: map behavior to tests
-本專案採 `BDD-first + TDD-first`：
-- BDD 用來定義行為與驗收
-- TDD 用來以最小步驟落實行為
-
-測試的來源應是已確認的 scenario，而不是實作者臨時推測的流程。
-
-### Step 4: implement the minimum code
-先寫失敗測試，再補最小實作讓其通過。
-
-### Step 5: refactor without changing behavior
-重構只能改善結構，不得偷偷改變既有 scenario 的結果。
-
-### Step 6: sync docs after change
-若測試或實作使行為定義產生變動，必須同步更新文件。
+**Step 3 補充：**
+- 測試的來源應是已確認的 scenario，而不是實作者臨時推測的流程。
 
 ## Local Reset And Seed Rule
 Go 版 local 開發必須支援一種與 Java `create-drop + initData` 等價的 bootstrap 模式。
@@ -103,37 +116,97 @@ Go 版 local 開發必須支援一種與 Java `create-drop + initData` 等價的
 ## External App Access Rule
 對外整合系統目前採雙 gatekeeper 模型：
 
-1. external app 本地 gatekeeper 先做自己的業務授權與資料完整性處理
-2. Internal gatekeeper 再做服務邊界驗證與 builder 授權驗證
+```text
+External App Request
+       │
+       ↓
+┌──────────────────────────────────────────┐
+│  Gate 1: External App 本地 Gatekeeper    │
+│  ├── 業務授權檢查                        │
+│  └── 資料完整性處理                      │
+└──────────────────┬───────────────────────┘
+                   │ 通過
+                   ↓
+┌──────────────────────────────────────────┐
+│  Gate 2: Internal Gatekeeper             │
+│  ├── 服務邊界驗證                        │
+│  └── Builder 授權驗證                    │
+└──────────────────┬───────────────────────┘
+                   │ 通過
+                   ↓
+          進入業務流程處理
+```
 
 ### LinkChat profile-analysis baseline
 LinkChat 這條線目前的 agreed behavior：
-- LinkChat 與 Internal 之間走 gRPC
-- LinkChat profile-analysis 專用入口為 `ProfileConsult`
-- LinkChat 在 hot path 不應每次先查 `ListBuilders`
-- LinkChat 以 config 固定 `appId` 與 `builderId`
-- request 需顯式帶 `analysisModules`
-- request 需帶 optional structured `subjectProfile`
-- `text` 為 optional 補充輸入
-- `analysisModules` 應做 `trim + lowercase + deduplicate`
-- `analysisModules` / `moduleKey` 應符合 `^[a-z0-9][a-z0-9_-]*$`
-- `common` 是保留字，不可出現在 `analysisModules`
-- 缺資料 module 應在 LinkChat 本地移除，不送給 Internal
-- 若沒有任何 module 且 `text` 也為空，應由 LinkChat 本地短路，不呼叫 Internal
-- 若 `analysisModules=[] && text!=""`，仍應呼叫 `ProfileConsult`
-- 第一版只要求純文字 response，不要求檔案輸出
+
+```text
+LinkChat 發起 Profile Analysis 請求
+       │
+       ↓
+┌─────────────────────────────────────────────────────┐
+│  協定：LinkChat ←── gRPC ──→ Internal               │
+│  專用入口：ProfileConsult                            │
+│  Hot path 不應每次先查 ListBuilders                  │
+│  LinkChat 以 config 固定 appId + builderId           │
+└──────────────────────┬──────────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────────┐
+│  組裝 Request                                        │
+│  ├── subjectProfile （optional structured）          │
+│  └── text           （optional 補充輸入）            │
+└──────────────────────┬──────────────────────────────┘
+                       ↓
+┌─────────────────────────────────────────────────────┐
+│  LinkChat 本地前處理                                 │
+│  ├── 只保留有資料的 analysis payload                 │
+│  ├── analysisType / theoryVersion 整理               │
+│  ├── duplicate analysisType 本地拒絕                 │
+│  └── 不把 LinkChat 私有資料模型直接外送              │
+└──────────────────────┬──────────────────────────────┘
+                       ↓
+              ┌── subjectProfile 與 text 狀態？──┐
+              │                                  │
+  subjectProfile=nil && text=""     其餘情況
+              │                                  │
+              ↓                                  ↓
+     LinkChat 本地短路                    呼叫 ProfileConsult
+     不呼叫 Internal                      （固定 appId + builderId）
+                                                  │
+                                                  ▼
+     第一版回應：純文字 response（不要求檔案輸出）
+```
 
 ### Internal gatekeeper must validate
-- `appId` 是否存在
-- app 是否 active
-- `appId` 是否允許使用指定 `builderId`
-- `builderId` 是否存在且 active
-- `analysisModules` 的基本形狀是否合法
-- `analysisModules` 是否包含保留字 `common`
-- `analysisModules` 是否符合 canonical regex
-- `subjectProfile` 的基本形狀是否合法
-- `subjectProfile.modulePayloads[].moduleKey` 是否都落在本次 `analysisModules` 內
-- `subjectProfile` 是否出現 duplicate module / fact key
+
+```text
+Request 進入 Internal Gatekeeper
+       │
+       ↓
+  ┌─ Gate 1 ─── appId 是否存在？ ──────────────── 否 → 拒絕
+  │    ↓ 是
+  ├─ Gate 2 ─── app 是否 active？ ─────────────── 否 → 拒絕
+  │    ↓ 是
+  ├─ Gate 3 ─── appId 是否允許使用指定 builderId？ 否 → 拒絕
+  │    ↓ 是
+  ├─ Gate 4 ─── builderId 是否存在且 active？ ──── 否 → 拒絕
+  │    ↓ 是
+  ├─ Gate 5 ─── subjectProfile 缺值？ ──────────── 是 → 合法 text-only profile
+  │    ↓ 否
+  ├─ Gate 6 ─── subjectId 是否存在？ ──────────── 否 → 拒絕
+  │    ↓ 是
+  ├─ Gate 7 ─── analysisPayloads 有 duplicate      是 → 拒絕
+  │             analysisType？
+  │    ↓ 否
+  ├─ Gate 8 ─── 每個 analysisType 合法？ ──────── 否 → 拒絕
+  │    ↓ 是
+  ├─ Gate 9 ─── theoryVersion 若提供是否非空白？ 否 → 拒絕
+  │    ↓ 是
+  └─ Gate 10 ── linkchat + astrology 缺少          是 → 拒絕
+                theoryVersion？
+        ↓ 否
+  全部通過 → 進入業務流程
+```
 
 ### LinkChat local gatekeeper owns
 - 對象資料查詢
@@ -176,7 +249,7 @@ external HTTP 規則：
 - 哪些 case 屬於驗收範圍
 - 是否有 Java 相容行為必須保留
 - 是 HTTP contract 還是 gRPC contract
-- `analysisModules`、`subjectProfile`、`moduleKey` 等欄位語意是否已鎖定
+- `analysisPayloads`、`subjectProfile`、`analysisType` / `moduleKey` 等欄位語意是否已鎖定
 
 不應優先做的事：
 - 未確認 scenario 就先決定資料模型
@@ -272,111 +345,181 @@ Go/
 分層是為了穩定落實行為規格，不是為了讓各層自行產生規則。
 
 ### 1. Handler / Transport Adapter
-用途：
-- HTTP request parse
-- route binding
-- multipart parse
-- gRPC request mapping
-- response encode
-- HTTP / gRPC status mapping
 
-可以做：
-- 讀 path/query/header/form/body
-- 讀 protobuf request
-- 呼叫單一 UseCase
-- 把 usecase result 包成 `ApiResponse` 或 gRPC response
-
-不能做：
-- 不直接呼叫 Repository
-- 不做跨模組流程編排
-- 不做 prompt assembly
-- 不做 module entitlement 推論
-- 不做 Firestore 操作
+```text
+╔══════════════════════════════════════════════════════╗
+║  Layer 1: Handler / Transport Adapter                ║
+╠══════════════════════════════════════════════════════╣
+║                                                      ║
+║  用途：                                              ║
+║  ├── HTTP request parse                              ║
+║  ├── route binding                                   ║
+║  ├── multipart parse                                 ║
+║  ├── gRPC request mapping                            ║
+║  ├── response encode                                 ║
+║  └── HTTP / gRPC status mapping                      ║
+║                                                      ║
+║  ✔ 可以做：                                          ║
+║  ├── 讀 path/query/header/form/body                  ║
+║  ├── 讀 protobuf request                             ║
+║  ├── 呼叫單一 UseCase                                ║
+║  └── 把 result 包成 ApiResponse 或 gRPC response     ║
+║                                                      ║
+║  ✘ 不能做：                                          ║
+║  ├── 不直接呼叫 Repository                           ║
+║  ├── 不做跨模組流程編排                              ║
+║  ├── 不做 prompt assembly                            ║
+║  ├── 不做 module entitlement 推論                    ║
+║  └── 不做 Firestore 操作                             ║
+║                                                      ║
+║          │ 只能往下呼叫                              ║
+║          ↓                                           ║
+║      UseCase                                         ║
+╚══════════════════════════════════════════════════════╝
+```
 
 ### 2. UseCase
-用途：
-- 單一業務案例的流程編排中心
-- 跨模組協作
-- 併發 orchestration
-- 對應主要 BDD scenario 的可執行測試案例
 
-可以做：
-- 呼叫本模組 service
-- 呼叫其他模組公開 usecase/service 介面
-- 建立 `context` / timeout / `errgroup`
-- 控制流程順序
-- 收集並組裝多個 service 結果
-
-不能做：
-- 不直接寫資料存取細節
-- 不把純業務邏輯都塞在 usecase 裡
-- 不做和 HTTP / gRPC transport 強耦合的 parse
-- 不自己實作 Firestore query
+```text
+╔══════════════════════════════════════════════════════╗
+║  Layer 2: UseCase                                    ║
+╠══════════════════════════════════════════════════════╣
+║                                                      ║
+║  用途：                                              ║
+║  ├── 單一業務案例的流程編排中心                      ║
+║  ├── 跨模組協作                                      ║
+║  ├── 併發 orchestration                              ║
+║  └── 對應主要 BDD scenario 的可執行測試案例          ║
+║                                                      ║
+║  ✔ 可以做：                                          ║
+║  ├── 呼叫本模組 service                              ║
+║  ├── 呼叫其他模組公開 usecase/service 介面           ║
+║  ├── 建立 context / timeout / errgroup               ║
+║  ├── 控制流程順序                                    ║
+║  └── 收集並組裝多個 service 結果                     ║
+║                                                      ║
+║  ✘ 不能做：                                          ║
+║  ├── 不直接寫資料存取細節                            ║
+║  ├── 不把純業務邏輯都塞在 usecase 裡                 ║
+║  ├── 不做和 HTTP/gRPC transport 強耦合的 parse       ║
+║  └── 不自己實作 Firestore query                      ║
+║                                                      ║
+║          │ 往下呼叫                                  ║
+║          ↓                                           ║
+║      Service（+ 可跨模組呼叫其他 UseCase/Service）   ║
+╚══════════════════════════════════════════════════════╝
+```
 
 ### 3. Service
-用途：
-- 模組內純業務邏輯
-- 可重用規則
-- deterministic business logic
 
-可以做：
-- normalize/order/merge/validate
-- prompt assembly
-- output policy 判斷
-- retrieval mode resolve
-- override strategy
-- `analysisModules` 與 `moduleKey` 的匹配規則
-
-不能做：
-- 不直接處理 HTTP request/response
-- 不直接處理 gRPC request/response
-- 不做跨模組總編排
-- 不依賴 transport 細節
-- 不自己控制整體 use case 的 goroutine fan-out
+```text
+╔══════════════════════════════════════════════════════╗
+║  Layer 3: Service                                    ║
+╠══════════════════════════════════════════════════════╣
+║                                                      ║
+║  用途：                                              ║
+║  ├── 模組內純業務邏輯                                ║
+║  ├── 可重用規則                                      ║
+║  └── deterministic business logic                    ║
+║                                                      ║
+║  ✔ 可以做：                                          ║
+║  ├── normalize / order / merge / validate            ║
+║  ├── prompt assembly                                 ║
+║  ├── output policy 判斷                              ║
+║  ├── retrieval mode resolve                          ║
+║  ├── override strategy                               ║
+║  └── strategy / internal tag 的 prompt 組裝規則      ║
+║                                                      ║
+║  ✘ 不能做：                                          ║
+║  ├── 不直接處理 HTTP request/response                ║
+║  ├── 不直接處理 gRPC request/response                ║
+║  ├── 不做跨模組總編排                                ║
+║  ├── 不依賴 transport 細節                           ║
+║  └── 不自己控制整體 use case 的 goroutine fan-out    ║
+║                                                      ║
+║          │ 往下呼叫                                  ║
+║          ↓                                           ║
+║      Repository                                      ║
+╚══════════════════════════════════════════════════════╝
+```
 
 ### 4. Repository
-用途：
-- 資料存取抽象
-- 對 domain 暴露存取能力
 
-可以做：
-- Firestore read/write/query/batch/transaction
-- persistence mapping
-
-不能做：
-- 不做 prompt assembly
-- 不做 output policy
-- 不做 retrieval strategy
-- 不做 HTTP / gRPC aware 行為
+```text
+╔══════════════════════════════════════════════════════╗
+║  Layer 4: Repository                                 ║
+╠══════════════════════════════════════════════════════╣
+║                                                      ║
+║  用途：                                              ║
+║  ├── 資料存取抽象                                    ║
+║  └── 對 domain 暴露存取能力                          ║
+║                                                      ║
+║  ✔ 可以做：                                          ║
+║  ├── Firestore read/write/query/batch/transaction    ║
+║  └── persistence mapping                             ║
+║                                                      ║
+║  ✘ 不能做：                                          ║
+║  ├── 不做 prompt assembly                            ║
+║  ├── 不做 output policy                              ║
+║  ├── 不做 retrieval strategy                         ║
+║  └── 不做 HTTP / gRPC aware 行為                     ║
+║                                                      ║
+║          │                                           ║
+║          ↓                                           ║
+║      Firestore / 外部儲存                            ║
+╚══════════════════════════════════════════════════════╝
+```
 
 ## Allowed Dependency Direction
 
 ```text
-Handler or gRPC Adapter -> UseCase -> Service -> Repository
+主要依賴方向（由上往下）：
+
+  Handler / gRPC Adapter
+          │
+          ↓  ✔ handler → usecase
+          │  ✔ grpcapi → gatekeeper usecase
+      UseCase ─────────────────────────────┐
+          │                                │
+          ↓  ✔ usecase → service           │ ✔ usecase → other module
+          │                                │   public boundary
+      Service                              │
+          │                                │ △ usecase → repository
+          ↓  ✔ service → repository        │   （僅限明確 orchestration
+          │                                │    理由 + 檔案註解說明）
+      Repository                           │
+                                           │
+  ─────────────────────────────────────────┘
+
+禁止的反向依賴（由下往上 / 跨層）：
+
+  Handler / gRPC Adapter
+          ↑  ✘ service → handler
+          ↑  ✘ service → grpcapi
+      UseCase
+          ↑  ✘ repository → usecase
+          ↑  ✘ repository → service
+      Service
+          ↑
+      Repository
+          ↑  ✘ handler → repository（跳層）
+             ✘ grpcapi → repository（跳層）
+             ✘ handler → service for cross-module orchestration
 ```
-
-允許：
-- handler -> usecase
-- grpcapi -> gatekeeper usecase
-- usecase -> service
-- usecase -> other module public boundary
-- service -> repository
-- usecase -> repository only if there is a very explicit orchestration reason and file-level comment explains why
-
-不允許：
-- handler -> repository
-- grpcapi -> repository
-- handler -> service for cross-module orchestration
-- repository -> service
-- repository -> usecase
-- service -> handler
-- service -> grpcapi
 
 ### Cross-module rule
 預設只有 UseCase 層可以做跨模組協作。
 
-例外情況必須非常少，而且要有明確理由。若沒有足夠理由，回到：
-- module boundary in UseCase
+```text
+  Module A                    Module B
+┌──────────────┐          ┌──────────────┐
+│  UseCase ────┼── ✔ ───→ │  UseCase     │
+│  Service     │          │  Service     │
+│  Repository  │          │  Repository  │
+└──────────────┘          └──────────────┘
+```
+
+例外情況必須非常少，而且要有明確理由。若沒有足夠理由，回到 module boundary in UseCase。
 
 ## Module-by-Module Rules
 
@@ -444,7 +587,7 @@ Handler or gRPC Adapter -> UseCase -> Service -> Repository
 - grpcapi 不做 LinkChat 本地 gatekeeping
 - grpcapi 不直接調用 builder repository
 - LinkChat profile-analysis hot path 不應依賴每次先呼叫 `ListBuilders`
-- grpcapi 不得靠 `analysisModules` 是否為空推斷 consult mode
+- grpcapi 不得靠 `subjectProfile` 是否為空推斷 consult mode
 
 ### builder
 對應 Java：
@@ -479,12 +622,12 @@ Handler or gRPC Adapter -> UseCase -> Service -> Repository
 - repository 只負責 builder/source/template persistence
 - profile-analysis 第一版採單一 builder
 - builder consult command 必須帶明確 `ConsultMode`
-- builder 依 request `analysisModules` 選 source
+- builder 依 `builderId` 載入整體 source/rag 骨架
 - source `moduleKey` 缺值或空值時永遠可用
-- source `moduleKey` 有值時，需出現在 `analysisModules` 才可用
-- `analysisModules` 的輸入順序不影響 prompt block 的排序語意
+- source `moduleKey` 有值時，作為 strategy 可選用的 internal tag
+- `analysisPayloads` 的輸入順序不直接決定 prompt block 排序語意
 - `subjectProfile` 由 external app 傳入，builder 只負責把它轉成 deterministic prompt block
-- `analysisModules=[] && text!=""` 在 profile mode 中只跑 common sources
+- `subjectProfile=nil && text!=""` 在 profile mode 中仍是合法 request
 
 ### rag
 對應 Java：
@@ -505,7 +648,7 @@ Handler or gRPC Adapter -> UseCase -> Service -> Repository
 規則：
 - builder 不區分靜態/動態 RAG
 - builder 只傳 rag config，rag 回 resolved content
-- 哪些 source 會進入 rag，由 builder 先依 `analysisModules` 與 `moduleKey` 決定
+- 哪些 source 會進入 rag，由 builder 先依 builder skeleton 與 strategy source filtering 決定
 - override 最終是否套用由 builder 決定
 
 ### aiclient
@@ -526,7 +669,7 @@ Handler or gRPC Adapter -> UseCase -> Service -> Repository
 - usecase 作為對外入口
 - service 放 API request/response 細節與錯誤 mapping
 - 不做 prompt assembly
-- 不理解 `analysisModules` 與 `subjectProfile` 的業務語意
+- 不理解 `analysisPayloads` 與 `subjectProfile` 的業務語意
 
 ### output
 對應 Java：
@@ -618,6 +761,31 @@ Repository 應反映 aggregate 或資料責任。
 
 ### Test priority
 
+```text
+  測試金字塔（由上往下：優先級高 → 低，覆蓋範圍窄 → 寬）
+
+          ╱╲
+         ╱  ╲
+        ╱ 1  ╲         ★ 最高優先
+       ╱      ╲        UseCase Tests
+      ╱ Use    ╲       行為流程 + 契約驗證
+     ╱  Case    ╲
+    ╱────────────╲
+   ╱      2       ╲    ★★ 高優先
+  ╱    Service     ╲   純邏輯 + edge case
+ ╱     Tests        ╲
+╱────────────────────╲
+╲        3            ╱ ★★★ 中優先
+ ╲  Repository       ╱  persistence 正確性
+  ╲   Tests         ╱
+   ╲───────────────╱
+    ╲      4      ╱     ★★★★ 基礎覆蓋
+     ╲ Handler / ╱      transport parse + mapping
+      ╲ grpcapi ╱
+       ╲ Tests ╱
+        ╲────╱
+```
+
 #### 1. UseCase tests
 這是最重要的一層。
 
@@ -643,7 +811,7 @@ UseCase 測試主要回答：
 - graph normalize rules
 - template reorder rules
 - output policy
-- `analysisModules` / `moduleKey` 規則
+- strategy source filtering / internal tag 規則
 - retrieval mode resolution
 
 Service 測試主要回答：
@@ -742,7 +910,7 @@ Repository 不負責業務併發策略。
 這些未來模式在文件中可保留為擴充點，但不可假裝已完成。
 
 ### Boundary reminder
-- builder 擁有 `analysisModules` 與 source `moduleKey` 的選擇權
+- builder 擁有 source participation 與 source `moduleKey` / internal tag 的選擇權
 - rag 只處理已被選入的 source 補充內容
 
 ## Java Compatibility Rules
@@ -788,7 +956,7 @@ Repository 不負責業務併發策略。
 3. 這個變更屬於哪個 module
 4. 這個變更屬於哪一層
 5. 是 HTTP contract 還是 gRPC contract
-6. 是否牽涉 `analysisModules` / `subjectProfile` / `moduleKey`
+6. 是否牽涉 `analysisPayloads` / `subjectProfile` / `analysisType` / `moduleKey`
 7. 是否先寫 UseCase 測試
 8. 是否有需要補 Service 或 grpcapi 測試
 9. 是否影響 Java 相容行為

@@ -98,7 +98,7 @@ func TestValidateExternalConsultRejectsUnauthorizedBuilder(t *testing.T) {
 	}
 }
 
-func TestValidateProfileConsultNormalizesModulesAndProfile(t *testing.T) {
+func TestValidateProfileConsultNormalizesProfileEnvelope(t *testing.T) {
 	store, err := infra.NewStore("")
 	if err != nil {
 		t.Fatalf("NewStore returned error: %v", err)
@@ -111,36 +111,34 @@ func TestValidateProfileConsultNormalizesModulesAndProfile(t *testing.T) {
 		ConsultMaxTotalSize: 50 * 1024 * 1024,
 	}, store)
 
-	_, modules, profile, validationErr := service.ValidateProfileConsult(context.Background(), 1, []string{" MBTI ", "astrology", "mbti"}, &builder.SubjectProfile{
+	_, profile, validationErr := service.ValidateProfileConsult(context.Background(), "linkchat", 1, &builder.SubjectProfile{
 		SubjectID: " user-123 ",
-		ModulePayloads: []builder.SubjectModulePayload{
+		AnalysisPayloads: []builder.SubjectAnalysisPayload{
 			{
-				ModuleKey:     " mbti ",
+				AnalysisType:  " MBTI ",
 				TheoryVersion: ptrString(" v1 "),
-				Facts: []builder.SubjectFact{
-					{FactKey: "type", Values: []string{" INTJ "}},
-				},
+				Payload:       map[string]any{"type": " INTJ "},
 			},
 		},
 	}, "", "127.0.0.1")
 	if validationErr != nil {
 		t.Fatalf("expected profile consult validation success, got %v", validationErr)
 	}
-	if len(modules) != 2 || modules[0] != "mbti" || modules[1] != "astrology" {
-		t.Fatalf("unexpected normalized modules: %+v", modules)
-	}
 	if profile == nil || profile.SubjectID != "user-123" {
 		t.Fatalf("unexpected normalized profile: %+v", profile)
 	}
-	if profile.ModulePayloads[0].ModuleKey != "mbti" || profile.ModulePayloads[0].Facts[0].Values[0] != "INTJ" {
-		t.Fatalf("unexpected normalized profile payload: %+v", profile.ModulePayloads[0])
+	if profile.AnalysisPayloads[0].AnalysisType != "mbti" {
+		t.Fatalf("unexpected normalized profile payload: %+v", profile.AnalysisPayloads[0])
 	}
-	if profile.ModulePayloads[0].TheoryVersion == nil || *profile.ModulePayloads[0].TheoryVersion != "v1" {
-		t.Fatalf("expected trimmed theory version, got %+v", profile.ModulePayloads[0].TheoryVersion)
+	if profile.AnalysisPayloads[0].Payload["type"] != "INTJ" {
+		t.Fatalf("expected trimmed string payload, got %+v", profile.AnalysisPayloads[0].Payload)
+	}
+	if profile.AnalysisPayloads[0].TheoryVersion == nil || *profile.AnalysisPayloads[0].TheoryVersion != "v1" {
+		t.Fatalf("expected trimmed theory version, got %+v", profile.AnalysisPayloads[0].TheoryVersion)
 	}
 }
 
-func TestValidateProfileConsultRejectsReservedCommonModule(t *testing.T) {
+func TestValidateProfileConsultRejectsInvalidAnalysisType(t *testing.T) {
 	store, err := infra.NewStore("")
 	if err != nil {
 		t.Fatalf("NewStore returned error: %v", err)
@@ -148,58 +146,56 @@ func TestValidateProfileConsultRejectsReservedCommonModule(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	service := NewGuardService(infra.Config{}, store)
-	_, _, _, validationErr := service.ValidateProfileConsult(context.Background(), 1, []string{"common"}, nil, "hello", "127.0.0.1")
-	if validationErr == nil || !strings.Contains(validationErr.Error(), "RESERVED_MODULE_KEY") {
-		t.Fatalf("expected reserved module key error, got %v", validationErr)
-	}
-}
-
-func TestValidateProfileConsultRejectsDuplicateFactKey(t *testing.T) {
-	store, err := infra.NewStore("")
-	if err != nil {
-		t.Fatalf("NewStore returned error: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-
-	service := NewGuardService(infra.Config{}, store)
-	_, _, _, validationErr := service.ValidateProfileConsult(context.Background(), 1, []string{"mbti"}, &builder.SubjectProfile{
+	_, _, validationErr := service.ValidateProfileConsult(context.Background(), "linkchat", 1, &builder.SubjectProfile{
 		SubjectID: "user-123",
-		ModulePayloads: []builder.SubjectModulePayload{
+		AnalysisPayloads: []builder.SubjectAnalysisPayload{
+			{AnalysisType: " ", Payload: map[string]any{"type": "INTJ"}},
+		},
+	}, "", "127.0.0.1")
+	if validationErr == nil || !strings.Contains(validationErr.Error(), "analysisType") {
+		t.Fatalf("expected invalid analysis type error, got %v", validationErr)
+	}
+}
+
+func TestValidateProfileConsultRejectsDuplicateAnalysisType(t *testing.T) {
+	store, err := infra.NewStore("")
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	service := NewGuardService(infra.Config{}, store)
+	_, _, validationErr := service.ValidateProfileConsult(context.Background(), "linkchat", 1, &builder.SubjectProfile{
+		SubjectID: "user-123",
+		AnalysisPayloads: []builder.SubjectAnalysisPayload{
+			{AnalysisType: "mbti", Payload: map[string]any{"type": "INTJ"}},
+			{AnalysisType: "mbti", Payload: map[string]any{"type": "ENTJ"}},
+		},
+	}, "", "127.0.0.1")
+	if validationErr == nil || !strings.Contains(validationErr.Error(), "DUPLICATE_ANALYSIS_PAYLOAD") {
+		t.Fatalf("expected duplicate analysis payload error, got %v", validationErr)
+	}
+}
+
+func TestValidateProfileConsultRejectsBlankAnalysisTypeWithProfileContext(t *testing.T) {
+	store, err := infra.NewStore("")
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	service := NewGuardService(infra.Config{}, store)
+	_, _, validationErr := service.ValidateProfileConsult(context.Background(), "linkchat", 1, &builder.SubjectProfile{
+		SubjectID: "user-123",
+		AnalysisPayloads: []builder.SubjectAnalysisPayload{
 			{
-				ModuleKey: "mbti",
-				Facts: []builder.SubjectFact{
-					{FactKey: "type", Values: []string{"INTJ"}},
-					{FactKey: "type", Values: []string{"ENTJ"}},
-				},
+				AnalysisType: " ",
+				Payload:      map[string]any{"type": "INTJ"},
 			},
 		},
 	}, "", "127.0.0.1")
-	if validationErr == nil || !strings.Contains(validationErr.Error(), "DUPLICATE_FACT_KEY") {
-		t.Fatalf("expected duplicate fact key error, got %v", validationErr)
-	}
-}
-
-func TestValidateProfileConsultRejectsBlankProfileModuleKeyWithProfileContext(t *testing.T) {
-	store, err := infra.NewStore("")
-	if err != nil {
-		t.Fatalf("NewStore returned error: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-
-	service := NewGuardService(infra.Config{}, store)
-	_, _, _, validationErr := service.ValidateProfileConsult(context.Background(), 1, []string{"mbti"}, &builder.SubjectProfile{
-		SubjectID: "user-123",
-		ModulePayloads: []builder.SubjectModulePayload{
-			{
-				ModuleKey: " ",
-				Facts: []builder.SubjectFact{
-					{FactKey: "type", Values: []string{"INTJ"}},
-				},
-			},
-		},
-	}, "", "127.0.0.1")
-	if validationErr == nil || !strings.Contains(validationErr.Error(), "subjectProfile.modulePayloads.moduleKey") {
-		t.Fatalf("expected profile module key context in error, got %v", validationErr)
+	if validationErr == nil || !strings.Contains(validationErr.Error(), "subjectProfile.analysisPayloads.analysisType") {
+		t.Fatalf("expected analysis type context in error, got %v", validationErr)
 	}
 }
 
@@ -211,12 +207,12 @@ func TestValidateProfileConsultAllowsTextOnlyProfileRequests(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	service := NewGuardService(infra.Config{}, store)
-	_, modules, profile, validationErr := service.ValidateProfileConsult(context.Background(), 1, nil, nil, "只看 common prompt", "127.0.0.1")
+	_, profile, validationErr := service.ValidateProfileConsult(context.Background(), "", 1, nil, "只看 common prompt", "127.0.0.1")
 	if validationErr != nil {
 		t.Fatalf("expected text-only profile request to pass, got %v", validationErr)
 	}
-	if len(modules) != 0 || profile != nil {
-		t.Fatalf("expected no modules and nil profile, got modules=%+v profile=%+v", modules, profile)
+	if profile != nil {
+		t.Fatalf("expected nil profile, got profile=%+v", profile)
 	}
 }
 
@@ -228,20 +224,40 @@ func TestValidateProfileConsultRejectsBlankTheoryVersionWhenProvided(t *testing.
 	t.Cleanup(func() { _ = store.Close() })
 
 	service := NewGuardService(infra.Config{}, store)
-	_, _, _, validationErr := service.ValidateProfileConsult(context.Background(), 1, []string{"astrology"}, &builder.SubjectProfile{
+	_, _, validationErr := service.ValidateProfileConsult(context.Background(), "linkchat", 1, &builder.SubjectProfile{
 		SubjectID: "user-123",
-		ModulePayloads: []builder.SubjectModulePayload{
+		AnalysisPayloads: []builder.SubjectAnalysisPayload{
 			{
-				ModuleKey:     "astrology",
+				AnalysisType:  "astrology",
 				TheoryVersion: ptrString(" "),
-				Facts: []builder.SubjectFact{
-					{FactKey: "sun_sign", Values: []string{"Scorpio"}},
-				},
+				Payload:       map[string]any{"sun_sign": []any{"Scorpio"}},
 			},
 		},
 	}, "", "127.0.0.1")
 	if validationErr == nil || !strings.Contains(validationErr.Error(), "THEORY_VERSION_MISSING") {
 		t.Fatalf("expected blank theory version error, got %v", validationErr)
+	}
+}
+
+func TestValidateProfileConsultRequiresTheoryVersionForLinkChatAstrology(t *testing.T) {
+	store, err := infra.NewStore("")
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	service := NewGuardService(infra.Config{}, store)
+	_, _, validationErr := service.ValidateProfileConsult(context.Background(), "linkchat", 1, &builder.SubjectProfile{
+		SubjectID: "user-123",
+		AnalysisPayloads: []builder.SubjectAnalysisPayload{
+			{
+				AnalysisType: "astrology",
+				Payload:      map[string]any{"sun_sign": []any{"Scorpio"}},
+			},
+		},
+	}, "", "127.0.0.1")
+	if validationErr == nil || !strings.Contains(validationErr.Error(), "THEORY_VERSION_REQUIRED") {
+		t.Fatalf("expected required theory version error, got %v", validationErr)
 	}
 }
 

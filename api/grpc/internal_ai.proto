@@ -4,6 +4,8 @@ package internalaicopilot.integration.v1;
 
 option go_package = "com.citrus.internalaicopilot/internal/grpcapi/pb;grpcpb";
 
+import "google/protobuf/struct.proto";
+
 service IntegrationService {
   rpc ListBuilders(ListBuildersRequest) returns (ListBuildersResponse);
   rpc Consult(ConsultRequest) returns (ConsultResponse);
@@ -54,7 +56,6 @@ message ConsultResponse {
 message ProfileConsultRequest {
   string app_id = 1;
   int32 builder_id = 2;
-  repeated string analysis_modules = 3;
   SubjectProfile subject_profile = 4;
   string text = 5;
   string client_ip = 6;
@@ -62,18 +63,13 @@ message ProfileConsultRequest {
 
 message SubjectProfile {
   string subject_id = 1;
-  repeated SubjectModulePayload module_payloads = 2;
+  repeated SubjectAnalysisPayload analysis_payloads = 2;
 }
 
-message SubjectModulePayload {
-  string module_key = 1;
-  repeated SubjectFact facts = 2;
-  optional string theory_version = 3;
-}
-
-message SubjectFact {
-  string fact_key = 1;
-  repeated string values = 2;
+message SubjectAnalysisPayload {
+  string analysis_type = 1;
+  optional string theory_version = 2;
+  google.protobuf.Struct payload = 3;
 }
 
 message ProfileConsultResponse {

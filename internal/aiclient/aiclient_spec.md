@@ -8,7 +8,7 @@
 ## Overview
 AIClient 負責與 OpenAI Responses API 通訊。接收 builder usecase 組裝好的 prompt 和附件，呼叫 AI 取得結構化回應。
 
-對 LinkChat profile-analysis 這條線來說，AIClient 看到的已經是 builder 組裝完成的 instructions 與 user text，不直接解析 `analysisModules`、`subjectProfile` 或理論值本身。
+對 LinkChat profile-analysis 這條線來說，AIClient 看到的已經是 builder 組裝完成的 instructions 與 user text，不直接解析 `analysisPayloads`、`subjectProfile` 或理論值本身。
 
 對應 Java：`com.citrus.internalaicopilot.aiclient`
 
@@ -45,6 +45,20 @@ Repository 在第一版通常不是必要的；若未來需要持久化 audit/ca
 - aiclient 不應決定哪些 modules 參與分析
 - aiclient 不應理解 LinkChat 的星座、MBTI 或其他理論欄位
 - aiclient 只負責把 builder 已組好的內容送到模型
+
+## Analyze Flow
+
+```text
+builder analyze request
+      │
+      ├─ instructions / user text 正規化
+      ├─ attachments 存在？
+      │   ├─ 是 -> 上傳 Files API
+      │   └─ 否
+      ├─ call Responses API
+      ├─ parse structured JSON
+      └─ map external error -> business error
+```
 
 ## Consult Response Contract
 AI 被要求回傳固定 JSON 結構：

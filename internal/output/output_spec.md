@@ -42,3 +42,19 @@ renderer 是 service 層內的格式實作，不作為獨立架構層。
 - `includeFile=false` -> no file
 - `includeFile=true` -> request output format or builder default
 - xlsx renderer 先嘗試 markdown table，失敗則逐行輸出
+
+## Output Decision Flow
+
+```text
+Render request
+    │
+    ├─ response status=false ?
+    │   └─ 是 -> 原樣回傳
+    ├─ includeFile=false ?
+    │   └─ 是 -> text-only response
+    ├─ resolve output format
+    │   ├─ request override
+    │   └─ builder default
+    ├─ markdown / xlsx renderer
+    └─ file bytes -> base64 payload
+```

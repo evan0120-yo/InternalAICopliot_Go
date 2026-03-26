@@ -34,6 +34,20 @@
   Then 回應內容應補上附件數量已納入分析上下文的說明
 
 ## Scenario Group: OpenAI Analyze
+```text
+OpenAI analyze
+     │
+     ├─ normalize instructions / user text
+     ├─ attachments 存在？
+     │   ├─ 是 -> upload Files API
+     │   │        ├─ image -> input_image / vision
+     │   │        └─ file  -> input_file / user_data
+     │   └─ 否
+     ├─ call Responses API
+     ├─ parse structured JSON
+     └─ map OpenAI errors -> business errors
+```
+
 - Given OpenAI 模式啟用
   When analyze 執行
   Then request payload 必須要求 JSON schema 格式，欄位固定為 `status`、`statusAns`、`response`

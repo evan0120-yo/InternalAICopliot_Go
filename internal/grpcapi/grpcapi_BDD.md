@@ -18,6 +18,15 @@
   Then 不應要求先呼叫 `ListBuilders`
 
 ## Scenario Group: Generic Consult Adaptation
+```text
+gRPC Consult
+    │
+    ├─ map request fields
+    ├─ map attachments bytes
+    ├─ keep appId as-is
+    └─ set ConsultModeGeneric
+```
+
 - Given external app 傳入 generic `Consult` request
   When grpcapi `Consult` 執行
   Then 應將其轉成交由 gatekeeper / builder 使用的 generic consult command
@@ -31,7 +40,20 @@
   Then command `Mode` 應為 `ConsultModeGeneric`
 
 ## Scenario Group: Profile Consult Adaptation
-- Given external app 傳入固定 `builderId`、`analysisModules`、optional `subjectProfile` 與 optional `text`
+```text
+gRPC ProfileConsult
+      │
+      ├─ keep appId / builderId
+      ├─ map subjectProfile envelope
+      ├─ map analysisPayloads[]
+      │   ├─ analysisType
+      │   ├─ theoryVersion
+      │   └─ payload
+      ├─ fallback clientIp
+      └─ set ConsultModeProfile
+```
+
+- Given external app 傳入固定 `builderId`、optional `subjectProfile` 與 optional `text`
   When grpcapi `ProfileConsult` 執行
   Then 應將其轉成交由 gatekeeper / builder 使用的 structured profile consult command
 
@@ -39,17 +61,17 @@
   When grpcapi 建立 command
   Then 應將該 `appId` 原樣傳給 gatekeeper / builder，不在 grpcapi 內改寫成其他策略 key
 
-- Given `ProfileConsult` request 的某個 module payload 帶 `theoryVersion`
+- Given `ProfileConsult` request 的某個 analysis payload 帶 `theoryVersion`
   When grpcapi 建立 command
   Then 應保留該欄位並原樣往下傳
 
-- Given `ProfileConsult` request 帶 `analysisModules=[]` 且 `text` 有值
+- Given `ProfileConsult` request 未帶 `subjectProfile` 且 `text` 有值
   When grpcapi 建立 command
   Then command `Mode` 仍應為 `ConsultModeProfile`
 
 - Given grpcapi `ProfileConsult` 執行
   When command 被建立
-  Then 不得靠 `analysisModules` 是否為空推斷 mode
+  Then 不得靠 `subjectProfile` 是否為空推斷 mode
 
 - Given gRPC request 已明確帶 `clientIp`
   When grpcapi 執行
@@ -60,6 +82,15 @@
   Then 應回退到 peer address；若仍不可得，則使用 transport fallback 值
 
 ## Scenario Group: Error Mapping
+```text
+gatekeeper / builder business error
+        │
+        ▼
+grpc status code mapping
+        │
+        └─ ErrorInfo.reason = business error code
+```
+
 - Given gatekeeper 或 builder 回傳 business error
   When grpcapi 回應 gRPC caller
   Then 應映射成對應的 gRPC status code，並在 `ErrorInfo.reason` 放入 business error code

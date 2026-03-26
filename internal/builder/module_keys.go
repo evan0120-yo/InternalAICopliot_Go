@@ -27,36 +27,9 @@ func NormalizeStoredModuleKey(raw string) (string, error) {
 	return moduleKey, nil
 }
 
-// NormalizeAnalysisModuleKey trims and validates a single analysis module key.
-func NormalizeAnalysisModuleKey(raw string) (string, error) {
-	return normalizeRequestedModuleKey(raw, "analysisModules entries")
-}
-
-// NormalizeProfileModuleKey trims and validates a single subject profile module key.
-func NormalizeProfileModuleKey(raw string) (string, error) {
-	return normalizeRequestedModuleKey(raw, "subjectProfile.modulePayloads.moduleKey")
-}
-
-// NormalizeAnalysisModules trims, lowercases, validates, and deduplicates request module keys.
-func NormalizeAnalysisModules(values []string) ([]string, error) {
-	if len(values) == 0 {
-		return nil, nil
-	}
-
-	normalized := make([]string, 0, len(values))
-	seen := make(map[string]struct{}, len(values))
-	for _, raw := range values {
-		moduleKey, err := NormalizeAnalysisModuleKey(raw)
-		if err != nil {
-			return nil, err
-		}
-		if _, ok := seen[moduleKey]; ok {
-			continue
-		}
-		seen[moduleKey] = struct{}{}
-		normalized = append(normalized, moduleKey)
-	}
-	return normalized, nil
+// NormalizeAnalysisTypeKey trims and validates a single analysis type key.
+func NormalizeAnalysisTypeKey(raw string) (string, error) {
+	return normalizeRequestedModuleKey(raw, "subjectProfile.analysisPayloads.analysisType")
 }
 
 func normalizeRequestedModuleKey(raw, fieldLabel string) (string, error) {

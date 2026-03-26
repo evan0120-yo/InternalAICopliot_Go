@@ -37,7 +37,7 @@ gRPC transport adapter 不在此 module 內，但應重用同一個 gatekeeper u
 - 驗證 `outputFormat`
 - 驗證檔案數量、單檔大小、總大小與副檔名
 - 驗證 `appId -> builderId` 授權
-- 驗證 `analysisModules` 與 structured `subjectProfile` 的基本形狀
+- 驗證 structured `subjectProfile` 的共享 envelope 與 `analysisType`
 - 為 builder command 設定正確的 `ConsultMode`
 - 解析 client IP
 - 將 validated `appId` 或 optional public `appId` 傳給 builder，供 prompt strategy 選擇
@@ -116,7 +116,6 @@ Header：
 欄位：
 - `appId` optional, only for public/local-dev prompt-strategy testing
 - `builderId` required
-- `analysisModules[]` required
 - `subjectProfile` optional
 - `text` optional
 
@@ -140,50 +139,92 @@ generic `Consult` 最終應映射為 `ConsultModeGeneric`。
 `ProfileConsult` 對 LinkChat profile-analysis 這條線應至少承載：
 - `appId`
 - `builderId`
-- `analysisModules[]`
 - `subjectProfile` optional
 - `text` optional
 - `clientIp` optional
 
 其中：
-- `analysisModules` 代表本次實際參與分析的 modules
 - `subjectProfile` 代表 external app 已正規化好的 subject 資料
-- `analysisModules=[] && text!=""` 是合法的 text-only profile request
-- 若某個 module 需要 Internal-side code mapping，對應 payload 應帶 `theoryVersion`
+- external app 應只送本次真的有資料的 analysis payload，不再額外傳 top-level module list
+- `subjectProfile` 可帶 `analysis payloads[]`，每個 payload 需有 stable `analysisType`
+- `subjectProfile` 缺值且 `text!=""` 是合法的 text-only profile request
+- 若某個 analysis type 需要 Internal-side code mapping，對應 payload 應帶 `theoryVersion`
 
 `ProfileConsult` 最終應映射為 `ConsultModeProfile`。
 
 ## Validation Rules
-- `appId` 在 external HTTP 與 app-scoped gRPC integration request 為必填
-- public HTTP `POST /api/consult` 的 `appId` 為 optional，且只作為 prompt strategy hint，不承擔 external app 授權語意
-- external app 必須存在
-- external app 必須為 `active=true`
-- external app 只能取得自己被授權的 builders
-- external consult / profile consult 的 `builderId` 必須在 app 授權名單內
-- `builderId` 必填
-- builder 必須存在
-- builder 必須為 `active=true`
-- `outputFormat` 若提供，必須是 `markdown` 或 `xlsx`
-- client IP 必須可解析
-- 檔案數不可超過設定值
-- 單檔大小不可超過設定值
-- 總大小不可超過設定值
-- `analysisModules` 在 profile mode 可為空，但不可為 `nil` 推斷 generic mode
-- `analysisModules` 應視為本次 request 的顯式 module set
-- `analysisModules` 必須符合 `trim + lowercase + deduplicate`
-- `analysisModules` 每個值都必須符合 `^[a-z0-9][a-z0-9_-]*$`
-- `analysisModules` 不可包含保留字 `common`
-- `subjectProfile` 在 text-only profile request 中可以省略
-- 若 `subjectProfile` 有值，則 `subjectId` 必填
-- `subjectProfile` 內每個 module payload 都應落在 `analysisModules` 內
-- `subjectProfile` 內 `moduleKey` 不可重複
-- 同一個 module 內的 `factKey` 不可重複
-- `factKey` 不可為空白
-- 每個 fact 至少需要一個 value
-- `values[]` 內每個 value 都不可為空白
-- `theoryVersion` 若提供，不可為空白；是否必填由 app-specific prompt strategy 與對應 module 決定
-- 目前 `appId=linkchat` 且 `moduleKey=astrology` 時，`theoryVersion` 必填
-- 目前 `appId=linkchat` 且 `moduleKey=mbti` 時，`theoryVersion` 可省略
+
+```text
+Request 進入 Gatekeeper
+     │
+     ▼
+┌─ App 驗證（僅 external HTTP / app-scoped gRPC）──────────────┐
+│  appId 存在？ ─── 否 → APP_ID_MISSING                       │
+│       │ 是                                                    │
+│       ▼                                                       │
+│  app 存在？ ─── 否 → APP_NOT_FOUND                           │
+│       │ 是                                                    │
+│       ▼                                                       │
+│  app active? ─── 否 → APP_INACTIVE                           │
+│       │ 是                                                    │
+│       ▼                                                       │
+│  builderId 在 app 授權名單內？ ─── 否 → APP_BUILDER_FORBIDDEN│
+│       │ 是                                                    │
+│       ▼                                                       │
+│  （通過 app 驗證）                                            │
+│                                                               │
+│  ※ public POST /api/consult 的 appId 為 optional，           │
+│    僅作 prompt strategy hint，不走此 app auth 流程            │
+└───────────────────────────────────┬───────────────────────────┘
+                                    ▼
+┌─ Builder 驗證 ────────────────────────────────────────────────┐
+│  builderId 有值？ ─── 否 → BUILDER_ID_MISSING                │
+│       │ 是                                                    │
+│       ▼                                                       │
+│  builder 存在？ ─── 否 → BUILDER_NOT_FOUND                   │
+│       │ 是                                                    │
+│       ▼                                                       │
+│  builder active? ─── 否 → BUILDER_INACTIVE                   │
+│       │ 是                                                    │
+│       ▼                                                       │
+│  （通過 builder 驗證）                                        │
+└───────────────────────────────────┬───────────────────────────┘
+                                    ▼
+┌─ 格式與附件驗證 ──────────────────────────────────────────────┐
+│  outputFormat 有值？                                          │
+│   ├── 有 → 是 markdown 或 xlsx？                             │
+│   │         ├── 否 → UNSUPPORTED_OUTPUT_FORMAT               │
+│   │         └── 是 → 通過                                    │
+│   └── 無 → 通過                                              │
+│                                                               │
+│  client IP 可解析？ ─── 否 → CLIENT_IP_MISSING               │
+│                                                               │
+│  附件驗證：                                                   │
+│   ├── 檔案數超過限制？ → FILE_COUNT_EXCEEDED                 │
+│   ├── 單檔大小超過限制？ → FILE_SIZE_EXCEEDED                │
+│   └── 總大小超過限制？ → FILE_TOTAL_SIZE_EXCEEDED            │
+└───────────────────────────────────┬───────────────────────────┘
+                                    ▼
+┌─ Profile Consult 驗證（僅 ConsultModeProfile）────────────────┐
+│                                                               │
+│  subjectProfile 驗證：                                        │
+│   ├── 無值 → 允許（text-only profile request）               │
+│   └── 有值 ↓                                                 │
+│        ├── subjectId 必填                                     │
+│        ├── analysis payload 不可重複（同 analysisType）       │
+│        └── 逐一檢查每個 analysis payload：                    │
+│              ├── analysisType 不可為空白                      │
+│              ├── analysisType 須符合 stable key 格式          │
+│              └── 不在 gatekeeper 內解析 astrology/mbti 細節   │
+│                                                               │
+│  theoryVersion 驗證：                                         │
+│   ├── 若提供，不可為空白                                      │
+│   ├── linkchat + astrology → 必填                             │
+│   └── linkchat + mbti → 可省略                                │
+└───────────────────────────────────┬───────────────────────────┘
+                                    ▼
+                            全部通過，轉交 Builder
+```
 
 ## Notes
 - Gatekeeper 不做附件內容解析
@@ -192,5 +233,6 @@ generic `Consult` 最終應映射為 `ConsultModeGeneric`。
 - 尚未實作 IP allowlist / blocklist
 - 尚未實作 MIME validation
 - Gatekeeper 不負責 LinkChat 的 module entitlement 與缺資料剔除；那是 external app 的本地 gatekeeping
+- Gatekeeper 不負責 analysis-type-specific payload parsing；那是 builder 內 LinkChat 第二層 factory 的責任
 - Gatekeeper 不負責 raw theory value -> Internal private code mapping；那是 builder prompt strategy 與 codebook repository 的責任
 - public prompt-testing routes 的安全性預設由部署/環境隔離保護，不由 gatekeeper 在第一版內做 app auth

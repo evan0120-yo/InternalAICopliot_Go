@@ -13,19 +13,19 @@ import (
 	"com.citrus.internalaicopilot/internal/infra"
 	"com.citrus.internalaicopilot/internal/output"
 	"com.citrus.internalaicopilot/internal/rag"
+
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestToSubjectProfilePreservesTheoryVersion(t *testing.T) {
 	theoryVersion := "astro-v1"
 	profile := toSubjectProfile(&grpcpb.SubjectProfile{
 		SubjectId: "user-123",
-		ModulePayloads: []*grpcpb.SubjectModulePayload{
+		AnalysisPayloads: []*grpcpb.SubjectAnalysisPayload{
 			{
-				ModuleKey:     "astrology",
+				AnalysisType:  "astrology",
 				TheoryVersion: &theoryVersion,
-				Facts: []*grpcpb.SubjectFact{
-					{FactKey: "sun_sign", Values: []string{"Scorpio"}},
-				},
+				Payload:       structFromMap(t, map[string]any{"sun_sign": []any{"Scorpio"}}),
 			},
 		},
 	})
@@ -33,8 +33,8 @@ func TestToSubjectProfilePreservesTheoryVersion(t *testing.T) {
 	if profile == nil {
 		t.Fatalf("expected profile to be converted")
 	}
-	if profile.ModulePayloads[0].TheoryVersion == nil || *profile.ModulePayloads[0].TheoryVersion != "astro-v1" {
-		t.Fatalf("expected theory version to be preserved, got %+v", profile.ModulePayloads[0].TheoryVersion)
+	if profile.AnalysisPayloads[0].TheoryVersion == nil || *profile.AnalysisPayloads[0].TheoryVersion != "astro-v1" {
+		t.Fatalf("expected theory version to be preserved, got %+v", profile.AnalysisPayloads[0].TheoryVersion)
 	}
 }
 
@@ -65,19 +65,15 @@ func TestProfileConsultPassesTheoryMappedPayloadThroughService(t *testing.T) {
 
 	theoryVersion := "astro-v1"
 	response, err := service.ProfileConsult(context.Background(), &grpcpb.ProfileConsultRequest{
-		AppId:           "linkchat",
-		BuilderId:       1,
-		AnalysisModules: []string{"astrology"},
+		AppId:     "linkchat",
+		BuilderId: 1,
 		SubjectProfile: &grpcpb.SubjectProfile{
 			SubjectId: "user-123",
-			ModulePayloads: []*grpcpb.SubjectModulePayload{
+			AnalysisPayloads: []*grpcpb.SubjectAnalysisPayload{
 				{
-					ModuleKey:     "astrology",
+					AnalysisType:  "astrology",
 					TheoryVersion: &theoryVersion,
-					Facts: []*grpcpb.SubjectFact{
-						{FactKey: "sun_sign", Values: []string{"Scorpio"}},
-						{FactKey: "moon_sign", Values: []string{"雙魚"}},
-					},
+					Payload:       structFromMap(t, map[string]any{"sun_sign": []any{"Scorpio"}, "moon_sign": []any{"雙魚"}}),
 				},
 			},
 		},
@@ -92,4 +88,14 @@ func TestProfileConsultPassesTheoryMappedPayloadThroughService(t *testing.T) {
 	if response.GetResponse() == "" {
 		t.Fatalf("expected non-empty response, got %+v", response)
 	}
+}
+
+func structFromMap(t *testing.T, payload map[string]any) *structpb.Struct {
+	t.Helper()
+
+	item, err := structpb.NewStruct(payload)
+	if err != nil {
+		t.Fatalf("NewStruct returned error: %v", err)
+	}
+	return item
 }

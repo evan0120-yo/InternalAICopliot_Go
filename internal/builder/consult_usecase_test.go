@@ -58,16 +58,22 @@ func TestConsultReturnsCancelledWhenContextIsDone(t *testing.T) {
 	}
 }
 
-func TestFilterSourcesForProfileConsultIncludesCommonAndRequestedModules(t *testing.T) {
+func TestFilterProfileSourcesIncludesCommonAndRequestedAnalysisTags(t *testing.T) {
+	service := NewAssembleService(nil)
 	sources := []infra.Source{
 		{SourceID: 1, ModuleKey: "", Prompts: "common"},
 		{SourceID: 2, ModuleKey: "astrology", Prompts: "astrology"},
 		{SourceID: 3, ModuleKey: "mbti", Prompts: "mbti"},
 	}
 
-	filtered, err := filterSourcesForProfileConsult(sources, []string{"astrology"})
+	filtered, err := service.FilterProfileSources(context.Background(), "", sources, &SubjectProfile{
+		SubjectID: "user-123",
+		AnalysisPayloads: []SubjectAnalysisPayload{
+			{AnalysisType: "astrology", Payload: map[string]any{"sun_sign": []any{"Scorpio"}}},
+		},
+	})
 	if err != nil {
-		t.Fatalf("filterSourcesForProfileConsult returned error: %v", err)
+		t.Fatalf("FilterProfileSources returned error: %v", err)
 	}
 	if len(filtered) != 2 {
 		t.Fatalf("expected common and astrology sources, got %+v", filtered)
@@ -77,28 +83,18 @@ func TestFilterSourcesForProfileConsultIncludesCommonAndRequestedModules(t *test
 	}
 }
 
-func TestFilterSourcesForProfileConsultSupportsTextOnlyProfileRequests(t *testing.T) {
+func TestFilterProfileSourcesSupportsTextOnlyProfileRequests(t *testing.T) {
+	service := NewAssembleService(nil)
 	sources := []infra.Source{
 		{SourceID: 1, ModuleKey: "", Prompts: "common"},
 		{SourceID: 2, ModuleKey: "astrology", Prompts: "astrology"},
 	}
 
-	filtered, err := filterSourcesForProfileConsult(sources, nil)
+	filtered, err := service.FilterProfileSources(context.Background(), "", sources, nil)
 	if err != nil {
-		t.Fatalf("filterSourcesForProfileConsult returned error: %v", err)
+		t.Fatalf("FilterProfileSources returned error: %v", err)
 	}
 	if len(filtered) != 1 || filtered[0].SourceID != 1 {
 		t.Fatalf("expected only common sources for text-only profile request, got %+v", filtered)
-	}
-}
-
-func TestFilterSourcesForProfileConsultRejectsInvalidStoredModuleKey(t *testing.T) {
-	sources := []infra.Source{
-		{SourceID: 1, ModuleKey: "bad key!", Prompts: "broken"},
-	}
-
-	_, err := filterSourcesForProfileConsult(sources, []string{"astrology"})
-	if err == nil || !strings.Contains(err.Error(), "INVALID_SOURCE_MODULE_KEY") {
-		t.Fatalf("expected invalid stored module key error, got %v", err)
 	}
 }

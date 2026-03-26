@@ -127,7 +127,6 @@ func (s *Service) ProfileConsult(ctx context.Context, request *grpcpb.ProfileCon
 		ctx,
 		strings.TrimSpace(request.GetAppId()),
 		int(request.GetBuilderId()),
-		request.GetAnalysisModules(),
 		toSubjectProfile(request.GetSubjectProfile()),
 		request.GetText(),
 		clientIP,
@@ -207,25 +206,22 @@ func toSubjectProfile(profile *grpcpb.SubjectProfile) *builder.SubjectProfile {
 		return nil
 	}
 
-	modulePayloads := make([]builder.SubjectModulePayload, 0, len(profile.GetModulePayloads()))
-	for _, payload := range profile.GetModulePayloads() {
-		facts := make([]builder.SubjectFact, 0, len(payload.GetFacts()))
-		for _, fact := range payload.GetFacts() {
-			facts = append(facts, builder.SubjectFact{
-				FactKey: fact.GetFactKey(),
-				Values:  append([]string(nil), fact.GetValues()...),
-			})
+	analysisPayloads := make([]builder.SubjectAnalysisPayload, 0, len(profile.GetAnalysisPayloads()))
+	for _, payload := range profile.GetAnalysisPayloads() {
+		var rawPayload map[string]any
+		if payload.GetPayload() != nil {
+			rawPayload = clonePayloadMap(payload.GetPayload().AsMap())
 		}
-		modulePayloads = append(modulePayloads, builder.SubjectModulePayload{
-			ModuleKey:     payload.GetModuleKey(),
+		analysisPayloads = append(analysisPayloads, builder.SubjectAnalysisPayload{
+			AnalysisType:  payload.GetAnalysisType(),
 			TheoryVersion: cloneOptionalString(payload.TheoryVersion),
-			Facts:         facts,
+			Payload:       rawPayload,
 		})
 	}
 
 	return &builder.SubjectProfile{
-		SubjectID:      profile.GetSubjectId(),
-		ModulePayloads: modulePayloads,
+		SubjectID:        profile.GetSubjectId(),
+		AnalysisPayloads: analysisPayloads,
 	}
 }
 
@@ -235,4 +231,31 @@ func cloneOptionalString(value *string) *string {
 	}
 	cloned := *value
 	return &cloned
+}
+
+func clonePayloadMap(payload map[string]any) map[string]any {
+	if len(payload) == 0 {
+		return nil
+	}
+
+	cloned := make(map[string]any, len(payload))
+	for key, value := range payload {
+		cloned[key] = clonePayloadValue(value)
+	}
+	return cloned
+}
+
+func clonePayloadValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return clonePayloadMap(typed)
+	case []any:
+		cloned := make([]any, 0, len(typed))
+		for _, item := range typed {
+			cloned = append(cloned, clonePayloadValue(item))
+		}
+		return cloned
+	default:
+		return typed
+	}
 }

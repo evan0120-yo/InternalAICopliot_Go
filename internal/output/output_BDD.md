@@ -8,6 +8,20 @@
 - output render usecase：對 builder 暴露 render 入口
 
 ## Scenario Group: Output Policy
+```text
+RenderService.Render
+      │
+      ├─ business response status=false ?
+      │   └─ 是 -> 原樣回傳，不產檔
+      ├─ builder includeFile=false ?
+      │   └─ 是 -> 原樣回傳，不產檔
+      ├─ output format 解析
+      │   ├─ request format
+      │   └─ builder default
+      └─ render markdown / xlsx
+          └─ base64 file payload
+```
+
 - Given business response `status=false`
   When `RenderService.Render` 執行
   Then 應直接回傳原 response，且 `file` 必須為 `nil`

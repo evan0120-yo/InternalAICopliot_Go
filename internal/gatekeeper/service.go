@@ -2,6 +2,7 @@ package gatekeeper
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -114,28 +115,24 @@ func (s *GuardService) ValidateConsult(ctx context.Context, builderID int, outpu
 }
 
 // ValidateProfileConsult validates structured profile consult input.
-func (s *GuardService) ValidateProfileConsult(ctx context.Context, builderID int, analysisModules []string, subjectProfile *builder.SubjectProfile, text, clientIP string) (infra.BuilderConfig, []string, *builder.SubjectProfile, error) {
+func (s *GuardService) ValidateProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, text, clientIP string) (infra.BuilderConfig, *builder.SubjectProfile, error) {
 	if strings.TrimSpace(clientIP) == "" {
-		return infra.BuilderConfig{}, nil, nil, infra.NewError("CLIENT_IP_MISSING", "Client IP could not be resolved.", http.StatusBadRequest)
+		return infra.BuilderConfig{}, nil, infra.NewError("CLIENT_IP_MISSING", "Client IP could not be resolved.", http.StatusBadRequest)
 	}
 	builderConfig, err := s.validateActiveBuilder(ctx, builderID)
 	if err != nil {
-		return infra.BuilderConfig{}, nil, nil, err
+		return infra.BuilderConfig{}, nil, err
 	}
 
-	normalizedModules, err := builder.NormalizeAnalysisModules(analysisModules)
+	normalizedProfile, err := normalizeSubjectProfile(appID, subjectProfile)
 	if err != nil {
-		return infra.BuilderConfig{}, nil, nil, err
+		return infra.BuilderConfig{}, nil, err
 	}
-	normalizedProfile, err := normalizeSubjectProfile(subjectProfile, normalizedModules)
-	if err != nil {
-		return infra.BuilderConfig{}, nil, nil, err
-	}
-	if len(normalizedModules) == 0 && strings.TrimSpace(text) == "" && normalizedProfile == nil {
-		return infra.BuilderConfig{}, nil, nil, infra.NewError("PROFILE_INPUT_EMPTY", "analysisModules, subjectProfile, or text is required.", http.StatusBadRequest)
+	if strings.TrimSpace(text) == "" && normalizedProfile == nil {
+		return infra.BuilderConfig{}, nil, infra.NewError("PROFILE_INPUT_EMPTY", "subjectProfile or text is required.", http.StatusBadRequest)
 	}
 
-	return builderConfig, normalizedModules, normalizedProfile, nil
+	return builderConfig, normalizedProfile, nil
 }
 
 // ValidateExternalApp validates the external caller app identity.
@@ -177,21 +174,21 @@ func (s *GuardService) ValidateExternalConsult(ctx context.Context, appID string
 }
 
 // ValidateExternalProfileConsult validates an external app profile consult request.
-func (s *GuardService) ValidateExternalProfileConsult(ctx context.Context, appID string, builderID int, analysisModules []string, subjectProfile *builder.SubjectProfile, text, clientIP string) (infra.AppAccess, infra.BuilderConfig, []string, *builder.SubjectProfile, error) {
+func (s *GuardService) ValidateExternalProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, text, clientIP string) (infra.AppAccess, infra.BuilderConfig, *builder.SubjectProfile, error) {
 	app, err := s.ValidateExternalApp(ctx, appID)
 	if err != nil {
-		return infra.AppAccess{}, infra.BuilderConfig{}, nil, nil, err
+		return infra.AppAccess{}, infra.BuilderConfig{}, nil, err
 	}
 
-	builderConfig, normalizedModules, normalizedProfile, err := s.ValidateProfileConsult(ctx, builderID, analysisModules, subjectProfile, text, clientIP)
+	builderConfig, normalizedProfile, err := s.ValidateProfileConsult(ctx, appID, builderID, subjectProfile, text, clientIP)
 	if err != nil {
-		return infra.AppAccess{}, infra.BuilderConfig{}, nil, nil, err
+		return infra.AppAccess{}, infra.BuilderConfig{}, nil, err
 	}
 	if !appAllowsBuilder(app, builderID) {
-		return infra.AppAccess{}, infra.BuilderConfig{}, nil, nil, infra.NewError("APP_BUILDER_FORBIDDEN", "Requested app is not allowed to use this builder.", http.StatusForbidden)
+		return infra.AppAccess{}, infra.BuilderConfig{}, nil, infra.NewError("APP_BUILDER_FORBIDDEN", "Requested app is not allowed to use this builder.", http.StatusForbidden)
 	}
 
-	return app, builderConfig, normalizedModules, normalizedProfile, nil
+	return app, builderConfig, normalizedProfile, nil
 }
 
 func (s *GuardService) validateActiveBuilder(ctx context.Context, builderID int) (infra.BuilderConfig, error) {
@@ -211,78 +208,46 @@ func (s *GuardService) validateActiveBuilder(ctx context.Context, builderID int)
 	return builderConfig, nil
 }
 
-func normalizeSubjectProfile(subjectProfile *builder.SubjectProfile, analysisModules []string) (*builder.SubjectProfile, error) {
+func normalizeSubjectProfile(appID string, subjectProfile *builder.SubjectProfile) (*builder.SubjectProfile, error) {
 	if subjectProfile == nil {
 		return nil, nil
-	}
-
-	allowedModules := make(map[string]struct{}, len(analysisModules))
-	for _, moduleKey := range analysisModules {
-		allowedModules[moduleKey] = struct{}{}
 	}
 
 	normalized := &builder.SubjectProfile{
 		SubjectID: strings.TrimSpace(subjectProfile.SubjectID),
 	}
-	if normalized.SubjectID == "" && len(subjectProfile.ModulePayloads) == 0 {
+	if normalized.SubjectID == "" && len(subjectProfile.AnalysisPayloads) == 0 {
 		return nil, nil
 	}
 	if normalized.SubjectID == "" {
 		return nil, infra.NewError("SUBJECT_ID_MISSING", "subjectProfile.subjectId is required when subjectProfile is present.", http.StatusBadRequest)
 	}
 
-	seenModules := make(map[string]struct{}, len(subjectProfile.ModulePayloads))
-	normalized.ModulePayloads = make([]builder.SubjectModulePayload, 0, len(subjectProfile.ModulePayloads))
-	for _, payload := range subjectProfile.ModulePayloads {
-		moduleKey, err := builder.NormalizeProfileModuleKey(payload.ModuleKey)
+	trimmedAppID := strings.TrimSpace(appID)
+	seenAnalysisTypes := make(map[string]struct{}, len(subjectProfile.AnalysisPayloads))
+	normalized.AnalysisPayloads = make([]builder.SubjectAnalysisPayload, 0, len(subjectProfile.AnalysisPayloads))
+	for _, payload := range subjectProfile.AnalysisPayloads {
+		analysisType, err := builder.NormalizeAnalysisTypeKey(payload.AnalysisType)
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := seenModules[moduleKey]; ok {
-			return nil, infra.NewError("DUPLICATE_MODULE_PAYLOAD", "subjectProfile.modulePayloads must not repeat moduleKey.", http.StatusBadRequest)
+		if _, ok := seenAnalysisTypes[analysisType]; ok {
+			return nil, infra.NewError("DUPLICATE_ANALYSIS_PAYLOAD", "subjectProfile.analysisPayloads must not repeat analysisType.", http.StatusBadRequest)
 		}
-		if _, ok := allowedModules[moduleKey]; !ok {
-			return nil, infra.NewError("PROFILE_MODULE_NOT_ALLOWED", "subjectProfile.modulePayloads moduleKey must exist in analysisModules.", http.StatusBadRequest)
-		}
-		seenModules[moduleKey] = struct{}{}
+		seenAnalysisTypes[analysisType] = struct{}{}
 
-		normalizedPayload := builder.SubjectModulePayload{
-			ModuleKey:     moduleKey,
+		normalizedPayload := builder.SubjectAnalysisPayload{
+			AnalysisType:  analysisType,
 			TheoryVersion: normalizeTheoryVersion(payload.TheoryVersion),
-			Facts:         make([]builder.SubjectFact, 0, len(payload.Facts)),
+			Payload:       cloneAnalysisPayloadValueMap(payload.Payload),
 		}
 		if payload.TheoryVersion != nil && normalizedPayload.TheoryVersion == nil {
-			return nil, infra.NewError("THEORY_VERSION_MISSING", "subjectProfile.modulePayloads.theoryVersion must not be blank when provided.", http.StatusBadRequest)
+			return nil, infra.NewError("THEORY_VERSION_MISSING", "subjectProfile.analysisPayloads.theoryVersion must not be blank when provided.", http.StatusBadRequest)
 		}
-		seenFacts := make(map[string]struct{}, len(payload.Facts))
-		for _, fact := range payload.Facts {
-			factKey := strings.TrimSpace(fact.FactKey)
-			if factKey == "" {
-				return nil, infra.NewError("SUBJECT_FACT_KEY_MISSING", "subjectProfile facts require factKey.", http.StatusBadRequest)
-			}
-			if _, ok := seenFacts[factKey]; ok {
-				return nil, infra.NewError("DUPLICATE_FACT_KEY", "subjectProfile facts must not repeat factKey within one module.", http.StatusBadRequest)
-			}
-			seenFacts[factKey] = struct{}{}
-
-			values := make([]string, 0, len(fact.Values))
-			for _, value := range fact.Values {
-				trimmed := strings.TrimSpace(value)
-				if trimmed == "" {
-					return nil, infra.NewError("SUBJECT_FACT_VALUE_MISSING", "subjectProfile fact values must not be blank.", http.StatusBadRequest)
-				}
-				values = append(values, trimmed)
-			}
-			if len(values) == 0 {
-				return nil, infra.NewError("SUBJECT_FACT_VALUE_MISSING", "subjectProfile facts require at least one value.", http.StatusBadRequest)
-			}
-
-			normalizedPayload.Facts = append(normalizedPayload.Facts, builder.SubjectFact{
-				FactKey: factKey,
-				Values:  values,
-			})
+		if strings.EqualFold(trimmedAppID, "linkchat") && analysisType == "astrology" && normalizedPayload.TheoryVersion == nil {
+			return nil, infra.NewError("THEORY_VERSION_REQUIRED", "subjectProfile.analysisPayloads.theoryVersion is required for linkchat astrology.", http.StatusBadRequest)
 		}
-		normalized.ModulePayloads = append(normalized.ModulePayloads, normalizedPayload)
+		normalized.AnalysisPayloads = append(normalized.AnalysisPayloads, normalizedPayload)
 	}
 
 	return normalized, nil
@@ -297,6 +262,39 @@ func normalizeTheoryVersion(raw *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func cloneAnalysisPayloadValueMap(payload map[string]any) map[string]any {
+	if len(payload) == 0 {
+		return nil
+	}
+
+	cloned := make(map[string]any, len(payload))
+	for key, value := range payload {
+		cloned[key] = cloneAnalysisPayloadValue(value)
+	}
+	return cloned
+}
+
+func cloneAnalysisPayloadValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneAnalysisPayloadValueMap(typed)
+	case []any:
+		cloned := make([]any, 0, len(typed))
+		for _, item := range typed {
+			cloned = append(cloned, cloneAnalysisPayloadValue(item))
+		}
+		return cloned
+	case []string:
+		return append([]string(nil), typed...)
+	case string:
+		return strings.TrimSpace(typed)
+	case float64, bool, nil, int, int32, int64:
+		return typed
+	default:
+		return fmt.Sprint(typed)
+	}
 }
 
 func appAllowsBuilder(app infra.AppAccess, builderID int) bool {

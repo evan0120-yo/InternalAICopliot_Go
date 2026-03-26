@@ -126,19 +126,19 @@ func TestAssemblePromptRendersDeterministicSubjectProfileBlock(t *testing.T) {
 		"請分析這個人",
 		&SubjectProfile{
 			SubjectID: "user-123",
-			ModulePayloads: []SubjectModulePayload{
+			AnalysisPayloads: []SubjectAnalysisPayload{
 				{
-					ModuleKey: "mbti",
-					Facts: []SubjectFact{
-						{FactKey: "type", Values: []string{"INTJ"}},
-						{FactKey: "cognitive_stack", Values: []string{"Ni", `Te|aux`, `Fi\deep`}},
+					AnalysisType: "mbti",
+					Payload: map[string]any{
+						"type":            "INTJ",
+						"cognitive_stack": []any{"Ni", `Te|aux`, `Fi\deep`},
 					},
 				},
 				{
-					ModuleKey: "astrology",
-					Facts: []SubjectFact{
-						{FactKey: "sun_sign", Values: []string{"Scorpio"}},
-						{FactKey: "moon_sign", Values: []string{"Pisces"}},
+					AnalysisType: "astrology",
+					Payload: map[string]any{
+						"sun_sign":  []any{"Scorpio"},
+						"moon_sign": []any{"Pisces"},
 					},
 				},
 			},
@@ -153,10 +153,10 @@ func TestAssemblePromptRendersDeterministicSubjectProfileBlock(t *testing.T) {
 	if subjectIndex < 0 || sourceIndex < 0 || subjectIndex > sourceIndex {
 		t.Fatalf("expected SUBJECT_PROFILE block before source block, got: %s", result.Instructions)
 	}
-	if !strings.Contains(result.Instructions, "### [module:astrology]\nmoon_sign: Pisces\nsun_sign: Scorpio\n") {
+	if !strings.Contains(result.Instructions, "### [analysis:astrology]\nmoon_sign: Pisces\nsun_sign: Scorpio\n") {
 		t.Fatalf("expected alphabetically sorted astrology facts, got: %s", result.Instructions)
 	}
-	if !strings.Contains(result.Instructions, "### [module:mbti]\ncognitive_stack: Ni|Te\\|aux|Fi\\\\deep\ntype: INTJ\n") {
+	if !strings.Contains(result.Instructions, "### [analysis:mbti]\ncognitive_stack: Ni|Te\\|aux|Fi\\\\deep\ntype: INTJ\n") {
 		t.Fatalf("expected mbti values to preserve order and escape separators, got: %s", result.Instructions)
 	}
 }
@@ -189,19 +189,19 @@ func TestAssemblePromptUsesLinkChatStrategyForTheoryMappedModules(t *testing.T) 
 		"請分析這個人",
 		&SubjectProfile{
 			SubjectID: "user-123",
-			ModulePayloads: []SubjectModulePayload{
+			AnalysisPayloads: []SubjectAnalysisPayload{
 				{
-					ModuleKey:     "astrology",
+					AnalysisType:  "astrology",
 					TheoryVersion: &theoryVersion,
-					Facts: []SubjectFact{
-						{FactKey: "sun_sign", Values: []string{"Scorpio"}},
-						{FactKey: "moon_sign", Values: []string{"雙魚"}},
+					Payload: map[string]any{
+						"sun_sign":  []any{"Scorpio"},
+						"moon_sign": []any{"雙魚"},
 					},
 				},
 				{
-					ModuleKey: "mbti",
-					Facts: []SubjectFact{
-						{FactKey: "type", Values: []string{"INTJ"}},
+					AnalysisType: "mbti",
+					Payload: map[string]any{
+						"type": "INTJ",
 					},
 				},
 			},
