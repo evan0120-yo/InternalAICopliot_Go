@@ -275,7 +275,6 @@ Template command
 ## Open Questions
 - consult orchestration 目前使用 `sync.WaitGroup` 與 goroutine；未來是否改為 `errgroup` 尚未定案
 - template 與 graph 的 handler 層尚未有完整 HTTP 測試，部分驗收目前仍由 service / usecase 測試間接保護
-- `ProfileConsult` 與 app-aware strategy 已落成 production code；canonical-key composable source graph 與移除 theoryMappings 是下一階段 implementation target
 
 ## Scenario Group: Composable Source Graph For Astrology
 
@@ -301,8 +300,8 @@ primary source
   └─ 每個 source 再帶自己的 rag children
 ```
 
-設計約束：
-- source 應新增：
+目前行為 / 約束：
+- source 已支援：
   - `sourceType` (`primary` / `fragment`)
   - `matchKey`
   - `sourceIds[]`
@@ -314,6 +313,6 @@ primary source
 - LinkChat 應先把 raw value / alias 正規化成 canonical value
 - Internal 應直接以 canonical value lookup fragment source.matchKey
   - prompt 片段本身放在 source / rag graph
-- 第一版先不要求：
+- 第一版目前仍不要求：
   - source graph 防循環
   - 跨鏈去重

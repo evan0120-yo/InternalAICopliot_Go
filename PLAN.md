@@ -557,9 +557,9 @@ BDD 是需求與驗收層；TDD 是實作層。
 ## Runtime Baseline
 - Go 1.25
 - 1 個 Go module：`com.citrus.internalaicopilot`
-- `ProfileConsult`、app-aware prompt strategy 與 composable source graph 是這條線的目標設計基線
-- LinkChat canonical key + source graph 組裝是下一階段實作重點；Internal 目標上不再持有 theory translation table
-- app prompt config 與 theory mapping cache 目前為 process-local read-through cache，未提供 TTL 或主動 invalidation；若 Firestore 中的策略或 mapping 被修改，需重新啟動服務才保證吃到最新值
+- `ProfileConsult`、app-aware prompt strategy 與 composable source graph 已是這條線的 current runtime baseline
+- LinkChat 送 canonical key，Internal 直接以 `source.matchKey` + `sourceIds[]` 做 prompt 組裝；Internal 不再持有 theory translation table
+- app prompt config 目前為 process-local read-through cache，未提供 TTL 或主動 invalidation；若 Firestore 中的策略設定被修改，需重新啟動服務才保證吃到最新值
 
 ## Local Development Bootstrap Baseline
 Go 版 local 開發需要提供與 Java `local profile + create-drop + initData` 等價的體驗。
