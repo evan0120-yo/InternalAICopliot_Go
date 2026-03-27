@@ -69,6 +69,7 @@ func (s *QueryService) LoadGraph(ctx context.Context, builderID int) (BuilderGra
 			ModuleKey:           trimStringPtr(&source.ModuleKey),
 			SourceType:          trimStringPtr(&source.SourceType),
 			MatchKey:            trimStringPtr(&source.MatchKey),
+			Tags:                append([]string(nil), source.Tags...),
 			SourceIDs:           append([]int64(nil), source.SourceIDs...),
 			OrderNo:             source.OrderNo,
 			SystemBlock:         source.SystemBlock,

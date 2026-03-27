@@ -43,18 +43,21 @@ func TestAnalyzeReturnsPromptPreviewWhenPreviewModeEnabled(t *testing.T) {
 		t.Fatalf("expected preview response, got %+v", response)
 	}
 	for _, fragment := range []string{
-		`"model": "gpt-4o"`,
-		`"instructions": "assembled instructions"`,
-		`"text": "user message"`,
-		`"preview": true`,
-		`"preview_file_name": "birth-chart.png"`,
+		`## [INSTRUCTIONS]`,
+		`assembled instructions`,
+		`## [USER_MESSAGE]`,
+		`user message`,
+		`## [ATTACHMENTS]`,
+		`birth-chart.png | image/png | 5 bytes | image`,
 	} {
 		if !strings.Contains(response.Response, fragment) {
 			t.Fatalf("expected preview response to contain %q, got %s", fragment, response.Response)
 		}
 	}
-	if strings.Contains(response.Response, `"file_id"`) {
-		t.Fatalf("preview should not include uploaded file ids, got %s", response.Response)
+	for _, obsolete := range []string{`"model":`, `"input":`, `"file_id"`, `"preview_file_name"`} {
+		if strings.Contains(response.Response, obsolete) {
+			t.Fatalf("preview should only contain text sections, got %s", response.Response)
+		}
 	}
 }
 
@@ -83,11 +86,11 @@ func TestAnalyzePreviewModeTakesPriorityWhenOpenAIKeyExists(t *testing.T) {
 	if response.StatusAns != "PROMPT_PREVIEW" || !response.Preview {
 		t.Fatalf("expected preview mode to win over OpenAI key, got %+v", response)
 	}
-	if !strings.Contains(response.Response, `"preview_file_name": "attachment.pdf"`) {
+	if !strings.Contains(response.Response, `attachment.pdf | application/pdf | 3 bytes | file`) {
 		t.Fatalf("expected local attachment summary, got %s", response.Response)
 	}
-	if strings.Contains(response.Response, `"file_id"`) {
-		t.Fatalf("preview should not upload attachments, got %s", response.Response)
+	if strings.Contains(response.Response, `"file_id"`) || strings.Contains(response.Response, `"model":`) {
+		t.Fatalf("preview should not return OpenAI request JSON, got %s", response.Response)
 	}
 }
 
@@ -109,16 +112,19 @@ theory_version: astro-v1
 		t.Fatalf("expected prompt preview response, got %+v", response)
 	}
 	for _, fragment := range []string{
-		`"instructions": "## [SUBJECT_PROFILE]`,
+		`## [INSTRUCTIONS]`,
+		`## [SUBJECT_PROFILE]`,
 		`### [analysis:astrology]`,
 		`人生主軸: 深層洞察`,
 		`情緒本能: 敏感共感`,
+		`## [USER_MESSAGE]`,
+		`profile text`,
 	} {
 		if !strings.Contains(response.Response, fragment) {
 			t.Fatalf("expected preview response to preserve structured prompt block %q, got %s", fragment, response.Response)
 		}
 	}
-	if strings.Contains(response.Response, "THEORY_CODEBOOK") || strings.Contains(response.Response, "ASTRO_SUN_SCO_01") {
+	if strings.Contains(response.Response, "THEORY_CODEBOOK") || strings.Contains(response.Response, "ASTRO_SUN_SCO_01") || strings.Contains(response.Response, `"model":`) {
 		t.Fatalf("did not expect obsolete codebook content, got %s", response.Response)
 	}
 }

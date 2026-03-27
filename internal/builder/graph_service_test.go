@@ -218,6 +218,7 @@ func TestSaveGraphPreservesComposableSourceFieldsAndSourceReferenceOrder(t *test
 				ModuleKey:  ptrString("astrology"),
 				SourceType: ptrString("primary"),
 				MatchKey:   ptrString("sun_sign"),
+				Tags:       []string{"#astrology", " sun ", "sun"},
 				Prompts:    "太陽主幹",
 			},
 			{
@@ -242,6 +243,7 @@ func TestSaveGraphPreservesComposableSourceFieldsAndSourceReferenceOrder(t *test
 				ModuleKey:  ptrString("astrology"),
 				SourceType: ptrString("fragment"),
 				MatchKey:   ptrString("capricorn"),
+				Tags:       []string{" zodiac ", "#earth", "earth", "#cardinal"},
 				SourceIDs:  []int64{1003, 1002},
 				Prompts:    "魔羯",
 			},
@@ -263,6 +265,9 @@ func TestSaveGraphPreservesComposableSourceFieldsAndSourceReferenceOrder(t *test
 	}
 	if capricorn.SourceType == nil || *capricorn.SourceType != "fragment" {
 		t.Fatalf("expected capricorn sourceType to round-trip, got %+v", capricorn.SourceType)
+	}
+	if len(capricorn.Tags) != 3 || capricorn.Tags[0] != "zodiac" || capricorn.Tags[1] != "earth" || capricorn.Tags[2] != "cardinal" {
+		t.Fatalf("expected source tags to be normalized and preserved, got %+v", capricorn.Tags)
 	}
 	if len(capricorn.SourceIDs) != 2 || capricorn.SourceIDs[0] != cardinal.SourceID || capricorn.SourceIDs[1] != earth.SourceID {
 		t.Fatalf("expected sourceIds order to be preserved after ID remap, got %+v", capricorn.SourceIDs)

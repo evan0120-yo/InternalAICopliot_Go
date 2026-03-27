@@ -125,6 +125,21 @@ AssemblePrompt
   Then 該 analysis type 應視為 canonical-key composable analysis
   And Internal 應直接以 canonical value 對 `source.matchKey` 做 lookup
 
+- Given `appId=linkchat` 且 `analysisType=astrology`
+  And `sun_sign` payload 為 weighted canonical entries：
+    `[{key:capricorn, weightPercent:70}, {key:aquarius, weightPercent:30}]`
+  When app-aware profile/context block 被 render
+  Then Internal 應依輸入順序處理兩個 entries
+  And 應分別展開 `capricorn` 與 `aquarius` 對應的 fragment source
+  And 最終 prompt 應把 `70%`、`30%` 標在展開後的語意片段前
+  And 不應直接暴露 raw canonical key
+
+- Given `appId=linkchat` 且 `analysisType=astrology`
+  And `moon_sign` payload 為單一 canonical entry：`[{key:pisces}]`
+  When app-aware profile/context block 被 render
+  Then Internal 應接受未帶 `weightPercent` 的單一 entry
+  And 最終 prompt 可 render 成不帶百分比的單一語意片段
+
 - Given `appId=linkchat` 且 `analysisType=mbti`
   When app-aware profile/context block 被 render
   Then 該 analysis type 目前可保留 raw value render
@@ -280,9 +295,9 @@ Template command
 
 ```text
 LinkChat payload
-  ├─ sun_sign=...
-  ├─ moon_sign=...
-  └─ rising_sign=...
+  ├─ sun_sign=[{key, weightPercent?}, ...]
+  ├─ moon_sign=[{key, weightPercent?}, ...]
+  └─ rising_sign=[{key, weightPercent?}, ...]
         │
         ▼
 LinkChat analysis parser
@@ -291,7 +306,7 @@ LinkChat analysis parser
   │
   ├─ 每個 slot 選一個 primary source
   │
-└─ 每個 canonical value 直接對應
+└─ 每個 canonical entry 的 key 直接對應
    fragment source.matchKey
         │
         ▼
@@ -305,6 +320,9 @@ primary source
   - `sourceType` (`primary` / `fragment`)
   - `matchKey`
   - `sourceIds[]`
+- 若 source 後續補 `tags[]`
+  - 僅供 admin / 維護者搜尋與分群
+  - 不影響 canonical value lookup 與 child expansion
 - primary source 順序由 analysis parser / request JSON 語意決定，不由 flat source order 自動推導
 - `sourceIds[]` 陣列順序即 child expansion 順序，不做額外排序
 - rag ownership 維持不變：

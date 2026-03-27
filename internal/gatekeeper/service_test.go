@@ -261,6 +261,112 @@ func TestValidateProfileConsultAllowsMissingTheoryVersionForLinkChatAstrology(t 
 	}
 }
 
+func TestValidateProfileConsultAllowsSingleWeightedEntryWithoutWeightPercent(t *testing.T) {
+	store, err := infra.NewStore("")
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	service := NewGuardService(infra.Config{}, store)
+	_, _, validationErr := service.ValidateProfileConsult(context.Background(), "linkchat", 1, &builder.SubjectProfile{
+		SubjectID: "user-123",
+		AnalysisPayloads: []builder.SubjectAnalysisPayload{
+			{
+				AnalysisType: "astrology",
+				Payload: map[string]any{
+					"sun_sign": []any{
+						map[string]any{"key": "capricorn"},
+					},
+				},
+			},
+		},
+	}, "", "127.0.0.1")
+	if validationErr != nil {
+		t.Fatalf("expected single weighted entry without weightPercent to pass, got %v", validationErr)
+	}
+}
+
+func TestValidateProfileConsultRejectsMissingWeightPercentWhenMultipleEntriesProvided(t *testing.T) {
+	store, err := infra.NewStore("")
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	service := NewGuardService(infra.Config{}, store)
+	_, _, validationErr := service.ValidateProfileConsult(context.Background(), "linkchat", 1, &builder.SubjectProfile{
+		SubjectID: "user-123",
+		AnalysisPayloads: []builder.SubjectAnalysisPayload{
+			{
+				AnalysisType: "astrology",
+				Payload: map[string]any{
+					"sun_sign": []any{
+						map[string]any{"key": "capricorn", "weightPercent": float64(70)},
+						map[string]any{"key": "aquarius"},
+					},
+				},
+			},
+		},
+	}, "", "127.0.0.1")
+	if validationErr == nil || !strings.Contains(validationErr.Error(), "weightPercent") {
+		t.Fatalf("expected missing weightPercent error, got %v", validationErr)
+	}
+}
+
+func TestValidateProfileConsultRejectsWeightPercentTotalNotEqualHundred(t *testing.T) {
+	store, err := infra.NewStore("")
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	service := NewGuardService(infra.Config{}, store)
+	_, _, validationErr := service.ValidateProfileConsult(context.Background(), "linkchat", 1, &builder.SubjectProfile{
+		SubjectID: "user-123",
+		AnalysisPayloads: []builder.SubjectAnalysisPayload{
+			{
+				AnalysisType: "astrology",
+				Payload: map[string]any{
+					"sun_sign": []any{
+						map[string]any{"key": "capricorn", "weightPercent": float64(60)},
+						map[string]any{"key": "aquarius", "weightPercent": float64(30)},
+					},
+				},
+			},
+		},
+	}, "", "127.0.0.1")
+	if validationErr == nil || !strings.Contains(validationErr.Error(), "equal 100") {
+		t.Fatalf("expected weightPercent total error, got %v", validationErr)
+	}
+}
+
+func TestValidateProfileConsultRejectsWeightedEntryWithoutKey(t *testing.T) {
+	store, err := infra.NewStore("")
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	service := NewGuardService(infra.Config{}, store)
+	_, _, validationErr := service.ValidateProfileConsult(context.Background(), "linkchat", 1, &builder.SubjectProfile{
+		SubjectID: "user-123",
+		AnalysisPayloads: []builder.SubjectAnalysisPayload{
+			{
+				AnalysisType: "astrology",
+				Payload: map[string]any{
+					"sun_sign": []any{
+						map[string]any{"weightPercent": float64(100)},
+					},
+				},
+			},
+		},
+	}, "", "127.0.0.1")
+	if validationErr == nil || !strings.Contains(validationErr.Error(), ".key") {
+		t.Fatalf("expected missing key error, got %v", validationErr)
+	}
+}
+
 func ptrString(value string) *string {
 	return &value
 }

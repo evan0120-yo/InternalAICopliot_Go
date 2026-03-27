@@ -149,6 +149,9 @@ generic `Consult` 最終應映射為 `ConsultModeGeneric`。
 - `subjectProfile` 可帶 `analysis payloads[]`，每個 payload 需有 stable `analysisType`
 - `subjectProfile` 缺值且 `text!=""` 是合法的 text-only profile request
 - external app 若有自己的理論版本標記，可帶 `theoryVersion`；Internal canonical-key path 不以此作為必填欄位
+- 若某個 analysis type 採 weighted canonical entry 形狀，`payload.<slotKey>` 可為：
+  - `["capricorn"]`
+  - `[{ "key": "capricorn", "weightPercent": 70 }]`
 
 `ProfileConsult` 最終應映射為 `ConsultModeProfile`。
 
@@ -215,7 +218,12 @@ Request 進入 Gatekeeper
 │        └── 逐一檢查每個 analysis payload：                    │
 │              ├── analysisType 不可為空白                      │
 │              ├── analysisType 須符合 stable key 格式          │
-│              └── 不在 gatekeeper 內解析 astrology/mbti 細節   │
+│              ├── composable weighted entry envelope 可驗證：   │
+│              │     ├── `key` 必填                             │
+│              │     ├── 單一 entry 可省略 `weightPercent`      │
+│              │     ├── 多 entry 時每筆都需有 `weightPercent`  │
+│              │     └── 多 entry 的百分比總和需為 100          │
+│              └── 不在 gatekeeper 內解析 astrology/mbti 語意   │
 │                                                               │
 │  theoryVersion 驗證：                                         │
 │   └── 若提供，不可為空白                                      │
@@ -233,4 +241,5 @@ Request 進入 Gatekeeper
 - Gatekeeper 不負責 LinkChat 的 module entitlement 與缺資料剔除；那是 external app 的本地 gatekeeping
 - Gatekeeper 不負責 analysis-type-specific payload parsing；那是 builder 內 LinkChat 第二層 factory 的責任
 - Gatekeeper 不負責 raw value / alias -> canonical key 正規化；那是 external app（例如 LinkChat）自己的責任
+- Gatekeeper 可驗共享的 weighted-entry envelope 規則，但不負責解讀 `capricorn`、`pisces` 等 domain key 的語意
 - public prompt-testing routes 的安全性預設由部署/環境隔離保護，不由 gatekeeper 在第一版內做 app auth

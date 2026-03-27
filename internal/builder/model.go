@@ -89,6 +89,7 @@ type BuilderGraphSourceResponse struct {
 	ModuleKey           *string                   `json:"moduleKey,omitempty"`
 	SourceType          *string                   `json:"sourceType,omitempty"`
 	MatchKey            *string                   `json:"matchKey,omitempty"`
+	Tags                []string                  `json:"tags,omitempty"`
 	SourceIDs           []int64                   `json:"sourceIds,omitempty"`
 	OrderNo             int                       `json:"orderNo"`
 	SystemBlock         bool                      `json:"systemBlock"`
@@ -137,6 +138,7 @@ type BuilderGraphSourceRequest struct {
 	ModuleKey           *string                  `json:"moduleKey"`
 	SourceType          *string                  `json:"sourceType"`
 	MatchKey            *string                  `json:"matchKey"`
+	Tags                []string                 `json:"tags"`
 	SourceIDs           []int64                  `json:"sourceIds"`
 	OrderNo             *int                     `json:"orderNo"`
 	SystemBlock         *bool                    `json:"systemBlock"`

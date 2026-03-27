@@ -115,6 +115,26 @@ ProfileConsult request
   When gatekeeper 驗證 structured profile consult
   Then gatekeeper 只驗共享 envelope，不負責解析各 analysis type 的內部欄位
 
+- Given `analysisType=astrology` 的某個 slot 採 weighted canonical entries
+  And 單一 entry 缺少 `weightPercent`
+  When gatekeeper 驗證 structured profile consult
+  Then gatekeeper 應接受該 payload
+
+- Given `analysisType=astrology` 的某個 slot 採多個 weighted canonical entries
+  And 其中某筆缺少 `weightPercent`
+  When gatekeeper 驗證 structured profile consult
+  Then gatekeeper 應拒絕該 request
+
+- Given `analysisType=astrology` 的某個 slot 採多個 weighted canonical entries
+  And `weightPercent` 總和不等於 `100`
+  When gatekeeper 驗證 structured profile consult
+  Then gatekeeper 應拒絕該 request
+
+- Given `analysisType=astrology` 的某個 slot 採 weighted canonical entries
+  And 某筆 entry 缺少 `key`
+  When gatekeeper 驗證 structured profile consult
+  Then gatekeeper 應拒絕該 request
+
 ## Scenario Group: Client IP Resolution
 
 ```text

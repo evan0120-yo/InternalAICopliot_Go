@@ -62,8 +62,19 @@ generic `Consult` 對應 `ConsultModeGeneric`。
 
 每個 analysis payload 應至少包含：
 - `analysis_type`
-- `theory_version` optional, required when the analysis type uses Internal-side code mapping
+- `theory_version` optional metadata
 - analysis-type-specific `payload`
+
+若 analysis-type-specific `payload` 內含 weighted canonical entries，grpcapi 應原樣保留物件陣列形狀，例如：
+
+```json
+{
+  "sun_sign": [
+    { "key": "capricorn", "weightPercent": 70 },
+    { "key": "aquarius", "weightPercent": 30 }
+  ]
+}
+```
 
 `ProfileConsult` 對應 `ConsultModeProfile`。
 
@@ -87,6 +98,7 @@ generic `Consult` 對應 `ConsultModeGeneric`。
 │  ├── 資料完整性檢查                                         │
 │  ├── analysis payload 剔除（缺資料時不送）                  │
 │  └── payload normalization                                  │
+│      （包含 canonical key 與 weighted entry shape）         │
 └─────────────────────────┬───────────────────────────────────┘
                           ↓ gRPC request
 ┌─────────────────────────────────────────────────────────────┐
@@ -94,6 +106,7 @@ generic `Consult` 對應 `ConsultModeGeneric`。
 │                                                             │
 │  ├── transport shape 驗證                                   │
 │  ├── 設定 explicit ConsultMode（由 RPC path 決定）          │
+│  ├── 保留 weighted entry object arrays                      │
 │  ├── client IP fallback                                     │
 │  ├── business error → gRPC status mapping                   │
 │  └── app_id / optional theory_version / structured envelope │

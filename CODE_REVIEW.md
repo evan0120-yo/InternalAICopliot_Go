@@ -13,7 +13,7 @@
 
 一個**可設定的 AI 諮詢引擎**。核心概念是「Builder」——每個 Builder 代表一種 AI 諮詢任務（比如需求分析、測試案例生成）。管理員透過後台設定每個 Builder 的 prompt 結構（Sources + RAG 補充），使用者選一個 Builder 丟問題進去，系統把 prompt 拼好後，依執行模式決定：
 - 正常模式：送 OpenAI / mock analyze
-- preview mode：不呼叫 OpenAI，直接把完整 AI request preview 回給前端
+- preview mode：不呼叫 OpenAI，直接把實際送給 AI 的純文字 prompt preview 回給前端
 
 不是聊天機器人。每次諮詢是獨立的一次性請求→回應，沒有對話歷史。
 
@@ -120,7 +120,7 @@
              ├── 組裝成完整 prompt（有嚴格順序）
              │
              ├── AI 執行模式判斷
-             │     ├── preview mode？→ 直接回完整 request preview
+             │     ├── preview mode？→ 直接回純文字 prompt preview
              │     ├── 沒設 API Key？→ mock
              │     └── 其餘 → OpenAI
              │
@@ -171,34 +171,32 @@
   │                                                  │
   │  1. Framework Header                             │
   │     「你是 Internal AI Copilot 的內部 AI 顧問」  │
-  │      帶上 builderId、builderCode、服務對象等     │
   │                                                  │
-  │  2. [RAW_USER_TEXT]                              │
+  │  2. [EXECUTION_RULES]                            │
+  │     安全檢查規則 + response/responseDetail 契約  │
+  │                                                  │
+  │  3. [RAW_USER_TEXT]                              │
   │     使用者打的原始文字                            │
   │     (沒打就寫「用戶沒有額外需求」)               │
   │                                                  │
-  │  3. [SUBJECT_PROFILE] ← 只有 Profile 模式才有   │
-  │     LinkChat strategy 會先做理論翻譯             │
+  │  4. [SUBJECT_PROFILE] ← 只有 Profile 模式才有   │
+  │     LinkChat strategy 會先展開 source graph      │
   │     再把最終語意片段直接組進這個 block           │
   │                                                  │
-  │  4. [SOURCE-1], [SOURCE-2], ...                  │
+  │  5. [PROMPT_BLOCK-1], [PROMPT_BLOCK-2], ...      │
   │     按順序排列的 prompt 片段                      │
   │     每個 Source 後面跟它的 RAG 補充               │
   │     (RAG 有 override 機制，下面說)               │
   │                                                  │
-  │  5. [USER_INPUT]                                 │
+  │  6. [USER_INPUT]                                 │
   │     使用者的文字（如果還沒被 RAG override 吃掉） │
-  │                                                  │
-  │  6. [FRAMEWORK_TAIL]                             │
-  │     強制 AI 回傳 JSON 格式的指示                  │
-  │     加上安全檢查框架                              │
   └──────────────────────┬──────────────────────────┘
                          │
                          ▼
   ┌─ 第四步：呼叫 AI / preview ─────────────────────────────┐
   │     ├── AIPreviewMode=true → 不打 OpenAI               │
   │     │                        直接回 PROMPT_PREVIEW     │
-  │     │                        response 是完整 request JSON │
+  │     │                        response 是純文字 prompt preview │
   │     ├── 沒設 API Key → mock 模式                       │
   │     └── 其餘 → 真實 OpenAI                             │
   └──────────────┬─────────────────────────┘
@@ -628,7 +626,7 @@ gatekeeper.Handler.consult
       → Stage 3: AssembleService.AssemblePrompt
       → Stage 4: aiclient.AnalyzeUseCase.Analyze
         → aiclient.AnalyzeService.Analyze
-          → AIPreviewMode=true ? 直接回 preview JSON
+          → AIPreviewMode=true ? 直接回 prompt preview text
           → 否則再走 mock / OpenAI
       → Stage 5: output.RenderUseCase.Render
         → output.RenderService.Render
@@ -641,11 +639,10 @@ gatekeeper.Handler.consult
 - 這個 `appId` 會一路帶進 `builder.ConsultCommand.AppID`
 - 但 generic consult 沒有 `subjectProfile`，所以目前通常只是在 strategy dispatch 上「走過流程但不產生內容」
 - `INTERNAL_AI_COPILOT_AI_PREVIEW_MODE=true` 時，這條路徑不會打 OpenAI，而是回 `PROMPT_PREVIEW`
-- preview `response` 內容是完整 AI request JSON：
-  - `model`
-  - `instructions`
-  - `text.format.json_schema`
-  - `input[0].content[]`
+- preview `response` 內容是純文字 prompt preview：
+  - `## [INSTRUCTIONS]`
+  - `## [USER_MESSAGE]`
+  - optional `## [ATTACHMENTS]`
   - 附件只會列本地摘要，不會有真實 `file_id`
 
 **錯誤碼清單（依檢查順序）**
@@ -680,7 +677,7 @@ gatekeeper.Handler.consult
 2. 直接回 infra.ConsultBusinessResponse
    - status=true
    - statusAns="PROMPT_PREVIEW"
-   - response=完整 request preview JSON
+   - response=純文字 prompt preview
 3. response.File 不會產生
 4. Preview 是 internal flag（json:"-"），不會多吐一個前端欄位
 5. preview 只原樣保留 builder 已組好的 instructions
@@ -858,7 +855,7 @@ grpcapi.Service.ProfileConsult
          → resolveProfileContextStrategy
             → appId=""、查不到 config、config inactive、strategyKey="" → default
             → appPromptConfig.strategyKey=linkchat → LinkChat strategy
-         → 需要時做 theory mapping / semantic translation 組裝
+         → 需要時做 canonical value + source graph 組裝
       → 其餘同 Generic
   → 回應只取 status/statusAns/response (丟棄 File)
 ```
@@ -876,6 +873,7 @@ grpcapi.Service.ProfileConsult
 | SUBJECT_ID_MISSING | 400 | 有 analysisPayloads 但沒 subjectId |
 | DUPLICATE_ANALYSIS_PAYLOAD | 400 | analysisType 重複 |
 | THEORY_VERSION_MISSING | 400 | theoryVersion 有傳但 trim 後為空 |
+| INVALID_ANALYSIS_PAYLOAD | 400 | weighted entry envelope 非法（缺 key、多值缺 weightPercent、總和不為 100 等） |
 | PROFILE_INPUT_EMPTY | 400 | text + profile 全空 |
 | APP_BUILDER_FORBIDDEN | 403 | Builder 不在 App 白名單 (external) |
 
@@ -903,8 +901,6 @@ NormalizeAnalysisTypeKey(raw):
 **SubjectProfile prompt 組裝格式**
 ```
 ## [SUBJECT_PROFILE]
-subject: {subjectId}
-
 ### [analysis:{analysisType}]
 theory_version: {theoryVersion}        // 只有 payload.TheoryVersion 非空且 includeTheoryVersion=true 時才會有
 {payloadKey}: {value1}|{value2}|{value3}
@@ -913,26 +909,30 @@ theory_version: {theoryVersion}        // 只有 payload.TheoryVersion 非空且
 (values 中的 \ 跳脫為 \\，| 跳脫為 \|)
 ```
 
-**analysis payload flatten 規則**
+**analysis payload flatten / weighted-entry 規則**
 ```
 payload map[string]any
   ├── key：trim → lowercase；空白/空字串 key 直接忽略
   ├── key 中的 space / "-" / "." → "_"
   ├── string：trim 後非空才保留
   ├── bool / number：轉字串
-  ├── []string / []any：逐項展平
+  ├── []string：逐項展平
+  ├── []any：
+  │     ├── 如果整個 array 是 weighted entries
+  │     │   → 保留 entry 順序
+  │     │   → 單值可省略 weightPercent
+  │     │   → 多值時每筆都需有 weightPercent
+  │     │   → 多值總和需為 100
+  │     └── 否則逐項展平
   ├── map[string]any：
-  │     ├── 如果含 key 或 value 欄位 → 只取該欄位字串值
-  │     │   其他欄位（例如 weightPercent）目前不進 prompt
+  │     ├── 如果含 key / weightPercent 形狀 → 視為 weighted entry
   │     └── 否則遞迴展平成 parent_child_key
-  └── 其他型別：先 json.Marshal；Marshal 失敗才報 INVALID_ANALYSIS_PAYLOAD
+  └── 其他型別：直接報 INVALID_ANALYSIS_PAYLOAD
 ```
 
 **LinkChat strategy 的額外 block**
 ```
 ## [SUBJECT_PROFILE]
-subject: {subjectId}
-
 ### [analysis:astrology]
 theory_version: astro-v1
 主執行緒, 發展有好有壞, 主導做事方式和習慣, 以及思維output框架: 深層洞察
@@ -945,7 +945,8 @@ slotKey + canonical value
   ├─ primary source: matchKey = slotKey
   ├─ fragment source: matchKey = canonical value
   ├─ fragment source 若有 sourceIds[]，照陣列順序繼續展開 child sources
-  └─ Internal 直接組成最終語意行
+  ├─ 若為 weighted entry，將百分比標在展開後語意片段前
+  └─ Internal 直接組成最終語意行，不暴露 raw canonical key
 ```
 
 **app-aware strategy/runtime 錯誤碼**
@@ -964,6 +965,7 @@ slotKey + canonical value
 2. appPromptConfig 有 process-local cache，但沒有 TTL / invalidation
 3. Firestore 裡改了 strategy config，要重啟服務才保證吃到最新值
 4. `theoryVersion` 現在只作 metadata 保留；有傳時不能是空字串，但不是 astrology 必填欄位
+5. weighted entries 目前只落在 shared envelope 驗證與 astrology renderer；其他 analysis type 不會自動吃百分比
 ```
 
 ---
@@ -985,6 +987,7 @@ builder.AdminHandler.loadGraph
            retrievalMode 強制 "full_context"
            moduleKey 空值 → JSON omit
            sourceType / matchKey 空值 → JSON omit
+           tags[] 空值 → JSON omit
            sourceIds[] 原樣帶回
         → 組裝 BuilderGraphResponse
   → infra.WriteJSON (200)
@@ -1042,6 +1045,12 @@ builder.AdminHandler.saveGraph
    - moduleKey: NormalizeStoredModuleKey (common 折疊成空)
    - sourceType: 只接受 primary / fragment，其餘 → SOURCE_TYPE_INVALID (400)
    - matchKey: trim 後保留
+   - tags[]:
+     - trim
+     - 去掉前導 `#`
+     - lowercase
+     - 去重
+     - 保留輸入順序
    - sourceIds[]: 先保留 request 內的 source 參照，normalize 完再改寫成佔位 sourceID
    - NeedsRagSupplement = len(rag) > 0
    - 保留 template 引用欄位
@@ -1101,6 +1110,20 @@ builder.AdminHandler.saveGraph
 | RAG_ORDER_INVALID | 400 | rag orderNo ≤ 0 |
 | RAG_TYPE_MISSING | 400 | ragType 為空 |
 | RAG_RETRIEVAL_MODE_UNSUPPORTED | 400 | retrievalMode 不是 full_context |
+
+**source metadata 補充**
+```
+source document 目前除了 prompt assembly 主欄位外，也支援：
+- moduleKey
+- sourceType
+- matchKey
+- tags[]
+- sourceIds[]
+
+其中：
+- matchKey / sourceIds[] 會參與 composable source graph runtime
+- tags[] 只作 admin / 維護者搜尋與分群，不參與 runtime lookup
+```
 
 ---
 

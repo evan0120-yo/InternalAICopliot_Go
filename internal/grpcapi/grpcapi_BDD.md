@@ -65,6 +65,11 @@ gRPC ProfileConsult
   When grpcapi 建立 command
   Then 應保留該欄位並原樣往下傳，不在 grpcapi 內賦予 lookup 語意
 
+- Given `ProfileConsult` request 的某個 analysis payload 內帶 weighted canonical entries
+  When grpcapi 建立 command
+  Then 應保留 `{key, weightPercent}` 物件陣列形狀
+  And 不應在 grpcapi 內先 flatten 成純字串陣列
+
 - Given `ProfileConsult` request 未帶 `subjectProfile` 且 `text` 有值
   When grpcapi 建立 command
   Then command `Mode` 仍應為 `ConsultModeProfile`

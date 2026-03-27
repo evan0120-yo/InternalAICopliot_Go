@@ -78,21 +78,22 @@ type BuilderConfig struct {
 
 // Source is a persisted builder source block.
 type Source struct {
-	SourceID                      int64   `json:"sourceId" firestore:"sourceId"`
-	BuilderID                     int     `json:"builderId" firestore:"builderId"`
-	CopiedFromTemplateID          *int64  `json:"copiedFromTemplateId,omitempty" firestore:"copiedFromTemplateId,omitempty"`
-	CopiedFromTemplateKey         *string `json:"copiedFromTemplateKey,omitempty" firestore:"copiedFromTemplateKey,omitempty"`
-	CopiedFromTemplateName        *string `json:"copiedFromTemplateName,omitempty" firestore:"copiedFromTemplateName,omitempty"`
-	CopiedFromTemplateDescription *string `json:"copiedFromTemplateDescription,omitempty" firestore:"copiedFromTemplateDescription,omitempty"`
-	CopiedFromTemplateGroupKey    *string `json:"copiedFromTemplateGroupKey,omitempty" firestore:"copiedFromTemplateGroupKey,omitempty"`
-	ModuleKey                     string  `json:"moduleKey,omitempty" firestore:"moduleKey,omitempty"`
-	SourceType                    string  `json:"sourceType,omitempty" firestore:"sourceType,omitempty"`
-	MatchKey                      string  `json:"matchKey,omitempty" firestore:"matchKey,omitempty"`
-	SourceIDs                     []int64 `json:"sourceIds,omitempty" firestore:"sourceIds,omitempty"`
-	Prompts                       string  `json:"prompts" firestore:"prompts"`
-	OrderNo                       int     `json:"orderNo" firestore:"orderNo"`
-	SystemBlock                   bool    `json:"systemBlock" firestore:"systemBlock"`
-	NeedsRagSupplement            bool    `json:"needsRagSupplement" firestore:"needsRagSupplement"`
+	SourceID                      int64    `json:"sourceId" firestore:"sourceId"`
+	BuilderID                     int      `json:"builderId" firestore:"builderId"`
+	CopiedFromTemplateID          *int64   `json:"copiedFromTemplateId,omitempty" firestore:"copiedFromTemplateId,omitempty"`
+	CopiedFromTemplateKey         *string  `json:"copiedFromTemplateKey,omitempty" firestore:"copiedFromTemplateKey,omitempty"`
+	CopiedFromTemplateName        *string  `json:"copiedFromTemplateName,omitempty" firestore:"copiedFromTemplateName,omitempty"`
+	CopiedFromTemplateDescription *string  `json:"copiedFromTemplateDescription,omitempty" firestore:"copiedFromTemplateDescription,omitempty"`
+	CopiedFromTemplateGroupKey    *string  `json:"copiedFromTemplateGroupKey,omitempty" firestore:"copiedFromTemplateGroupKey,omitempty"`
+	ModuleKey                     string   `json:"moduleKey,omitempty" firestore:"moduleKey,omitempty"`
+	SourceType                    string   `json:"sourceType,omitempty" firestore:"sourceType,omitempty"`
+	MatchKey                      string   `json:"matchKey,omitempty" firestore:"matchKey,omitempty"`
+	Tags                          []string `json:"tags,omitempty" firestore:"tags,omitempty"`
+	SourceIDs                     []int64  `json:"sourceIds,omitempty" firestore:"sourceIds,omitempty"`
+	Prompts                       string   `json:"prompts" firestore:"prompts"`
+	OrderNo                       int      `json:"orderNo" firestore:"orderNo"`
+	SystemBlock                   bool     `json:"systemBlock" firestore:"systemBlock"`
+	NeedsRagSupplement            bool     `json:"needsRagSupplement" firestore:"needsRagSupplement"`
 }
 
 // RagSupplement is a persisted source-level rag config.

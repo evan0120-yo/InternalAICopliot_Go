@@ -204,6 +204,7 @@ func normalizeGraphSources(requests []BuilderGraphSourceRequest) ([]infra.Source
 			CopiedFromTemplateGroupKey:    trimStringPtr(item.request.TemplateGroupKey),
 			SourceType:                    sourceType,
 			MatchKey:                      matchKey,
+			Tags:                          normalizeSourceTags(item.request.Tags),
 		}
 		moduleKey, err := NormalizeStoredModuleKey(valueOrEmpty(item.request.ModuleKey))
 		if err != nil {
@@ -323,6 +324,32 @@ func normalizeSourceType(raw string) (string, error) {
 	default:
 		return "", infra.NewError("SOURCE_TYPE_INVALID", "sourceType must be primary or fragment.", 400)
 	}
+}
+
+func normalizeSourceTags(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+
+	normalized := make([]string, 0, len(tags))
+	seen := make(map[string]struct{}, len(tags))
+	for _, raw := range tags {
+		tag := strings.ToLower(strings.TrimSpace(raw))
+		tag = strings.TrimPrefix(tag, "#")
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		seen[tag] = struct{}{}
+		normalized = append(normalized, tag)
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }
 
 func toGroupKey(rawGroupLabel string) string {

@@ -243,6 +243,9 @@ func normalizeSubjectProfile(appID string, subjectProfile *builder.SubjectProfil
 		if payload.TheoryVersion != nil && normalizedPayload.TheoryVersion == nil {
 			return nil, infra.NewError("THEORY_VERSION_MISSING", "subjectProfile.analysisPayloads.theoryVersion must not be blank when provided.", http.StatusBadRequest)
 		}
+		if err := builder.ValidateWeightedPayloadEnvelope("subjectProfile.analysisPayloads.payload", normalizedPayload.Payload); err != nil {
+			return nil, err
+		}
 		normalized.AnalysisPayloads = append(normalized.AnalysisPayloads, normalizedPayload)
 	}
 

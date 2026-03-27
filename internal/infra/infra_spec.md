@@ -97,6 +97,7 @@ source 應至少支援：
 - `sourceType` optional
 - `matchKey` optional
 - `sourceIds[]` optional
+- `tags[]` optional
 
 規則：
 - `moduleKey` 缺值或空值，表示此 source 永遠可用
@@ -113,6 +114,11 @@ source 應至少支援：
 - `sourceIds[]`
   - 表示此 source 會再展開哪些 child sources
   - 陣列順序即展開順序，infra 只需原樣保存，不應再自行排序
+- `tags[]`
+  - 只作 admin UI / 人工維護時的搜尋、分群、過濾輔助
+  - 不應作為 runtime prompt assembly 的 lookup key
+  - strategy / builder 不應依賴 tags 決定 source traversal
+  - 建議保存 canonical tag strings，不保存 UI 專用的 `#` 前綴
 - rag ownership 不改變
   - rag 仍屬於自己的 source
   - 不因 composable source graph 需求改成 `source -> rag pool`

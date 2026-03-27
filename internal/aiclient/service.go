@@ -62,15 +62,10 @@ func (s *AnalyzeService) Analyze(ctx context.Context, model, text, instructions 
 }
 
 func (s *AnalyzeService) previewAnalyze(request analyzeRequest) (infra.ConsultBusinessResponse, error) {
-	payload := s.buildPreviewPayload(request)
-	body, err := json.MarshalIndent(payload, "", "  ")
-	if err != nil {
-		return infra.ConsultBusinessResponse{}, err
-	}
 	return infra.ConsultBusinessResponse{
 		Status:    true,
 		StatusAns: "PROMPT_PREVIEW",
-		Response:  string(body),
+		Response:  buildPreviewText(request),
 		Preview:   true,
 	}, nil
 }
@@ -196,31 +191,6 @@ func (s *AnalyzeService) buildOpenAIInputContent(ctx context.Context, request an
 	return content, nil
 }
 
-func (s *AnalyzeService) buildPreviewPayload(request analyzeRequest) map[string]any {
-	content := make([]map[string]any, 0, 1+len(request.Attachments))
-	content = append(content, map[string]any{
-		"type": "input_text",
-		"text": request.UserText,
-	})
-	for _, attachment := range request.Attachments {
-		entry := map[string]any{
-			"type":                 "input_file",
-			"preview_file_name":    attachment.FileName,
-			"preview_content_type": attachment.ContentType,
-			"preview_size_bytes":   len(attachment.Data),
-		}
-		if isImageName(attachment.FileName) {
-			entry["type"] = "input_image"
-			entry["detail"] = "auto"
-		}
-		content = append(content, entry)
-	}
-	payload := buildResponsesPayload(request, content)
-	payload["preview"] = true
-	payload["preview_note"] = "OpenAI was not called. Attachment entries are local summaries without uploaded file_id."
-	return payload
-}
-
 func buildResponsesPayload(request analyzeRequest, content []map[string]any) map[string]any {
 	return map[string]any{
 		"model":        request.Model,
@@ -233,11 +203,12 @@ func buildResponsesPayload(request analyzeRequest, content []map[string]any) map
 				"schema": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"status":    map[string]any{"type": "boolean"},
-						"statusAns": map[string]any{"type": "string"},
-						"response":  map[string]any{"type": "string"},
+						"status":         map[string]any{"type": "boolean"},
+						"statusAns":      map[string]any{"type": "string"},
+						"response":       map[string]any{"type": "string"},
+						"responseDetail": map[string]any{"type": "string"},
 					},
-					"required":             []string{"status", "statusAns", "response"},
+					"required":             []string{"status", "statusAns", "response", "responseDetail"},
 					"additionalProperties": false,
 				},
 			},
@@ -249,6 +220,34 @@ func buildResponsesPayload(request analyzeRequest, content []map[string]any) map
 			},
 		},
 	}
+}
+
+func buildPreviewText(request analyzeRequest) string {
+	var builder strings.Builder
+	builder.WriteString("## [INSTRUCTIONS]\n")
+	builder.WriteString(strings.TrimSpace(request.Instructions))
+	builder.WriteString("\n\n## [USER_MESSAGE]\n")
+	builder.WriteString(strings.TrimSpace(request.UserText))
+
+	if len(request.Attachments) > 0 {
+		builder.WriteString("\n\n## [ATTACHMENTS]\n")
+		for _, attachment := range request.Attachments {
+			builder.WriteString("- ")
+			builder.WriteString(strings.TrimSpace(attachment.FileName))
+			builder.WriteString(" | ")
+			builder.WriteString(strings.TrimSpace(attachment.ContentType))
+			builder.WriteString(" | ")
+			builder.WriteString(fmt.Sprintf("%d bytes", len(attachment.Data)))
+			if isImageName(attachment.FileName) {
+				builder.WriteString(" | image")
+			} else {
+				builder.WriteString(" | file")
+			}
+			builder.WriteString("\n")
+		}
+	}
+
+	return builder.String()
 }
 
 func (s *AnalyzeService) uploadFile(ctx context.Context, attachment infra.Attachment) (string, string, error) {

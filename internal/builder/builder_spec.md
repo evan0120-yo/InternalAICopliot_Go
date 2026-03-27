@@ -110,11 +110,35 @@ builder 不應做的事：
 - slot key 在 composable analysis type 中應視為 stable slot key，用來對應 primary source。
 - canonical key 應直接對應某個 fragment source 的 `matchKey`。
 - strategy 應以 `slot key -> primary source.matchKey`、`canonical value -> fragment source.matchKey` 做 source lookup。
+- 若 payload slot 採 weighted canonical entry 形狀，strategy 應保留 entry 順序與 `weightPercent`，而不是先降成純字串陣列。
 - prompt 片段內容應由 source / rag graph 承接，讓 admin graph UI 可以直接編輯。
 - 不是每個 analysis type 都需要 canonical-key composable path；未配置此路徑的 analysis type 可保留原始值 render。
 - `theoryVersion` 若存在，僅作 external metadata；不是 Internal source lookup 的必要條件。
 - AI 最終不應直接看到 raw theory 詞，也不應看到 internal lookup key；應只看到展開後的最終 prompt 內容。
 - slot-level 語意標籤（如 `人生主軸`、`情緒本能`）應放在 primary source 的 `prompts` 欄位。
+
+weighted canonical entry example：
+
+```json
+{
+  "sun_sign": [
+    { "key": "capricorn", "weightPercent": 70 },
+    { "key": "aquarius", "weightPercent": 30 }
+  ],
+  "moon_sign": [
+    { "key": "pisces" }
+  ],
+  "rising_sign": [
+    { "key": "aquarius" }
+  ]
+}
+```
+
+weighted entry 規則：
+- `key` 必填
+- 單一 entry 可省略 `weightPercent`
+- 同一 slot 若有多個 entries，則每個 entry 都應提供 `weightPercent`
+- 同一 slot 若有多個 entries，`weightPercent` 總和應為 `100`
 
 ## Composable Source Graph
 LinkChat astrology 這條線目前的 source 不再只是一個 flat prompt block；它同時也是可被組合的 prompt node。
@@ -153,10 +177,12 @@ LinkChat payload
 - LinkChat 第二層 factory 應將各 analysis payload 轉成 deterministic prompt fragment
 - 同一個 `analysisType` 不可重複
 - payload 內若有具順序語意的陣列，應依該 analysis factory 的規則保留原序
+- payload 內若為 weighted canonical entries，應保留 entry 輸入順序與對應 `weightPercent`
 - 若 value 內含 `\`，render 時應 escape 為 `\\`
 - 若 value 內含 `|`，render 時應 escape 為 `\|`
 - `[SUBJECT_PROFILE]` block 應固定插在 `[RAW_USER_TEXT]` 後、第一個 source block 前
 - LinkChat strategy 應直接以 canonical value 對 `source.matchKey` 做 lookup，再把展開後的最終語意片段組進 `[SUBJECT_PROFILE]`
+- 若同一個 slot 命中多個 weighted entries，render 應將百分比標在展開後的語意片段前，而不是暴露 raw canonical key
 - 不再要求 `[THEORY_CODEBOOK]` 作為 shared prompt block 的一部分暴露給 AI
 
 ## Subject Profile Prompt Format
@@ -164,13 +190,20 @@ default strategy 採 markdown section 風格；LinkChat strategy 可依 analysis
 
 ```text
 ## [SUBJECT_PROFILE]
-subject: user-123
-
 ### [analysis:astrology]
 ... LinkChat astrology factory 組出的 deterministic block ...
 
 ### [analysis:mbti]
 ... LinkChat mbti factory 組出的 deterministic block ...
+```
+
+weighted render 範例：
+
+```text
+### [analysis:astrology]
+主執行緒, 發展有好有壞, 主導做事方式和習慣, 以及思維output框架:
+70% <capricorn 展開後的最終語意片段>
+30% <aquarius 展開後的最終語意片段>
 ```
 
 規則：
@@ -363,6 +396,7 @@ SaveGraph 輸入
 - builder 依 `builderId` 載入整體 source/rag 骨架
 - builder 依 `appId` 選第一層 prompt strategy，LinkChat 再依 `analysisType` 選第二層 factory
 - builder 在需要時直接以 canonical value 做 fragment lookup，再沿 `sourceIds[]` 展開 composable source graph
+- source 若帶 `tags[]`，僅供 admin / 維護者搜尋與分群，不參與 runtime source lookup
 - 若 LinkChat 需要用自己的 key system 做欄位/value 級別的語意組裝，應在 LinkChat strategy 內完成；default strategy 與 shared consult skeleton 不受影響
 - rag 只處理已被選入的 source 補充資料
 - text-only profile request 仍屬於 profile mode，不屬於 generic consult
