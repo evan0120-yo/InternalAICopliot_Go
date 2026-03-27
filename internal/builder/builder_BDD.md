@@ -272,4 +272,45 @@ Template command
 ## Open Questions
 - consult orchestration 目前使用 `sync.WaitGroup` 與 goroutine；未來是否改為 `errgroup` 尚未定案
 - template 與 graph 的 handler 層尚未有完整 HTTP 測試，部分驗收目前仍由 service / usecase 測試間接保護
-- `ProfileConsult`、app-aware strategy、LinkChat 第二層 factory 與完整版 theory translation prompt 組裝已落成 production code；後續只剩內容擴寫與更多 analysis type 補測
+- `ProfileConsult`、app-aware strategy、LinkChat 第二層 factory、composable source graph 與完整版 theory translation prompt 組裝已落成 production code；後續只剩內容擴寫與更多 analysis type 補測
+
+## Scenario Group: Composable Source Graph For Astrology
+
+```text
+LinkChat payload
+  ├─ sun_sign=...
+  ├─ moon_sign=...
+  └─ rising_sign=...
+        │
+        ▼
+LinkChat analysis parser
+  ├─ 先決定主順序
+  │  例如 sun -> moon -> rising
+  │
+  ├─ 每個 slot 選一個 primary source
+  │
+  └─ 每個 raw value 經 theory translation
+     -> targetMatchKey
+        │
+        ▼
+primary source
+  ├─ sourceIds[] 依填入順序展開 child sources
+  └─ 每個 source 再帶自己的 rag children
+```
+
+設計約束：
+- source 應新增：
+  - `sourceType` (`primary` / `fragment`)
+  - `matchKey`
+  - `sourceIds[]`
+- primary source 順序由 analysis parser / request JSON 語意決定，不由 flat source order 自動推導
+- `sourceIds[]` 陣列順序即 child expansion 順序，不做額外排序
+- rag ownership 維持不變：
+  - rag 仍屬於自己的 source
+  - 不改成 `source -> rag pool`
+- theory translation table 的職責縮回 lookup：
+  - `rawValue / alias -> targetMatchKey`
+  - prompt 片段本身放在 source / rag graph
+- 第一版先不要求：
+  - source graph 防循環
+  - 跨鏈去重

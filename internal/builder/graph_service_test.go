@@ -201,5 +201,74 @@ func TestSaveGraphNormalizesModuleKeyAndTreatsCommonAsEmpty(t *testing.T) {
 	}
 }
 
+func TestSaveGraphPreservesComposableSourceFieldsAndSourceReferenceOrder(t *testing.T) {
+	store, err := infra.NewStore("")
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	query := NewQueryService(store)
+	service := NewGraphService(store, query)
+	response, err := service.SaveGraph(context.Background(), 3, BuilderGraphRequest{
+		Sources: []BuilderGraphSourceRequest{
+			{
+				SourceID:   ptrInt64(1001),
+				OrderNo:    ptrInt(1),
+				ModuleKey:  ptrString("astrology"),
+				SourceType: ptrString("primary"),
+				MatchKey:   ptrString("sun_sign"),
+				Prompts:    "太陽主幹",
+			},
+			{
+				SourceID:   ptrInt64(1002),
+				OrderNo:    ptrInt(2),
+				ModuleKey:  ptrString("astrology"),
+				SourceType: ptrString("fragment"),
+				MatchKey:   ptrString("earth"),
+				Prompts:    "土象",
+			},
+			{
+				SourceID:   ptrInt64(1003),
+				OrderNo:    ptrInt(3),
+				ModuleKey:  ptrString("astrology"),
+				SourceType: ptrString("fragment"),
+				MatchKey:   ptrString("cardinal"),
+				Prompts:    "開創",
+			},
+			{
+				SourceID:   ptrInt64(1004),
+				OrderNo:    ptrInt(4),
+				ModuleKey:  ptrString("astrology"),
+				SourceType: ptrString("fragment"),
+				MatchKey:   ptrString("capricorn"),
+				SourceIDs:  []int64{1003, 1002},
+				Prompts:    "魔羯",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SaveGraph returned error: %v", err)
+	}
+
+	byPrompt := make(map[string]BuilderGraphSourceResponse, len(response.Sources))
+	for _, source := range response.Sources {
+		byPrompt[source.Prompts] = source
+	}
+	capricorn := byPrompt["魔羯"]
+	cardinal := byPrompt["開創"]
+	earth := byPrompt["土象"]
+	if capricorn.MatchKey == nil || *capricorn.MatchKey != "capricorn" {
+		t.Fatalf("expected capricorn matchKey to round-trip, got %+v", capricorn.MatchKey)
+	}
+	if capricorn.SourceType == nil || *capricorn.SourceType != "fragment" {
+		t.Fatalf("expected capricorn sourceType to round-trip, got %+v", capricorn.SourceType)
+	}
+	if len(capricorn.SourceIDs) != 2 || capricorn.SourceIDs[0] != cardinal.SourceID || capricorn.SourceIDs[1] != earth.SourceID {
+		t.Fatalf("expected sourceIds order to be preserved after ID remap, got %+v", capricorn.SourceIDs)
+	}
+}
+
 func ptrString(value string) *string { return &value }
 func ptrInt(value int) *int          { return &value }
+func ptrInt64(value int64) *int64    { return &value }

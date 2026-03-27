@@ -86,6 +86,9 @@ type Source struct {
 	CopiedFromTemplateDescription *string `json:"copiedFromTemplateDescription,omitempty" firestore:"copiedFromTemplateDescription,omitempty"`
 	CopiedFromTemplateGroupKey    *string `json:"copiedFromTemplateGroupKey,omitempty" firestore:"copiedFromTemplateGroupKey,omitempty"`
 	ModuleKey                     string  `json:"moduleKey,omitempty" firestore:"moduleKey,omitempty"`
+	SourceType                    string  `json:"sourceType,omitempty" firestore:"sourceType,omitempty"`
+	MatchKey                      string  `json:"matchKey,omitempty" firestore:"matchKey,omitempty"`
+	SourceIDs                     []int64 `json:"sourceIds,omitempty" firestore:"sourceIds,omitempty"`
 	Prompts                       string  `json:"prompts" firestore:"prompts"`
 	OrderNo                       int     `json:"orderNo" firestore:"orderNo"`
 	SystemBlock                   bool    `json:"systemBlock" firestore:"systemBlock"`
@@ -129,8 +132,8 @@ type TemplateRag struct {
 }
 
 const (
-	TheoryMappingTypeSlot  = "slot"
-	TheoryMappingTypeValue = "value"
+	SourceTypePrimary  = "primary"
+	SourceTypeFragment = "fragment"
 )
 
 // TheoryMapping is the Internal theory translation table row.
@@ -139,9 +142,8 @@ type TheoryMapping struct {
 	AppID          string `json:"appId" firestore:"appId"`
 	ModuleKey      string `json:"moduleKey" firestore:"moduleKey"`
 	TheoryVersion  string `json:"theoryVersion" firestore:"theoryVersion"`
-	MappingType    string `json:"mappingType" firestore:"mappingType"`
 	SlotKey        string `json:"slotKey" firestore:"slotKey"`
-	RawValue       string `json:"rawValue,omitempty" firestore:"rawValue,omitempty"`
-	SemanticPrompt string `json:"semanticPrompt" firestore:"semanticPrompt"`
+	RawValue       string `json:"rawValue" firestore:"rawValue"`
+	TargetMatchKey string `json:"targetMatchKey" firestore:"targetMatchKey"`
 	Active         bool   `json:"active" firestore:"active"`
 }

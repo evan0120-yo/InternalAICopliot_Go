@@ -174,38 +174,48 @@ func TestAssemblePromptUsesLinkChatStrategyForTheoryMappedModules(t *testing.T) 
 
 	service := NewAssembleService(store)
 	theoryVersion := " astro-v1 "
-	result, err := service.AssemblePrompt(
-		context.Background(),
-		infra.BuilderConfig{
-			BuilderID:   1,
-			BuilderCode: "pm-estimate",
-			GroupLabel:  "產品經理",
-			Name:        "PM 工時估算與建議",
-			Description: "desc",
-		},
-		[]infra.Source{{SourceID: 10, OrderNo: 1, Prompts: "主要 prompt"}},
-		map[int64][]infra.RagSupplement{},
-		"linkchat",
-		"請分析這個人",
-		&SubjectProfile{
-			SubjectID: "user-123",
-			AnalysisPayloads: []SubjectAnalysisPayload{
-				{
-					AnalysisType:  "astrology",
-					TheoryVersion: &theoryVersion,
-					Payload: map[string]any{
-						"sun_sign":  []any{"Scorpio"},
-						"moon_sign": []any{"雙魚"},
-					},
+	builderConfig, ok, err := store.BuilderByIDContext(context.Background(), 3)
+	if err != nil {
+		t.Fatalf("BuilderByIDContext returned error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected builder 3 to exist")
+	}
+	subjectProfile := &SubjectProfile{
+		SubjectID: "user-123",
+		AnalysisPayloads: []SubjectAnalysisPayload{
+			{
+				AnalysisType:  "astrology",
+				TheoryVersion: &theoryVersion,
+				Payload: map[string]any{
+					"sun_sign":  []any{"Scorpio"},
+					"moon_sign": []any{"雙魚"},
 				},
-				{
-					AnalysisType: "mbti",
-					Payload: map[string]any{
-						"type": "INTJ",
-					},
+			},
+			{
+				AnalysisType: "mbti",
+				Payload: map[string]any{
+					"type": "INTJ",
 				},
 			},
 		},
+	}
+	sources, err := store.SourcesByBuilderIDContext(context.Background(), 3)
+	if err != nil {
+		t.Fatalf("SourcesByBuilderIDContext returned error: %v", err)
+	}
+	filteredSources, err := service.FilterProfileSources(context.Background(), "linkchat", sources, subjectProfile)
+	if err != nil {
+		t.Fatalf("FilterProfileSources returned error: %v", err)
+	}
+	result, err := service.AssemblePrompt(
+		context.Background(),
+		builderConfig,
+		filteredSources,
+		map[int64][]infra.RagSupplement{},
+		"linkchat",
+		"請分析這個人",
+		subjectProfile,
 	)
 	if err != nil {
 		t.Fatalf("AssemblePrompt returned error: %v", err)
@@ -214,16 +224,22 @@ func TestAssemblePromptUsesLinkChatStrategyForTheoryMappedModules(t *testing.T) 
 	if !strings.Contains(result.Instructions, "theory_version: astro-v1") {
 		t.Fatalf("expected theory version in linkchat subject profile block, got: %s", result.Instructions)
 	}
-	if !strings.Contains(result.Instructions, "人生主軸: 深層洞察\n情緒本能: 敏感共感\n") {
-		t.Fatalf("expected astrology values to be translated into semantic prompts, got: %s", result.Instructions)
+	if !strings.Contains(result.Instructions, "主執行緒, 發展有好有壞, 主導做事方式和習慣, 以及思維output框架: 深層洞察\n") {
+		t.Fatalf("expected sun_sign to resolve primary source prompt and fragment source prompt, got: %s", result.Instructions)
+	}
+	if !strings.Contains(result.Instructions, "OS 內核, 主導思維底層邏輯, 包含思維intput架構及運算方式, 喝醉時會同時兼任主執行緒（依照喝醉狀況更多取代本來主執行緒）: 敏感共感\n") {
+		t.Fatalf("expected moon_sign to resolve primary source prompt and fragment source prompt, got: %s", result.Instructions)
 	}
 	if !strings.Contains(result.Instructions, "type: INTJ\n") {
 		t.Fatalf("expected unmapped module to preserve raw value, got: %s", result.Instructions)
 	}
+	if strings.Contains(result.Instructions, "Scorpio") || strings.Contains(result.Instructions, "雙魚") {
+		t.Fatalf("did not expect raw theory words to leak into instructions, got: %s", result.Instructions)
+	}
 	if strings.Contains(result.Instructions, "## [THEORY_CODEBOOK]") {
 		t.Fatalf("did not expect theory codebook block, got: %s", result.Instructions)
 	}
-	if strings.Contains(result.Instructions, "Scorpio") || strings.Contains(result.Instructions, "雙魚") {
-		t.Fatalf("did not expect raw theory words to leak into instructions, got: %s", result.Instructions)
+	if strings.Contains(result.Instructions, "rising_sign") {
+		t.Fatalf("did not expect unrequested primary source to be included, got: %s", result.Instructions)
 	}
 }

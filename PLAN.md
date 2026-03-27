@@ -225,28 +225,37 @@ analysisPayloads[] 逐一檢查
 LinkChat 送出 raw/stable theory value
         │
         ▼
-┌───────────────────────────────────┐
-│ Internal data layer 查詢          │
-│ semantic mapping table            │
-│ key = appId + analysisScopeKey    │
-│       + theoryVersion + slotKey   │
-└───────────┬───────────────────────┘
+┌─────────────────────────────────────┐
+│ Internal data layer 查詢            │
+│ theory translation table            │
+│ key = appId + analysisScopeKey      │
+│       + theoryVersion + slotKey     │
+│       + rawValue                    │
+└───────────┬─────────────────────────┘
             ▼
-  slotKey → slot semantic fragment
-  rawValue → value semantic fragment
-        │
-        ▼
+    rawValue / alias
+      -> targetMatchKey
+            │
+            ▼
   app-specific prompt strategy
-  直接組成最終語意 block
-  例如：人生主軸: 工作狂
+    ├─ 先決定 primary source
+    ├─ 再找對應 fragment source
+    ├─ 展開該 source 的 sourceIds[]
+    └─ 每個 source 再帶自己的 rag
+            │
+            ▼
+  組成最終 prompt block
 ```
 
 補充規則：
-- theory mapping table 由 Internal data layer 持有，不要求 external app 直接送 Internal 私有代碼
-- AI 最終不應看到 raw theory 詞，也不應看到 Internal private code；只看到翻譯後的語意結果
-- LinkChat 若需更細的欄位/value 語意組裝，應在 app-specific prompt strategy 內自行做 key resolution，不改變既有 source / RAG 大結構
-- source 仍是主 prompt 骨架；RAG 仍掛在 source 底下作為補充內容；strategy 只決定要用哪些 key 去查、去組 profile/context block
+- theory translation table 由 Internal data layer 持有，不要求 external app 直接送 Internal 私有代碼
+- theory translation 的職責應維持在「翻譯 / lookup」，不承擔 prompt 片段內容存放責任
+- prompt 片段內容應放在 source / rag graph，讓 admin UI 可直接編輯
+- source 仍是主 prompt 骨架；RAG 仍掛在 source 底下作為補充內容
+- LinkChat 若需更細的欄位/value 語意組裝，應在 app-specific prompt strategy 內自行做 key resolution 與 source graph traversal
 - LinkChat 應先在本地剔除缺資料的 module；Internal 不主動替它補齊
+- `targetMatchKey` 的值應對應到某個 fragment source 的 `matchKey`
+- 原本 `mappingType=slot` 的 slot-level 語意標籤已收斂到 primary source 的 `prompts`
 
 ### Scenario group: external HTTP access
 
@@ -433,18 +442,23 @@ analysisPayloads[] 輸入
         │
         ▼
   依 appId + analysis scope key
-  + theoryVersion + slotKey
-  查 semantic mapping
+  + theoryVersion + slotKey + rawValue
+  查 theory translation
         │
-        ├── slotKey → slot semantic fragment
-        └── rawValue → value semantic fragment
+        └── rawValue / alias
+            -> targetMatchKey
         │
         ▼
-  strategy 直接組裝最終語意
-  例如：
-  - 人生主軸: 工作狂
-  - 人生主軸: 50% 工作狂 + 50% 疏離距離
-  - 本我展現: 自然外放
+  strategy 先決定 primary source
+        │
+        ├── primary 順序
+        │   由 analysis parser / request JSON 語意決定
+        │
+        ├── 依 targetMatchKey 找 fragment source
+        │
+        ├── 依 sourceIds[] 順序展開 child sources
+        │
+        └── 每個 source 再帶自己的 rag
         │
         ▼
   輸出 profile/context block
@@ -452,7 +466,10 @@ analysisPayloads[] 輸入
 
 補充規則：
 - theory translation 的責任是由 Internal 在進 AI 前先完成，不把 raw theory 詞或 internal code 直接暴露給 AI
-- 若 LinkChat 之後需要以 `slotKey` / `valueKey` 做更細的語意片段組裝，該解析與拼接責任應落在 LinkChat strategy 內；既有 source/rag collections 不因這個需求改成 `slotKey -> source` 或 `value -> rag` 結構
+- composable prompt 內容應放在 source/rag graph，而不是 theoryMappings
+- LinkChat 這條線允許 source 增加 `sourceIds[]`，讓 source 再引用 child sources
+- `sourceIds[]` 的順序即 child expansion 順序，不做額外排序
+- 第一版先不要求防循環與跨鏈去重；若配置重複片段，prompt 可重複出現
 
 ### Module-aware source selection acceptance
 
@@ -774,7 +791,8 @@ builders/{builderId}
 │
 ├──► sources/{sourceId}                          （子集合）
 │    │  prompts, orderNo, systemBlock,
-│    │  moduleKey?, copiedFromTemplate*
+│    │  moduleKey?, sourceType?, matchKey?,
+│    │  sourceIds[]?, copiedFromTemplate*
 │    │
 │    └──► sourceRags/{ragId}                     （子集合）
 │         ragType, title, content, orderNo,
@@ -796,8 +814,8 @@ appPromptConfigs/{appId}
 │  ┌─ appId + analysisScopeKey ──────────────────（引用）
 │  │
 theoryMappings/{mappingId}
-   appId, analysisScopeKey, theoryVersion, mappingType,
-   slotKey, rawValue?, semanticPrompt, active
+   appId, analysisScopeKey/moduleKey, theoryVersion,
+   slotKey, rawValue, targetMatchKey, active
 
 
 templates/{templateId}                            （獨立集合）
@@ -847,6 +865,9 @@ source.copiedFromTemplate*───copied-from─→ templates/{templateId}
 - `orderNo`
 - `systemBlock`
 - `moduleKey` optional
+- `sourceType` optional (`primary` / `fragment`)
+- `matchKey` optional
+- `sourceIds[]` optional
 - `copiedFromTemplateId`
 - `copiedFromTemplateKey`
 - `copiedFromTemplateName`
@@ -857,6 +878,21 @@ source.copiedFromTemplate*───copied-from─→ templates/{templateId}
 - 缺值或空值代表此 source 永遠可用
 - `common` 屬於保留語意，write path 應正規化為缺值 / 空值
 - 有值時，作為 strategy 可選用的 internal tag，不再要求由 top-level module list 直接驅動
+
+`sourceType / matchKey / sourceIds[]` 規則：
+- `sourceType=primary`
+  - 頂層 source
+  - 由 analysis parser / request JSON 語意決定主順序
+- `sourceType=fragment`
+  - 供其他 source 引用的 prompt 片段
+  - admin UI 應能與 primary sources 分群顯示
+- `matchKey`
+  - 供 theory translation / strategy lookup 使用
+  - 例如 `capricorn`、`earth`、`cardinal`
+- `sourceIds[]`
+  - 代表 child source 引用
+  - 陣列順序即展開順序
+  - 第一版先不要求防循環與去重
 
 ### `builders/{builderId}/sources/{sourceId}/sourceRags/{ragId}`
 對應 Java source 底下的 rag config。
@@ -914,17 +950,26 @@ app-aware prompt strategy registry，用於決定不同 `appId` 應走哪一套 
 - `active`
 
 ### `theoryMappings/{mappingId}`
-Internal theory translation table，用於將 external app 傳來的 raw theory value 轉成最終語意片段。
+Internal theory translation table。
 
-欄位基準：
+目前已落地 schema：
 - `appId`
-- `analysisScopeKey`
+- `analysisScopeKey`（目前 code 欄位名仍是 `moduleKey`）
 - `theoryVersion`
-- `mappingType` (`slot` / `value`)
 - `slotKey`
-- `rawValue` optional
-- `semanticPrompt`
+- `rawValue`
+- `targetMatchKey`
 - `active`
+
+目前用途：
+- 將 `rawValue / alias` 翻譯成 `targetMatchKey`
+- 例如 `Capricorn -> capricorn`
+
+規則：
+- `targetMatchKey` 的值應對應到某個 fragment source 的 `matchKey`
+- strategy 應以 `targetMatchKey -> source.matchKey` 做 source lookup
+- 原 `mappingType=slot` 的 slot-level 語意標籤（例如 `人生主軸`、`情緒本能`）已遷移到 primary source 的 `prompts`
+- theoryMappings 不再承擔 prompt 片段內容存放責任
 
 ### Future retrieval backing stores
 這些屬於 rag module 內部資料，不屬於 builder graph：

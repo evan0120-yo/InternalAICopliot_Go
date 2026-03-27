@@ -87,6 +87,9 @@ type BuilderGraphSourceResponse struct {
 	TemplateDescription *string                   `json:"templateDescription,omitempty"`
 	TemplateGroupKey    *string                   `json:"templateGroupKey,omitempty"`
 	ModuleKey           *string                   `json:"moduleKey,omitempty"`
+	SourceType          *string                   `json:"sourceType,omitempty"`
+	MatchKey            *string                   `json:"matchKey,omitempty"`
+	SourceIDs           []int64                   `json:"sourceIds,omitempty"`
 	OrderNo             int                       `json:"orderNo"`
 	SystemBlock         bool                      `json:"systemBlock"`
 	Prompts             string                    `json:"prompts"`
@@ -125,12 +128,16 @@ type BuilderGraphRagRequest struct {
 
 // BuilderGraphSourceRequest is the admin graph source request.
 type BuilderGraphSourceRequest struct {
+	SourceID            *int64                   `json:"sourceId"`
 	TemplateID          *int64                   `json:"templateId"`
 	TemplateKey         *string                  `json:"templateKey"`
 	TemplateName        *string                  `json:"templateName"`
 	TemplateDescription *string                  `json:"templateDescription"`
 	TemplateGroupKey    *string                  `json:"templateGroupKey"`
 	ModuleKey           *string                  `json:"moduleKey"`
+	SourceType          *string                  `json:"sourceType"`
+	MatchKey            *string                  `json:"matchKey"`
+	SourceIDs           []int64                  `json:"sourceIds"`
 	OrderNo             *int                     `json:"orderNo"`
 	SystemBlock         *bool                    `json:"systemBlock"`
 	Prompts             string                   `json:"prompts"`

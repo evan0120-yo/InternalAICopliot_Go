@@ -42,13 +42,19 @@ type renderedProfileLine struct {
 }
 
 type theoryTranslationIndex struct {
-	slotPrompts  map[string]string
-	valuePrompts map[string]map[string]string
+	targetMatchKeys map[string]map[string]string
+}
+
+type sourceGraphIndex struct {
+	orderedPrimary []infra.Source
+	primaryByKey   map[string]infra.Source
+	fragmentByKey  map[string]infra.Source
+	sourcesByID    map[int64]infra.Source
 }
 
 type profileContextStrategy interface {
 	FilterSources(ctx context.Context, service *AssembleService, appID string, sources []infra.Source, subjectProfile *SubjectProfile) ([]infra.Source, error)
-	Build(ctx context.Context, service *AssembleService, appID string, subjectProfile *SubjectProfile) (string, error)
+	Build(ctx context.Context, service *AssembleService, builderConfig infra.BuilderConfig, appID string, subjectProfile *SubjectProfile) (string, error)
 }
 
 type defaultProfileContextStrategy struct{}
@@ -58,7 +64,7 @@ type linkChatProfileContextStrategy struct{}
 type linkChatAnalysisRenderer interface {
 	AnalysisType() string
 	SourceTags(payload SubjectAnalysisPayload) ([]string, error)
-	Build(ctx context.Context, service *AssembleService, appID string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, error)
+	Build(ctx context.Context, service *AssembleService, builderConfig infra.BuilderConfig, appID string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, error)
 }
 
 type astrologyLinkChatAnalysisRenderer struct{}
@@ -99,7 +105,7 @@ func (s *AssembleService) AssemblePrompt(ctx context.Context, builderConfig infr
 	promptBuilder.WriteString(buildFrameworkHeader(builderConfig))
 	promptBuilder.WriteString(buildRawUserTextSection(userText))
 
-	profileBlock, err := s.buildProfileContextBlock(ctx, appID, subjectProfile)
+	profileBlock, err := s.buildProfileContextBlock(ctx, builderConfig, appID, subjectProfile)
 	if err != nil {
 		return promptAssemblyResult{}, err
 	}
@@ -140,12 +146,12 @@ func (s *AssembleService) AssemblePrompt(ctx context.Context, builderConfig infr
 	}, nil
 }
 
-func (s *AssembleService) buildProfileContextBlock(ctx context.Context, appID string, subjectProfile *SubjectProfile) (string, error) {
+func (s *AssembleService) buildProfileContextBlock(ctx context.Context, builderConfig infra.BuilderConfig, appID string, subjectProfile *SubjectProfile) (string, error) {
 	strategy, err := s.resolveProfileContextStrategy(ctx, appID)
 	if err != nil {
 		return "", err
 	}
-	return strategy.Build(ctx, s, strings.TrimSpace(appID), subjectProfile)
+	return strategy.Build(ctx, s, builderConfig, strings.TrimSpace(appID), subjectProfile)
 }
 
 func (s *AssembleService) resolveProfileContextStrategy(ctx context.Context, appID string) (profileContextStrategy, error) {
@@ -230,7 +236,7 @@ func (defaultProfileContextStrategy) FilterSources(_ context.Context, _ *Assembl
 	return filterSourcesByTags(sources, collectAnalysisTypeTags(subjectProfile))
 }
 
-func (defaultProfileContextStrategy) Build(_ context.Context, _ *AssembleService, _ string, subjectProfile *SubjectProfile) (string, error) {
+func (defaultProfileContextStrategy) Build(_ context.Context, _ *AssembleService, _ infra.BuilderConfig, _ string, subjectProfile *SubjectProfile) (string, error) {
 	rendered, err := renderDefaultSubjectProfile(subjectProfile)
 	if err != nil {
 		return "", err
@@ -243,15 +249,49 @@ func (linkChatProfileContextStrategy) FilterSources(_ context.Context, service *
 	if err != nil {
 		return nil, err
 	}
-	return filterSourcesByTags(sources, tags)
+	requiredPrimaryMatchKeys, err := service.linkChatPrimaryMatchKeys(subjectProfile)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]infra.Source, 0, len(sources))
+	allowedTags := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		allowedTags[tag] = struct{}{}
+	}
+	for _, source := range sources {
+		moduleKey, err := NormalizeStoredModuleKey(source.ModuleKey)
+		if err != nil {
+			return nil, infra.NewError("INVALID_SOURCE_MODULE_KEY", "Stored source moduleKey is invalid.", 500)
+		}
+		if moduleKey == "" {
+			filtered = append(filtered, source)
+			continue
+		}
+		if _, ok := allowedTags[moduleKey]; !ok {
+			continue
+		}
+		if resolveSourceType(source.SourceType) == infra.SourceTypeFragment {
+			continue
+		}
+		matchKey := canonicalSourceMatchKey(source.MatchKey)
+		if matchKey == "" {
+			filtered = append(filtered, source)
+			continue
+		}
+		if _, ok := requiredPrimaryMatchKeys[moduleKey][matchKey]; ok {
+			filtered = append(filtered, source)
+		}
+	}
+	return filtered, nil
 }
 
-func (linkChatProfileContextStrategy) Build(ctx context.Context, service *AssembleService, appID string, subjectProfile *SubjectProfile) (string, error) {
+func (linkChatProfileContextStrategy) Build(ctx context.Context, service *AssembleService, builderConfig infra.BuilderConfig, appID string, subjectProfile *SubjectProfile) (string, error) {
 	if subjectProfile == nil {
 		return "", nil
 	}
 
-	renderedProfile, err := service.renderLinkChatSubjectProfile(ctx, appID, subjectProfile)
+	renderedProfile, err := service.renderLinkChatSubjectProfile(ctx, builderConfig, appID, subjectProfile)
 	if err != nil {
 		return "", err
 	}
@@ -292,7 +332,32 @@ func (s *AssembleService) linkChatSourceTags(subjectProfile *SubjectProfile) ([]
 	return tags, nil
 }
 
-func (s *AssembleService) renderLinkChatSubjectProfile(ctx context.Context, appID string, subjectProfile *SubjectProfile) (*renderedSubjectProfile, error) {
+func (s *AssembleService) linkChatPrimaryMatchKeys(subjectProfile *SubjectProfile) (map[string]map[string]struct{}, error) {
+	result := make(map[string]map[string]struct{})
+	if subjectProfile == nil {
+		return result, nil
+	}
+
+	for _, payload := range subjectProfile.AnalysisPayloads {
+		valuesByKey, err := flattenPayloadToValueMap(payload.Payload)
+		if err != nil {
+			return nil, err
+		}
+		if len(valuesByKey) == 0 {
+			continue
+		}
+		analysisType := strings.TrimSpace(payload.AnalysisType)
+		if _, ok := result[analysisType]; !ok {
+			result[analysisType] = make(map[string]struct{})
+		}
+		for key := range valuesByKey {
+			result[analysisType][canonicalSourceMatchKey(key)] = struct{}{}
+		}
+	}
+	return result, nil
+}
+
+func (s *AssembleService) renderLinkChatSubjectProfile(ctx context.Context, builderConfig infra.BuilderConfig, appID string, subjectProfile *SubjectProfile) (*renderedSubjectProfile, error) {
 	if subjectProfile == nil {
 		return nil, nil
 	}
@@ -307,7 +372,7 @@ func (s *AssembleService) renderLinkChatSubjectProfile(ctx context.Context, appI
 		if err != nil {
 			return nil, err
 		}
-		block, err := renderer.Build(ctx, s, appID, payload)
+		block, err := renderer.Build(ctx, s, builderConfig, appID, payload)
 		if err != nil {
 			return nil, err
 		}
@@ -336,8 +401,8 @@ func (astrologyLinkChatAnalysisRenderer) SourceTags(_ SubjectAnalysisPayload) ([
 	return []string{"astrology"}, nil
 }
 
-func (r astrologyLinkChatAnalysisRenderer) Build(ctx context.Context, service *AssembleService, appID string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, error) {
-	lines, err := flattenPayloadToLines(payload.Payload)
+func (r astrologyLinkChatAnalysisRenderer) Build(ctx context.Context, service *AssembleService, builderConfig infra.BuilderConfig, appID string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, error) {
+	payloadValues, err := flattenPayloadToValueMap(payload.Payload)
 	if err != nil {
 		return renderedAnalysisBlock{}, err
 	}
@@ -359,26 +424,50 @@ func (r astrologyLinkChatAnalysisRenderer) Build(ctx context.Context, service *A
 		return renderedAnalysisBlock{}, err
 	}
 
-	translatedLines := make([]renderedProfileLine, 0, len(lines))
-	for _, line := range lines {
-		slotPrompt, ok := translationIndex.slotPrompts[line.Key]
-		if !ok {
-			return renderedAnalysisBlock{}, infra.NewError("THEORY_MAPPING_SLOT_NOT_FOUND", "Theory mapping slot was not found for the requested key.", 500)
+	allSources, err := service.store.SourcesByBuilderIDContext(ctx, builderConfig.BuilderID)
+	if err != nil {
+		return renderedAnalysisBlock{}, err
+	}
+	graph, err := buildSourceGraphIndex(allSources, r.AnalysisType())
+	if err != nil {
+		return renderedAnalysisBlock{}, err
+	}
+
+	translatedLines := make([]renderedProfileLine, 0, len(graph.orderedPrimary))
+	for _, primarySource := range graph.orderedPrimary {
+		primaryMatchKey := canonicalSourceMatchKey(primarySource.MatchKey)
+		if primaryMatchKey == "" {
+			continue
 		}
-		valueMappings := translationIndex.valuePrompts[line.Key]
+		rawValues, ok := payloadValues[primaryMatchKey]
+		if !ok || len(rawValues) == 0 {
+			continue
+		}
+		valueMappings := translationIndex.targetMatchKeys[primaryMatchKey]
 		if len(valueMappings) == 0 {
 			return renderedAnalysisBlock{}, infra.NewError("THEORY_MAPPING_SLOT_NOT_FOUND", "Theory mapping slot was not found for the requested key.", 500)
 		}
 
-		translatedValues := make([]string, 0, len(line.Values))
-		for _, value := range line.Values {
-			translatedValue, ok := valueMappings[canonicalTheoryRawValue(value)]
+		translatedValues := make([]string, 0)
+		for _, rawValue := range rawValues {
+			targetMatchKey, ok := valueMappings[canonicalTheoryRawValue(rawValue)]
 			if !ok {
 				return renderedAnalysisBlock{}, infra.NewError("THEORY_MAPPING_NOT_FOUND", "Theory mapping entry was not found for the requested value.", 500)
 			}
-			translatedValues = append(translatedValues, translatedValue)
+			fragmentSource, ok := graph.fragmentByKey[targetMatchKey]
+			if !ok {
+				return renderedAnalysisBlock{}, infra.NewError("SOURCE_FRAGMENT_NOT_FOUND", "Composable source fragment was not found for the translated theory value.", 500)
+			}
+			expandedPrompts, err := service.expandComposableSource(ctx, graph, fragmentSource)
+			if err != nil {
+				return renderedAnalysisBlock{}, err
+			}
+			translatedValues = append(translatedValues, expandedPrompts...)
 		}
-		translatedLines = append(translatedLines, renderedProfileLine{Key: slotPrompt, Values: translatedValues})
+		translatedLines = append(translatedLines, renderedProfileLine{
+			Key:    strings.TrimSpace(primarySource.Prompts),
+			Values: translatedValues,
+		})
 	}
 
 	return renderedAnalysisBlock{
@@ -396,7 +485,7 @@ func (mbtiLinkChatAnalysisRenderer) SourceTags(_ SubjectAnalysisPayload) ([]stri
 	return []string{"mbti"}, nil
 }
 
-func (mbtiLinkChatAnalysisRenderer) Build(_ context.Context, _ *AssembleService, _ string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, error) {
+func (mbtiLinkChatAnalysisRenderer) Build(_ context.Context, _ *AssembleService, _ infra.BuilderConfig, _ string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, error) {
 	lines, err := flattenPayloadToLines(payload.Payload)
 	if err != nil {
 		return renderedAnalysisBlock{}, err
@@ -411,8 +500,7 @@ func (mbtiLinkChatAnalysisRenderer) Build(_ context.Context, _ *AssembleService,
 
 func buildTheoryTranslationIndex(mappings []infra.TheoryMapping) (theoryTranslationIndex, error) {
 	index := theoryTranslationIndex{
-		slotPrompts:  make(map[string]string),
-		valuePrompts: make(map[string]map[string]string),
+		targetMatchKeys: make(map[string]map[string]string),
 	}
 
 	for _, mapping := range mappings {
@@ -420,37 +508,23 @@ func buildTheoryTranslationIndex(mappings []infra.TheoryMapping) (theoryTranslat
 		if slotKey == "" {
 			return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define slotKey.", 500)
 		}
-		semanticPrompt := sanitizeSemanticPrompt(mapping.SemanticPrompt)
-		if semanticPrompt == "" {
-			return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define semanticPrompt.", 500)
+		rawValueKey := canonicalTheoryRawValue(mapping.RawValue)
+		if rawValueKey == "" {
+			return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define rawValue.", 500)
 		}
-
-		switch strings.TrimSpace(mapping.MappingType) {
-		case infra.TheoryMappingTypeSlot:
-			if raw := strings.TrimSpace(mapping.RawValue); raw != "" {
-				return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Slot theory mapping rows must not define rawValue.", 500)
-			}
-			if _, exists := index.slotPrompts[slotKey]; exists {
-				return theoryTranslationIndex{}, infra.NewError("DUPLICATE_THEORY_MAPPING", "Theory mapping rows must not repeat the same slot mapping.", 500)
-			}
-			index.slotPrompts[slotKey] = semanticPrompt
-		case infra.TheoryMappingTypeValue:
-			rawValueKey := canonicalTheoryRawValue(mapping.RawValue)
-			if rawValueKey == "" {
-				return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Value theory mapping rows must define rawValue.", 500)
-			}
-			slotMappings, ok := index.valuePrompts[slotKey]
-			if !ok {
-				slotMappings = make(map[string]string)
-				index.valuePrompts[slotKey] = slotMappings
-			}
-			if _, exists := slotMappings[rawValueKey]; exists {
-				return theoryTranslationIndex{}, infra.NewError("DUPLICATE_THEORY_MAPPING", "Theory mapping rows must not repeat the same slot/rawValue pair.", 500)
-			}
-			slotMappings[rawValueKey] = semanticPrompt
-		default:
-			return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define a valid mappingType.", 500)
+		targetMatchKey := canonicalSourceMatchKey(mapping.TargetMatchKey)
+		if targetMatchKey == "" {
+			return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define targetMatchKey.", 500)
 		}
+		slotMappings, ok := index.targetMatchKeys[slotKey]
+		if !ok {
+			slotMappings = make(map[string]string)
+			index.targetMatchKeys[slotKey] = slotMappings
+		}
+		if _, exists := slotMappings[rawValueKey]; exists {
+			return theoryTranslationIndex{}, infra.NewError("DUPLICATE_THEORY_MAPPING", "Theory mapping rows must not repeat the same slot/rawValue pair.", 500)
+		}
+		slotMappings[rawValueKey] = targetMatchKey
 	}
 
 	return index, nil
@@ -460,13 +534,88 @@ func theoryMappingScopeKey(appID, moduleKey, theoryVersion string) string {
 	return strings.Join([]string{appID, moduleKey, theoryVersion}, "\x00")
 }
 
+func buildSourceGraphIndex(sources []infra.Source, analysisType string) (sourceGraphIndex, error) {
+	graph := sourceGraphIndex{
+		orderedPrimary: make([]infra.Source, 0),
+		primaryByKey:   make(map[string]infra.Source),
+		fragmentByKey:  make(map[string]infra.Source),
+		sourcesByID:    make(map[int64]infra.Source),
+	}
+
+	for _, source := range sources {
+		moduleKey, err := NormalizeStoredModuleKey(source.ModuleKey)
+		if err != nil {
+			return sourceGraphIndex{}, infra.NewError("INVALID_SOURCE_MODULE_KEY", "Stored source moduleKey is invalid.", 500)
+		}
+		if moduleKey != strings.TrimSpace(analysisType) {
+			continue
+		}
+
+		graph.sourcesByID[source.SourceID] = source
+		matchKey := canonicalSourceMatchKey(source.MatchKey)
+		switch resolveSourceType(source.SourceType) {
+		case infra.SourceTypeFragment:
+			if matchKey == "" {
+				continue
+			}
+			graph.fragmentByKey[matchKey] = source
+		default:
+			graph.orderedPrimary = append(graph.orderedPrimary, source)
+			if matchKey != "" {
+				graph.primaryByKey[matchKey] = source
+			}
+		}
+	}
+
+	infra.SortByOrderThenID(graph.orderedPrimary, func(source infra.Source) int { return source.OrderNo }, func(source infra.Source) int64 { return source.SourceID })
+	return graph, nil
+}
+
 func canonicalTheoryRawValue(raw string) string {
 	return strings.ToLower(strings.TrimSpace(raw))
 }
 
-func sanitizeSemanticPrompt(raw string) string {
-	singleLine := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
-	return singleLine
+func canonicalSourceMatchKey(raw string) string {
+	return canonicalPayloadKey(raw)
+}
+
+func resolveSourceType(raw string) string {
+	if strings.ToLower(strings.TrimSpace(raw)) == infra.SourceTypeFragment {
+		return infra.SourceTypeFragment
+	}
+	return infra.SourceTypePrimary
+}
+
+func (s *AssembleService) expandComposableSource(ctx context.Context, graph sourceGraphIndex, source infra.Source) ([]string, error) {
+	parts := make([]string, 0, 1+len(source.SourceIDs))
+	if prompt := strings.TrimSpace(source.Prompts); prompt != "" {
+		parts = append(parts, prompt)
+	}
+	if source.NeedsRagSupplement {
+		rags, err := s.store.RagsBySourceIDContext(ctx, source.SourceID)
+		if err != nil {
+			return nil, err
+		}
+		for _, rag := range rags {
+			content := strings.TrimSpace(rag.Content)
+			if content == "" {
+				continue
+			}
+			parts = append(parts, content)
+		}
+	}
+	for _, childSourceID := range source.SourceIDs {
+		childSource, ok := graph.sourcesByID[childSourceID]
+		if !ok {
+			return nil, infra.NewError("SOURCE_REFERENCE_NOT_FOUND", "Composable source child was not found.", 500)
+		}
+		childParts, err := s.expandComposableSource(ctx, graph, childSource)
+		if err != nil {
+			return nil, err
+		}
+		parts = append(parts, childParts...)
+	}
+	return parts, nil
 }
 
 func resolveOverrideContent(rag infra.RagSupplement, userText string) (string, bool) {
@@ -695,20 +844,9 @@ func normalizeOptionalString(value *string) *string {
 }
 
 func flattenPayloadToLines(payload map[string]any) ([]renderedProfileLine, error) {
-	if len(payload) == 0 {
-		return nil, nil
-	}
-
-	flattened := make(map[string][]string)
-	keys := make([]string, 0, len(payload))
-	for key := range payload {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		if err := flattenPayloadValue(canonicalPayloadKey(key), payload[key], flattened); err != nil {
-			return nil, err
-		}
+	flattened, err := flattenPayloadToValueMap(payload)
+	if err != nil {
+		return nil, err
 	}
 
 	lines := make([]renderedProfileLine, 0, len(flattened))
@@ -724,6 +862,25 @@ func flattenPayloadToLines(payload map[string]any) ([]renderedProfileLine, error
 		})
 	}
 	return lines, nil
+}
+
+func flattenPayloadToValueMap(payload map[string]any) (map[string][]string, error) {
+	if len(payload) == 0 {
+		return nil, nil
+	}
+
+	flattened := make(map[string][]string)
+	keys := make([]string, 0, len(payload))
+	for key := range payload {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if err := flattenPayloadValue(canonicalPayloadKey(key), payload[key], flattened); err != nil {
+			return nil, err
+		}
+	}
+	return flattened, nil
 }
 
 func flattenPayloadValue(prefix string, value any, flattened map[string][]string) error {

@@ -150,14 +150,24 @@ func extractSourceRequests(request BuilderGraphRequest) []BuilderGraphSourceRequ
 func normalizeGraphSources(requests []BuilderGraphSourceRequest) ([]infra.Source, []infra.RagSupplement, error) {
 	type indexedSource struct {
 		index   int
+		inputID int64
 		request BuilderGraphSourceRequest
 	}
 	indexed := make([]indexedSource, 0, len(requests))
+	seenInputIDs := make(map[int64]struct{}, len(requests))
 	for index, request := range requests {
 		if request.SystemBlock != nil && *request.SystemBlock {
 			continue
 		}
-		indexed = append(indexed, indexedSource{index: index, request: request})
+		inputID := int64(-(index + 1))
+		if request.SourceID != nil && *request.SourceID != 0 {
+			inputID = *request.SourceID
+		}
+		if _, exists := seenInputIDs[inputID]; exists {
+			return nil, nil, infra.NewError("SOURCE_ID_DUPLICATE", "Source identifiers must be unique within one graph save request.", 400)
+		}
+		seenInputIDs[inputID] = struct{}{}
+		indexed = append(indexed, indexedSource{index: index, inputID: inputID, request: request})
 	}
 	infra.SortByOrderThenID(indexed, func(item indexedSource) int {
 		if item.request.OrderNo != nil {
@@ -168,13 +178,21 @@ func normalizeGraphSources(requests []BuilderGraphSourceRequest) ([]infra.Source
 
 	sources := make([]infra.Source, 0, len(indexed))
 	rags := make([]infra.RagSupplement, 0)
+	inputToPlaceholder := make(map[int64]int64, len(indexed))
 	for sourceIndex, item := range indexed {
 		if item.request.OrderNo != nil && *item.request.OrderNo <= 0 {
 			return nil, nil, infra.NewError("SOURCE_ORDER_INVALID", "Source orderNo must be positive when provided.", 400)
 		}
+		sourceType, err := normalizeSourceType(valueOrEmpty(item.request.SourceType))
+		if err != nil {
+			return nil, nil, err
+		}
+		matchKey := strings.TrimSpace(valueOrEmpty(item.request.MatchKey))
+		placeholderSourceID := int64(-(sourceIndex + 1))
+		inputToPlaceholder[item.inputID] = placeholderSourceID
 
 		source := infra.Source{
-			SourceID:                      int64(-(sourceIndex + 1)),
+			SourceID:                      placeholderSourceID,
 			Prompts:                       strings.TrimSpace(item.request.Prompts),
 			OrderNo:                       sourceIndex + 1,
 			SystemBlock:                   false,
@@ -184,12 +202,17 @@ func normalizeGraphSources(requests []BuilderGraphSourceRequest) ([]infra.Source
 			CopiedFromTemplateName:        trimStringPtr(item.request.TemplateName),
 			CopiedFromTemplateDescription: trimStringPtr(item.request.TemplateDescription),
 			CopiedFromTemplateGroupKey:    trimStringPtr(item.request.TemplateGroupKey),
+			SourceType:                    sourceType,
+			MatchKey:                      matchKey,
 		}
 		moduleKey, err := NormalizeStoredModuleKey(valueOrEmpty(item.request.ModuleKey))
 		if err != nil {
 			return nil, nil, err
 		}
 		source.ModuleKey = moduleKey
+		if len(item.request.SourceIDs) > 0 {
+			source.SourceIDs = append([]int64(nil), item.request.SourceIDs...)
+		}
 		sources = append(sources, source)
 
 		normalizedRags, err := normalizeGraphRags(item.request.Rag, source.SourceID)
@@ -197,6 +220,21 @@ func normalizeGraphSources(requests []BuilderGraphSourceRequest) ([]infra.Source
 			return nil, nil, err
 		}
 		rags = append(rags, normalizedRags...)
+	}
+
+	for sourceIndex := range sources {
+		if len(sources[sourceIndex].SourceIDs) == 0 {
+			continue
+		}
+		rewritten := make([]int64, 0, len(sources[sourceIndex].SourceIDs))
+		for _, requestedID := range sources[sourceIndex].SourceIDs {
+			resolvedID, ok := inputToPlaceholder[requestedID]
+			if !ok {
+				return nil, nil, infra.NewError("SOURCE_REFERENCE_NOT_FOUND", "sourceIds contains an unknown source reference.", 400)
+			}
+			rewritten = append(rewritten, resolvedID)
+		}
+		sources[sourceIndex].SourceIDs = rewritten
 	}
 	return sources, rags, nil
 }
@@ -272,6 +310,19 @@ func valueOrEmpty(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+func normalizeSourceType(raw string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		return "", nil
+	case infra.SourceTypePrimary:
+		return infra.SourceTypePrimary, nil
+	case infra.SourceTypeFragment:
+		return infra.SourceTypeFragment, nil
+	default:
+		return "", infra.NewError("SOURCE_TYPE_INVALID", "sourceType must be primary or fragment.", 400)
+	}
 }
 
 func toGroupKey(rawGroupLabel string) string {

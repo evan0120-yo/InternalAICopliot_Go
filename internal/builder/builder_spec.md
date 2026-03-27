@@ -70,7 +70,8 @@ builder consult command 應帶 optional `appId`。
 - strategy 的責任是控制 app-specific 的 profile/context 組法，不應重做整條 consult orchestration。
 - framework header、source order、rag order、override 規則與 framework tail 仍屬 shared assembly skeleton。
 - strategy interface 應以內部 prompt assembly context 為主，不應直接把 assemble service 內部參數形狀外洩成公共契約。
-- 若某個 app 需要更細的欄位/value 語意組裝，應由該 strategy 自己定義 key resolution 規則，不應回頭改 shared source / rag 的主資料模型。
+- 若某個 app 需要更細的欄位/value 語意組裝，應由該 strategy 自己定義 key resolution 規則。
+- LinkChat 目前已落地 source graph 欄位（`sourceType` / `matchKey` / `sourceIds[]`），且 rag ownership 與 shared consult skeleton 不被反轉。
 
 ## LinkChat Two-Layer Factory
 builder 第一層只處理 app-aware strategy；LinkChat 的 analysis-specific 分流留在第二層 factory。
@@ -100,20 +101,56 @@ builder 不應做的事：
 - 不要求 external app 直接送 Internal 私有 prompt code
 - 不要求不同 analysis type 共用同一套 payload shape
 
-## Theory Mapping And Semantic Translation
-某些 app-specific strategy 可要求在 render prompt 前，先將 external app 傳來的 raw value 轉成 Internal 已翻譯好的語意片段。
+## Theory Translation And Source Resolution
+某些 app-specific strategy 可要求在 render prompt 前，先將 external app 傳來的 raw value 轉成 Internal 可穩定查找的 source fragment key，再依 composable source graph 組出 prompt。
 
 規則：
 - mapping key 應至少包含 `appId`、analysis scope key、`theoryVersion`、slot key 與 raw value。
 - analysis scope key 可由 LinkChat 第二層 factory 從 `analysisType` 映射得出，不要求 external request 直接送 Internal module key。
 - slot key 在 theory-translation-enabled analysis type 中應視為 stable theory slot key。
-- theory mapping table 應至少同時支援：
-  - `slotKey -> slot semantic fragment`
-  - `slotKey + rawValue -> value semantic fragment`
+- 目前 production code 已將 theory mapping table 收斂為 `rawValue / alias -> targetMatchKey`
+  - `targetMatchKey` 的值應對應到某個 fragment source 的 `matchKey`
+  - strategy 再以此做 source lookup
+- theory mapping table 的輸出目標應是 stable lookup key（例如 `targetMatchKey`），而不是直接存放 prompt 片段。
+- prompt 片段內容應由 source / rag graph 承接，讓 admin graph UI 可以直接編輯。
 - 不是每個 analysis type 都需要 theory translation；未配置 translation 的 analysis type 可保留原始值 render。
 - LinkChat 目前只有 `astrology` 視為 theory-translation-enabled analysis type，必須帶 `theoryVersion`；`mbti` 目前維持 raw render。
 - theory mapping data 應由 infra / repository 提供，strategy 只負責使用，不負責持有 source of truth。
-- AI 最終不應直接看到 raw theory 詞，也不應看到 Internal private code；應只看到翻譯後的語意結果。
+- AI 最終不應直接看到 raw theory 詞，也不應看到 Internal private code；應只看到展開後的最終 prompt 內容。
+- 原 `mappingType=slot` 的 slot-level 語意標籤（如 `人生主軸`、`情緒本能`）已遷移到 primary source 的 `prompts` 欄位。
+
+## Composable Source Graph
+LinkChat astrology 這條線目前的 source 不再只是一個 flat prompt block；它同時也是可被組合的 prompt node。
+
+source graph 應至少支援：
+- `sourceType=primary`
+  - 頂層 source
+  - 由 LinkChat analysis parser 根據傳入 JSON 的 slot 順序決定要不要進 prompt
+- `sourceType=fragment`
+  - 可被 primary 或其他 fragment 引用的片段 source
+- `matchKey`
+  - 給 strategy / theory translation 用來解析 raw value
+- `sourceIds[]`
+  - 表示 child sources
+  - 陣列順序即 child expansion 順序
+
+builder 組裝規則：
+```text
+LinkChat payload
+  -> analysis parser 先決定主順序
+     例如 sun -> moon -> rising
+  -> 每個主槽位先選 primary source
+  -> 再依 raw value / theory translation 找到 fragment source
+  -> fragment source 若有 sourceIds[]，照填入順序繼續展開
+  -> 每個 source 各自再帶自己的 rag children
+  -> 最後組成完整 prompt block
+```
+
+補充規則：
+- primary 順序不是靠 source graph 自己猜，而是由 analysis parser / request JSON 語意決定。
+- `sourceIds[]` 的順序應原樣保留，不做額外排序。
+- 第一版先不要求防循環與跨鏈去重；若作者配置重複片段，prompt 可重複出現。
+- 同一個 fragment source 可被多個 primary sources 重複引用；這在最終 prompt 裡重複出現是合理行為。
 
 ## Subject Profile Rendering Rules
 - LinkChat 第二層 factory 應將各 analysis payload 轉成 deterministic prompt fragment
@@ -176,7 +213,8 @@ rag 負責：
 補充：
 - source 仍是主 prompt 骨架
 - rag 仍是 source 底下的補充內容
-- LinkChat strategy 若要用 `analysisType`、slot key、value key、`theoryVersion` 做更細的語意片段組裝，應在 strategy 內自己查表與拼接，不代表 source / rag 要改成以這些 key 為主鍵
+- LinkChat strategy 若要用 `analysisType`、slot key、value key、`theoryVersion` 做更細的語意片段組裝，應在 strategy 內自己查表與拼接
+- source graph 若新增 `sourceIds[]`，代表 source 可以再引用其他 source；這不改變 rag 屬於 source 的關係
 - `source.moduleKey` 若存在，僅作 internal tag；它可以被 LinkChat strategy 使用，也可以被忽略，不需要升級成新的 shared request contract
 
 ## Use Cases In This Module
@@ -260,9 +298,15 @@ Prompt 組裝資料管線（由上至下依序輸出）
 - default 與 app-specific strategy 都必須共用相同的 framework header / source / rag / tail 順序
 
 ## Ordering Rules
-- source order: `orderNo ASC`, tie-break with `sourceId`
-- rag order: `orderNo ASC`
-- graph save 時，非系統 source 與其 rag configs 可重編 canonical order
+- generic/default path：
+  - source order: `orderNo ASC`, tie-break with `sourceId`
+  - rag order: `orderNo ASC`
+- LinkChat composable source graph path：
+  - primary source 順序：由 analysis parser / request JSON 語意決定
+  - child fragment 順序：由 `sourceIds[]` 填入順序決定
+  - rag order：仍為 `orderNo ASC`
+- graph save 時，非系統 primary source 與其 rag configs 可重編 canonical order
+- 若 source graph 引入 fragment source，`sourceIds[]` 順序不應被 graph save 自動改寫
 
 ## Override
 第一版以 Java 現行行為為準。
@@ -321,7 +365,7 @@ SaveGraph 輸入
 - LinkChat 送理論 raw values 與 `theoryVersion`，而不是 Internal 私有 prompt code
 - builder 依 `builderId` 載入整體 source/rag 骨架
 - builder 依 `appId` 選第一層 prompt strategy，LinkChat 再依 `analysisType` 選第二層 factory
-- builder 在需要時透過 theory mapping 將 raw values 轉成 slot/value semantic fragments，並直接組成最終 prompt 語意
-- 若 LinkChat 需要用自己的 key system 做欄位/value 級別的語意組裝，應在 LinkChat strategy 內完成；default strategy 與既有 source / rag 結構不受影響
+- builder 在需要時透過 theory translation 將 raw values 轉成 stable fragment lookup key，再沿 `sourceIds[]` 展開 composable source graph
+- 若 LinkChat 需要用自己的 key system 做欄位/value 級別的語意組裝，應在 LinkChat strategy 內完成；default strategy 與 shared consult skeleton 不受影響
 - rag 只處理已被選入的 source 補充資料
 - text-only profile request 仍屬於 profile mode，不屬於 generic consult

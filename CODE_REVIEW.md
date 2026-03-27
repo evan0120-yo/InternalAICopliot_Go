@@ -935,15 +935,17 @@ subject: {subjectId}
 
 ### [analysis:astrology]
 theory_version: astro-v1
-人生主軸: 深層洞察
-情緒本能: 敏感共感
+主執行緒, 發展有好有壞, 主導做事方式和習慣, 以及思維output框架: 深層洞察
+OS 內核, 主導思維底層邏輯, 包含思維intput架構及運算方式, 喝醉時會同時兼任主執行緒（依照喝醉狀況更多取代本來主執行緒）: 敏感共感
 ```
 
 這段不是 AI 自己解碼得出的結果，而是 builder 先做：
 ```text
 slotKey + rawValue
-  ├─ slot mapping -> slot semantic prompt
-  ├─ value mapping -> value semantic prompt
+  ├─ theoryMapping: rawValue -> targetMatchKey
+  ├─ primary source: matchKey = slotKey
+  ├─ fragment source: matchKey = targetMatchKey
+  ├─ fragment source 若有 sourceIds[]，照陣列順序繼續展開 child sources
   └─ Internal 直接組成最終語意行
 ```
 
@@ -954,10 +956,12 @@ slotKey + rawValue
 | UNKNOWN_PROMPT_STRATEGY | 500 | appPromptConfigs 裡的 strategyKey 不認得 |
 | THEORY_MAPPING_STORE_UNAVAILABLE | 500 | strategy 需要 mapping，但 store 不可用 |
 | THEORY_MAPPING_SCOPE_NOT_FOUND | 500 | 找不到 appId + analysisType（Firestore 欄位名仍是 moduleKey）+ theoryVersion 這個 mapping scope |
-| THEORY_MAPPING_SLOT_NOT_FOUND | 500 | 找不到對應 payload line key 的 slot semantic mapping，或該 slot 完全沒有 value mappings |
-| THEORY_MAPPING_NOT_FOUND | 500 | 找不到 raw value 對應的 value semantic mapping |
-| INVALID_THEORY_MAPPING | 500 | mapping row 缺 slotKey / semanticPrompt / mappingType，或 slot/value row 欄位組合錯誤 |
+| THEORY_MAPPING_SLOT_NOT_FOUND | 500 | 找不到對應 payload line key 的 rawValue mapping 集合 |
+| THEORY_MAPPING_NOT_FOUND | 500 | 找不到 raw value 對應的 targetMatchKey |
+| INVALID_THEORY_MAPPING | 500 | mapping row 缺 slotKey / rawValue / targetMatchKey |
 | DUPLICATE_THEORY_MAPPING | 500 | 同一個 slot/rawValue 重複 |
+| SOURCE_FRAGMENT_NOT_FOUND | 500 | targetMatchKey 找不到對應的 fragment source |
+| SOURCE_REFERENCE_NOT_FOUND | 500 | fragment source 的 sourceIds[] 參照不存在 |
 | UNSUPPORTED_ANALYSIS_TYPE | 400 | LinkChat strategy 不認得 analysisType |
 | INVALID_ANALYSIS_PAYLOAD | 400 | payload 值無法展平，且 json.Marshal 也失敗 |
 
@@ -987,6 +991,8 @@ builder.AdminHandler.loadGraph
            排序: orderNo → ragId
            retrievalMode 強制 "full_context"
            moduleKey 空值 → JSON omit
+           sourceType / matchKey 空值 → JSON omit
+           sourceIds[] 原樣帶回
         → 組裝 BuilderGraphResponse
   → infra.WriteJSON (200)
 ```
@@ -1041,6 +1047,9 @@ builder.AdminHandler.saveGraph
    - 重新分配 canonical orderNo (1, 2, 3...)
    - sourceID 設為負數佔位符 -(index+1)
    - moduleKey: NormalizeStoredModuleKey (common 折疊成空)
+   - sourceType: 只接受 primary / fragment，其餘 → SOURCE_TYPE_INVALID (400)
+   - matchKey: trim 後保留
+   - sourceIds[]: 先保留 request 內的 source 參照，normalize 完再改寫成佔位 sourceID
    - NeedsRagSupplement = len(rag) > 0
    - 保留 template 引用欄位
 4. foreach rag:
@@ -1065,9 +1074,10 @@ builder.AdminHandler.saveGraph
 ║       刪除 _sourceLookup/{sourceId}             ║
 ║       刪除 source 本身                          ║
 ║  4. 寫入新的:                                   ║
+║     先為每個 placeholder source 預分配真實 ID     ║
 ║     foreach source:                            ║
-║       counters.NextSourceID++                  ║
-║       source.SourceID = 新 ID                  ║
+║       source.SourceID = 預分配的新 ID            ║
+║       source.SourceIDs[] 依預分配表重寫          ║
 ║       Set builders/{bid}/sources/{sid}          ║
 ║       Set _sourceLookup/{sid}                  ║
 ║       foreach rag (SourceID 匹配佔位符):        ║
@@ -1090,8 +1100,11 @@ builder.AdminHandler.saveGraph
 | BUILDER_FIELD_MISSING | 400 | builderCode 或 name 為空 |
 | BUILDER_CODE_DUPLICATE | 400 | builderCode 跟別的 builder 撞了 |
 | UNSUPPORTED_OUTPUT_FORMAT | 400 | defaultOutputFormat 無效 |
+| SOURCE_ID_DUPLICATE | 400 | graph request 內 sourceId 重複 |
 | INVALID_MODULE_KEY | 400 | source moduleKey 格式非法 |
+| SOURCE_TYPE_INVALID | 400 | sourceType 不是 primary / fragment |
 | SOURCE_ORDER_INVALID | 400 | source orderNo ≤ 0 |
+| SOURCE_REFERENCE_NOT_FOUND | 400 | sourceIds[] 指到 request 內不存在的 source |
 | RAG_ORDER_INVALID | 400 | rag orderNo ≤ 0 |
 | RAG_TYPE_MISSING | 400 | ragType 為空 |
 | RAG_RETRIEVAL_MODE_UNSUPPORTED | 400 | retrievalMode 不是 full_context |

@@ -455,12 +455,28 @@ func (s *Store) ReplaceBuilderGraph(ctx context.Context, builderID int, sources 
 			}
 		}
 
-		for index := range sources {
+		resolvedSourceIDs := make(map[int64]int64, len(sources))
+		for _, source := range sources {
 			counters.NextSourceID++
-			sourceID := counters.NextSourceID
+			resolvedSourceIDs[source.SourceID] = counters.NextSourceID
+		}
+
+		for index := range sources {
 			source := sources[index]
+			sourceID := resolvedSourceIDs[source.SourceID]
 			source.SourceID = sourceID
 			source.BuilderID = builderID
+			if len(source.SourceIDs) > 0 {
+				rewritten := make([]int64, 0, len(source.SourceIDs))
+				for _, referencedID := range source.SourceIDs {
+					resolvedID, ok := resolvedSourceIDs[referencedID]
+					if !ok {
+						return fmt.Errorf("unknown source reference %d", referencedID)
+					}
+					rewritten = append(rewritten, resolvedID)
+				}
+				source.SourceIDs = rewritten
+			}
 
 			sourceDoc := s.builderDoc(builderID).Collection(builderSourcesCollection).Doc(strconv.FormatInt(sourceID, 10))
 			if err := tx.Set(sourceDoc, source); err != nil {
