@@ -148,7 +148,7 @@ generic `Consult` 最終應映射為 `ConsultModeGeneric`。
 - external app 應只送本次真的有資料的 analysis payload，不再額外傳 top-level module list
 - `subjectProfile` 可帶 `analysis payloads[]`，每個 payload 需有 stable `analysisType`
 - `subjectProfile` 缺值且 `text!=""` 是合法的 text-only profile request
-- 若某個 analysis type 需要 Internal-side code mapping，對應 payload 應帶 `theoryVersion`
+- external app 若有自己的理論版本標記，可帶 `theoryVersion`；Internal canonical-key path 不以此作為必填欄位
 
 `ProfileConsult` 最終應映射為 `ConsultModeProfile`。
 
@@ -218,9 +218,7 @@ Request 進入 Gatekeeper
 │              └── 不在 gatekeeper 內解析 astrology/mbti 細節   │
 │                                                               │
 │  theoryVersion 驗證：                                         │
-│   ├── 若提供，不可為空白                                      │
-│   ├── linkchat + astrology → 必填                             │
-│   └── linkchat + mbti → 可省略                                │
+│   └── 若提供，不可為空白                                      │
 └───────────────────────────────────┬───────────────────────────┘
                                     ▼
                             全部通過，轉交 Builder
@@ -234,5 +232,5 @@ Request 進入 Gatekeeper
 - 尚未實作 MIME validation
 - Gatekeeper 不負責 LinkChat 的 module entitlement 與缺資料剔除；那是 external app 的本地 gatekeeping
 - Gatekeeper 不負責 analysis-type-specific payload parsing；那是 builder 內 LinkChat 第二層 factory 的責任
-- Gatekeeper 不負責 raw theory value -> Internal private code mapping；那是 builder prompt strategy 與 codebook repository 的責任
+- Gatekeeper 不負責 raw value / alias -> canonical key 正規化；那是 external app（例如 LinkChat）自己的責任
 - public prompt-testing routes 的安全性預設由部署/環境隔離保護，不由 gatekeeper 在第一版內做 app auth

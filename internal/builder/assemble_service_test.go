@@ -173,7 +173,6 @@ func TestAssemblePromptUsesLinkChatStrategyForTheoryMappedModules(t *testing.T) 
 	t.Cleanup(func() { _ = store.Close() })
 
 	service := NewAssembleService(store)
-	theoryVersion := " astro-v1 "
 	builderConfig, ok, err := store.BuilderByIDContext(context.Background(), 3)
 	if err != nil {
 		t.Fatalf("BuilderByIDContext returned error: %v", err)
@@ -185,11 +184,10 @@ func TestAssemblePromptUsesLinkChatStrategyForTheoryMappedModules(t *testing.T) 
 		SubjectID: "user-123",
 		AnalysisPayloads: []SubjectAnalysisPayload{
 			{
-				AnalysisType:  "astrology",
-				TheoryVersion: &theoryVersion,
+				AnalysisType: "astrology",
 				Payload: map[string]any{
-					"sun_sign":  []any{"Scorpio"},
-					"moon_sign": []any{"雙魚"},
+					"sun_sign":  []any{"scorpio"},
+					"moon_sign": []any{"pisces"},
 				},
 			},
 			{
@@ -221,9 +219,6 @@ func TestAssemblePromptUsesLinkChatStrategyForTheoryMappedModules(t *testing.T) 
 		t.Fatalf("AssemblePrompt returned error: %v", err)
 	}
 
-	if !strings.Contains(result.Instructions, "theory_version: astro-v1") {
-		t.Fatalf("expected theory version in linkchat subject profile block, got: %s", result.Instructions)
-	}
 	if !strings.Contains(result.Instructions, "主執行緒, 發展有好有壞, 主導做事方式和習慣, 以及思維output框架: 深層洞察\n") {
 		t.Fatalf("expected sun_sign to resolve primary source prompt and fragment source prompt, got: %s", result.Instructions)
 	}
@@ -233,7 +228,7 @@ func TestAssemblePromptUsesLinkChatStrategyForTheoryMappedModules(t *testing.T) 
 	if !strings.Contains(result.Instructions, "type: INTJ\n") {
 		t.Fatalf("expected unmapped module to preserve raw value, got: %s", result.Instructions)
 	}
-	if strings.Contains(result.Instructions, "Scorpio") || strings.Contains(result.Instructions, "雙魚") {
+	if strings.Contains(result.Instructions, "scorpio") || strings.Contains(result.Instructions, "pisces") {
 		t.Fatalf("did not expect raw theory words to leak into instructions, got: %s", result.Instructions)
 	}
 	if strings.Contains(result.Instructions, "## [THEORY_CODEBOOK]") {

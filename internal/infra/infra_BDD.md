@@ -71,9 +71,9 @@
   When repository 讀取 `appPromptConfigs`
   Then 應可依 `appId` 取得對應的 prompt strategy 設定
 
-- Given LinkChat strategy 需要理論 code mapping
-  When repository 讀取 `theoryMappings`
-  Then 應可依 `appId + moduleKey + theoryVersion + slotKey + rawValue` 找到對應的 Internal private code 與 interpretation
+- Given LinkChat strategy 需要 canonical key 可查找的 source graph
+  When repository 讀寫 source document 的 `matchKey` 與 `sourceIds[]`
+  Then 應原樣保留 lookup key 與 child source 順序，不在 infra 層自行改寫
 
 ## Scenario Group: Graph And Template Persistence
 - Given builder graph replace 發生

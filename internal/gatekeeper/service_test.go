@@ -239,7 +239,7 @@ func TestValidateProfileConsultRejectsBlankTheoryVersionWhenProvided(t *testing.
 	}
 }
 
-func TestValidateProfileConsultRequiresTheoryVersionForLinkChatAstrology(t *testing.T) {
+func TestValidateProfileConsultAllowsMissingTheoryVersionForLinkChatAstrology(t *testing.T) {
 	store, err := infra.NewStore("")
 	if err != nil {
 		t.Fatalf("NewStore returned error: %v", err)
@@ -256,8 +256,8 @@ func TestValidateProfileConsultRequiresTheoryVersionForLinkChatAstrology(t *test
 			},
 		},
 	}, "", "127.0.0.1")
-	if validationErr == nil || !strings.Contains(validationErr.Error(), "THEORY_VERSION_REQUIRED") {
-		t.Fatalf("expected required theory version error, got %v", validationErr)
+	if validationErr != nil {
+		t.Fatalf("expected missing theoryVersion to be allowed, got %v", validationErr)
 	}
 }
 

@@ -96,7 +96,8 @@ generic `Consult` 對應 `ConsultModeGeneric`。
 │  ├── 設定 explicit ConsultMode（由 RPC path 決定）          │
 │  ├── client IP fallback                                     │
 │  ├── business error → gRPC status mapping                   │
-│  └── app_id / theory_version / structured envelope 無損轉交 │
+│  └── app_id / optional theory_version / structured envelope │
+│      無損轉交                                               │
 └─────────────────────────┬───────────────────────────────────┘
                           ↓ gatekeeper command
 ┌─────────────────────────────────────────────────────────────┐
@@ -107,7 +108,8 @@ generic `Consult` 對應 `ConsultModeGeneric`。
 │  ├── output format 驗證                                     │
 │  ├── attachment 驗證（數量 / 大小 / 副檔名）                │
 │  └── structured profile consult 驗證                        │
-│       （subjectProfile envelope / analysisType / theoryVersion）│
+│       （subjectProfile envelope / analysisType / optional   │
+│        theoryVersion metadata）                             │
 └─────────────────────────┬───────────────────────────────────┘
                           ↓ validated command
 ┌─────────────────────────────────────────────────────────────┐

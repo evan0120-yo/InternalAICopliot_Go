@@ -223,7 +223,6 @@ func normalizeSubjectProfile(appID string, subjectProfile *builder.SubjectProfil
 		return nil, infra.NewError("SUBJECT_ID_MISSING", "subjectProfile.subjectId is required when subjectProfile is present.", http.StatusBadRequest)
 	}
 
-	trimmedAppID := strings.TrimSpace(appID)
 	seenAnalysisTypes := make(map[string]struct{}, len(subjectProfile.AnalysisPayloads))
 	normalized.AnalysisPayloads = make([]builder.SubjectAnalysisPayload, 0, len(subjectProfile.AnalysisPayloads))
 	for _, payload := range subjectProfile.AnalysisPayloads {
@@ -243,9 +242,6 @@ func normalizeSubjectProfile(appID string, subjectProfile *builder.SubjectProfil
 		}
 		if payload.TheoryVersion != nil && normalizedPayload.TheoryVersion == nil {
 			return nil, infra.NewError("THEORY_VERSION_MISSING", "subjectProfile.analysisPayloads.theoryVersion must not be blank when provided.", http.StatusBadRequest)
-		}
-		if strings.EqualFold(trimmedAppID, "linkchat") && analysisType == "astrology" && normalizedPayload.TheoryVersion == nil {
-			return nil, infra.NewError("THEORY_VERSION_REQUIRED", "subjectProfile.analysisPayloads.theoryVersion is required for linkchat astrology.", http.StatusBadRequest)
 		}
 		normalized.AnalysisPayloads = append(normalized.AnalysisPayloads, normalizedPayload)
 	}

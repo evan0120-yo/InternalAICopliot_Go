@@ -135,15 +135,3 @@ const (
 	SourceTypePrimary  = "primary"
 	SourceTypeFragment = "fragment"
 )
-
-// TheoryMapping is the Internal theory translation table row.
-type TheoryMapping struct {
-	MappingID      string `json:"mappingId" firestore:"mappingId"`
-	AppID          string `json:"appId" firestore:"appId"`
-	ModuleKey      string `json:"moduleKey" firestore:"moduleKey"`
-	TheoryVersion  string `json:"theoryVersion" firestore:"theoryVersion"`
-	SlotKey        string `json:"slotKey" firestore:"slotKey"`
-	RawValue       string `json:"rawValue" firestore:"rawValue"`
-	TargetMatchKey string `json:"targetMatchKey" firestore:"targetMatchKey"`
-	Active         bool   `json:"active" firestore:"active"`
-}

@@ -25,7 +25,6 @@ const (
 	sourceRagsCollection       = "sourceRags"
 	templatesCollection        = "templates"
 	templateRagsCollection     = "templateRags"
-	theoryMappingsCollection   = "theoryMappings"
 	storeMetadataCollection    = "_meta"
 	storeCountersDocument      = "counters"
 	sourceLookupCollection     = "_sourceLookup"
@@ -39,7 +38,6 @@ type StoreSeedData struct {
 	Rags             []RagSupplement   `json:"rags"`
 	Templates        []Template        `json:"templates"`
 	TemplateRags     []TemplateRag     `json:"templateRags"`
-	TheoryMappings   []TheoryMapping   `json:"theoryMappings"`
 	NextSourceID     int64             `json:"nextSourceId"`
 	NextRagID        int64             `json:"nextRagId"`
 	NextTemplateID   int64             `json:"nextTemplateId"`
@@ -310,30 +308,6 @@ func (s *Store) AppPromptConfigByAppIDContext(ctx context.Context, appID string)
 		return AppPromptConfig{}, false, err
 	}
 	return config, true, nil
-}
-
-// TheoryMappingsByScopeContext reads active theory mappings for one app/module/version scope.
-func (s *Store) TheoryMappingsByScopeContext(ctx context.Context, appID, moduleKey, theoryVersion string) ([]TheoryMapping, error) {
-	docs, err := s.client.Collection(theoryMappingsCollection).
-		Where("active", "==", true).
-		Where("appId", "==", strings.TrimSpace(appID)).
-		Where("moduleKey", "==", strings.TrimSpace(moduleKey)).
-		Where("theoryVersion", "==", strings.TrimSpace(theoryVersion)).
-		Documents(ctx).
-		GetAll()
-	if err != nil {
-		return nil, err
-	}
-
-	mappings := make([]TheoryMapping, 0)
-	for _, doc := range docs {
-		var mapping TheoryMapping
-		if err := doc.DataTo(&mapping); err != nil {
-			return nil, err
-		}
-		mappings = append(mappings, mapping)
-	}
-	return mappings, nil
 }
 
 // SourcesByBuilderIDContext reads builder sources while respecting cancellation.
@@ -749,9 +723,6 @@ func (s *Store) resetAndSeed(ctx context.Context, data StoreSeedData) error {
 	if err := s.clearTemplatesCollection(ctx); err != nil {
 		return err
 	}
-	if err := s.clearFlatRootCollection(ctx, s.client.Collection(theoryMappingsCollection)); err != nil {
-		return err
-	}
 	if err := s.clearFlatRootCollection(ctx, s.client.Collection(sourceLookupCollection)); err != nil {
 		return err
 	}
@@ -815,12 +786,6 @@ func (s *Store) seed(ctx context.Context, data StoreSeedData) error {
 	for _, rag := range data.TemplateRags {
 		templateDoc := s.client.Collection(templatesCollection).Doc(strconv.FormatInt(rag.TemplateID, 10))
 		if _, err := templateDoc.Collection(templateRagsCollection).Doc(strconv.FormatInt(rag.TemplateRagID, 10)).Set(ctx, rag); err != nil {
-			return err
-		}
-	}
-
-	for _, mapping := range data.TheoryMappings {
-		if _, err := s.client.Collection(theoryMappingsCollection).Doc(mapping.MappingID).Set(ctx, mapping); err != nil {
 			return err
 		}
 	}

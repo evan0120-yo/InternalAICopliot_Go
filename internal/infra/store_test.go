@@ -158,7 +158,7 @@ func TestStoreResetOnStartClearsNestedCollectionsWithoutMetadataListing(t *testi
 	}
 }
 
-func TestStoreReadsAppPromptConfigAndTheoryMappings(t *testing.T) {
+func TestStoreReadsAppPromptConfig(t *testing.T) {
 	store, err := NewStore("")
 	if err != nil {
 		t.Fatalf("NewStore returned error: %v", err)
@@ -174,22 +174,5 @@ func TestStoreReadsAppPromptConfigAndTheoryMappings(t *testing.T) {
 	}
 	if config.StrategyKey != "linkchat" {
 		t.Fatalf("expected linkchat strategy, got %+v", config)
-	}
-
-	mappings, err := store.TheoryMappingsByScopeContext(context.Background(), "linkchat", "astrology", "astro-v1")
-	if err != nil {
-		t.Fatalf("TheoryMappingsByScopeContext returned error: %v", err)
-	}
-	if len(mappings) == 0 {
-		t.Fatalf("expected theory mappings for linkchat astrology astro-v1")
-	}
-	foundValue := false
-	for _, mapping := range mappings {
-		if mapping.SlotKey == "sun_sign" && mapping.RawValue == "Capricorn" && mapping.TargetMatchKey == "capricorn" {
-			foundValue = true
-		}
-	}
-	if !foundValue {
-		t.Fatalf("expected targetMatchKey mapping for sun_sign Capricorn")
 	}
 }

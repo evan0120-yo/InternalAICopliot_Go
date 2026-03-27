@@ -79,8 +79,7 @@ ProfileConsult request
            ├─ subjectId 必填
            ├─ analysisPayloads[] 不可重複
            ├─ analysisType 需合法
-           ├─ theoryVersion 若提供不可空白
-           └─ linkchat + astrology -> theoryVersion 必填
+           └─ theoryVersion 若提供不可空白
 ```
 
 - Given grpcapi `ProfileConsult` 傳入帶有多個 analysis payload 的 structured `subjectProfile`
@@ -105,11 +104,8 @@ ProfileConsult request
 
 - Given `appId=linkchat` 且 `subjectProfile` 內存在 `analysisType=astrology`
   When gatekeeper 與下游 strategy 協作處理 structured profile consult
-  Then 該 payload 應被視為需要 `theoryVersion` 的 module
-
-- Given `appId=linkchat` 且 `subjectProfile` 內存在 `analysisType=mbti`
-  When gatekeeper 與下游 strategy 協作處理 structured profile consult
-  Then 該 payload 目前可省略 `theoryVersion`
+  Then gatekeeper 不應要求該 payload 必須帶 `theoryVersion`
+  And 是否使用 canonical key composable path 應交由下游 strategy 決定
 
 - Given LinkChat 已因缺資料而省略某個 analysis payload
   When gatekeeper 驗證 structured profile consult

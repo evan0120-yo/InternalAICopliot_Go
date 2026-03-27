@@ -110,27 +110,30 @@ AssemblePrompt
   When `[SUBJECT_PROFILE]` 被 render
   Then 各 analysis payload 的輸出必須 deterministic，且由對應 analysis factory 決定內部排序規則
 
-- Given LinkChat strategy 遇到需要 theory translation 的 analysis type
+- Given LinkChat strategy 遇到走 canonical key composable path 的 analysis type
   When app-aware profile/context block 被 render
-  Then 應依 `appId + analysis scope key + theoryVersion + slot key` 查詢 slot/value semantic fragments
-  And 應由 Internal 直接組成最終語意 prompt 後再輸出
+  Then 應先依 slot key 選 primary source
+  And 應再依 canonical value 找到對應 fragment source
+  And 應由 Internal 直接展開 source graph 後輸出最終 prompt
 
-- Given 某個 analysis type 沒有配置 theory translation
+- Given 某個 analysis type 沒有走 canonical key composable path
   When app-aware profile/context block 被 render
-  Then 應保留原始值，不強制轉成 code
+  Then 應保留原始值，不強制轉成其他 lookup key
 
 - Given `appId=linkchat` 且 `analysisType=astrology`
   When app-aware profile/context block 被 render
-  Then 該 analysis type 應視為 theory-translation-enabled analysis，必須帶 `theoryVersion`
+  Then 該 analysis type 應視為 canonical-key composable analysis
+  And Internal 應直接以 canonical value 對 `source.matchKey` 做 lookup
 
 - Given `appId=linkchat` 且 `analysisType=mbti`
   When app-aware profile/context block 被 render
-  Then 該 analysis type 目前可保留 raw value render，不要求 `theoryVersion`
+  Then 該 analysis type 目前可保留 raw value render
+  And 不要求使用 canonical-key composable graph
 
-- Given LinkChat strategy 已完成 theory translation
+- Given LinkChat strategy 已完成 canonical key source resolution
   When profile/context block 被插入 shared prompt skeleton
   Then AI 應只看到翻譯後的語意結果
-  And 不應直接看到 raw theory 詞或 Internal private code
+  And 不應直接看到 raw theory 詞、canonical key 或 Internal private code
 
 - Given LinkChat 之後需要以 `analysisType` / slot key / value key 做更細的語意片段組裝
   When builder 執行 LinkChat prompt strategy
@@ -261,7 +264,7 @@ Template command
 - LinkChat profile-analysis 第一版採單一 builder + 兩層工廠；不為每種理論各自建立一個 builder
 - `ConsultModeProfile` 與 `ConsultModeGeneric` 必須由 transport / gatekeeper 明確決定，不可由 builder 自行猜測
 - prompt assembly 的 app-aware 差異應落在 shared assembly skeleton 內部的 strategy，而不是複製整條 consult flow
-- strategy registry 與 theory mapping cache 目前沒有 TTL / invalidation；更新 Firestore 後需重啟服務才保證吃到最新值
+- strategy registry 目前沒有 TTL / invalidation；更新 Firestore 後需重啟服務才保證吃到最新值
 
 ## Code-Backed Tests
 - `consult_usecase_test.go`
@@ -272,7 +275,7 @@ Template command
 ## Open Questions
 - consult orchestration 目前使用 `sync.WaitGroup` 與 goroutine；未來是否改為 `errgroup` 尚未定案
 - template 與 graph 的 handler 層尚未有完整 HTTP 測試，部分驗收目前仍由 service / usecase 測試間接保護
-- `ProfileConsult`、app-aware strategy、LinkChat 第二層 factory、composable source graph 與完整版 theory translation prompt 組裝已落成 production code；後續只剩內容擴寫與更多 analysis type 補測
+- `ProfileConsult` 與 app-aware strategy 已落成 production code；canonical-key composable source graph 與移除 theoryMappings 是下一階段 implementation target
 
 ## Scenario Group: Composable Source Graph For Astrology
 
@@ -289,8 +292,8 @@ LinkChat analysis parser
   │
   ├─ 每個 slot 選一個 primary source
   │
-  └─ 每個 raw value 經 theory translation
-     -> targetMatchKey
+└─ 每個 canonical value 直接對應
+   fragment source.matchKey
         │
         ▼
 primary source
@@ -308,8 +311,8 @@ primary source
 - rag ownership 維持不變：
   - rag 仍屬於自己的 source
   - 不改成 `source -> rag pool`
-- theory translation table 的職責縮回 lookup：
-  - `rawValue / alias -> targetMatchKey`
+- LinkChat 應先把 raw value / alias 正規化成 canonical value
+- Internal 應直接以 canonical value lookup fragment source.matchKey
   - prompt 片段本身放在 source / rag graph
 - 第一版先不要求：
   - source graph 防循環

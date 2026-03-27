@@ -101,23 +101,20 @@ builder 不應做的事：
 - 不要求 external app 直接送 Internal 私有 prompt code
 - 不要求不同 analysis type 共用同一套 payload shape
 
-## Theory Translation And Source Resolution
-某些 app-specific strategy 可要求在 render prompt 前，先將 external app 傳來的 raw value 轉成 Internal 可穩定查找的 source fragment key，再依 composable source graph 組出 prompt。
+## Canonical Value And Source Resolution
+某些 app-specific strategy 可要求 external app 先把 raw value 正規化成 canonical key，再由 Internal 直接依 composable source graph 組出 prompt。
 
 規則：
-- mapping key 應至少包含 `appId`、analysis scope key、`theoryVersion`、slot key 與 raw value。
+- LinkChat 應在自己的 DB / backend 先完成 `raw value / alias -> canonical key` 正規化。
 - analysis scope key 可由 LinkChat 第二層 factory 從 `analysisType` 映射得出，不要求 external request 直接送 Internal module key。
-- slot key 在 theory-translation-enabled analysis type 中應視為 stable theory slot key。
-- 目前 production code 已將 theory mapping table 收斂為 `rawValue / alias -> targetMatchKey`
-  - `targetMatchKey` 的值應對應到某個 fragment source 的 `matchKey`
-  - strategy 再以此做 source lookup
-- theory mapping table 的輸出目標應是 stable lookup key（例如 `targetMatchKey`），而不是直接存放 prompt 片段。
+- slot key 在 composable analysis type 中應視為 stable slot key，用來對應 primary source。
+- canonical key 應直接對應某個 fragment source 的 `matchKey`。
+- strategy 應以 `slot key -> primary source.matchKey`、`canonical value -> fragment source.matchKey` 做 source lookup。
 - prompt 片段內容應由 source / rag graph 承接，讓 admin graph UI 可以直接編輯。
-- 不是每個 analysis type 都需要 theory translation；未配置 translation 的 analysis type 可保留原始值 render。
-- LinkChat 目前只有 `astrology` 視為 theory-translation-enabled analysis type，必須帶 `theoryVersion`；`mbti` 目前維持 raw render。
-- theory mapping data 應由 infra / repository 提供，strategy 只負責使用，不負責持有 source of truth。
-- AI 最終不應直接看到 raw theory 詞，也不應看到 Internal private code；應只看到展開後的最終 prompt 內容。
-- 原 `mappingType=slot` 的 slot-level 語意標籤（如 `人生主軸`、`情緒本能`）已遷移到 primary source 的 `prompts` 欄位。
+- 不是每個 analysis type 都需要 canonical-key composable path；未配置此路徑的 analysis type 可保留原始值 render。
+- `theoryVersion` 若存在，僅作 external metadata；不是 Internal source lookup 的必要條件。
+- AI 最終不應直接看到 raw theory 詞，也不應看到 internal lookup key；應只看到展開後的最終 prompt 內容。
+- slot-level 語意標籤（如 `人生主軸`、`情緒本能`）應放在 primary source 的 `prompts` 欄位。
 
 ## Composable Source Graph
 LinkChat astrology 這條線目前的 source 不再只是一個 flat prompt block；它同時也是可被組合的 prompt node。
@@ -129,7 +126,7 @@ source graph 應至少支援：
 - `sourceType=fragment`
   - 可被 primary 或其他 fragment 引用的片段 source
 - `matchKey`
-  - 給 strategy / theory translation 用來解析 raw value
+  - 給 strategy / canonical key lookup 用來解析 slot 與 value
 - `sourceIds[]`
   - 表示 child sources
   - 陣列順序即 child expansion 順序
@@ -140,7 +137,7 @@ LinkChat payload
   -> analysis parser 先決定主順序
      例如 sun -> moon -> rising
   -> 每個主槽位先選 primary source
-  -> 再依 raw value / theory translation 找到 fragment source
+  -> 再依 canonical value 找到 fragment source
   -> fragment source 若有 sourceIds[]，照填入順序繼續展開
   -> 每個 source 各自再帶自己的 rag children
   -> 最後組成完整 prompt block
@@ -159,7 +156,7 @@ LinkChat payload
 - 若 value 內含 `\`，render 時應 escape 為 `\\`
 - 若 value 內含 `|`，render 時應 escape 為 `\|`
 - `[SUBJECT_PROFILE]` block 應固定插在 `[RAW_USER_TEXT]` 後、第一個 source block 前
-- LinkChat strategy 應在 Internal 端先完成 theory translation，再把最終語意片段組進 `[SUBJECT_PROFILE]`
+- LinkChat strategy 應直接以 canonical value 對 `source.matchKey` 做 lookup，再把展開後的最終語意片段組進 `[SUBJECT_PROFILE]`
 - 不再要求 `[THEORY_CODEBOOK]` 作為 shared prompt block 的一部分暴露給 AI
 
 ## Subject Profile Prompt Format
@@ -180,12 +177,12 @@ subject: user-123
 - block 命名與內容可由 app-specific strategy 決定，但必須 deterministic
 - 若沒有 `subjectProfile`，則不產生此 block
 - app-specific strategy 可改變這段 block 的呈現形式，但 shared prompt skeleton 不變
-- 若 analysis type 需要 theory translation，應在 Internal 端先翻譯成最終語意；不要求額外 expose `THEORY_CODEBOOK`
+- 若 analysis type 走 canonical key composable path，Internal 應直接展開 source graph，不要求額外 expose `THEORY_CODEBOOK`
 
 ## Runtime Cache Limitation
-- app prompt strategy registry 與 theory mapping table 目前可在 runtime 做 process-local cache
+- app prompt strategy registry 目前可在 runtime 做 process-local cache
 - 第一版不要求 TTL 或主動 invalidation
-- 若 Firestore 中的策略設定或 theory mapping 被修改，服務需重啟後才保證讀到最新資料
+- 若 Firestore 中的策略設定或 source graph 被修改，服務需重啟後才保證讀到最新資料
 
 ## Why Source Lives Here
 - source 沒有獨立對外 use case
@@ -213,7 +210,7 @@ rag 負責：
 補充：
 - source 仍是主 prompt 骨架
 - rag 仍是 source 底下的補充內容
-- LinkChat strategy 若要用 `analysisType`、slot key、value key、`theoryVersion` 做更細的語意片段組裝，應在 strategy 內自己查表與拼接
+- LinkChat strategy 若要用 `analysisType`、slot key、value key 做更細的語意片段組裝，應在 strategy 內自己查表與拼接
 - source graph 若新增 `sourceIds[]`，代表 source 可以再引用其他 source；這不改變 rag 屬於 source 的關係
 - `source.moduleKey` 若存在，僅作 internal tag；它可以被 LinkChat strategy 使用，也可以被忽略，不需要升級成新的 shared request contract
 
@@ -362,10 +359,10 @@ SaveGraph 輸入
 
 ## Boundary Notes For LinkChat Profile Analysis
 - LinkChat 決定本次實際送來哪些 analysis payloads
-- LinkChat 送理論 raw values 與 `theoryVersion`，而不是 Internal 私有 prompt code
+- LinkChat 送 canonical value（必要時可附帶 `theoryVersion` metadata），而不是 Internal 私有 prompt code
 - builder 依 `builderId` 載入整體 source/rag 骨架
 - builder 依 `appId` 選第一層 prompt strategy，LinkChat 再依 `analysisType` 選第二層 factory
-- builder 在需要時透過 theory translation 將 raw values 轉成 stable fragment lookup key，再沿 `sourceIds[]` 展開 composable source graph
+- builder 在需要時直接以 canonical value 做 fragment lookup，再沿 `sourceIds[]` 展開 composable source graph
 - 若 LinkChat 需要用自己的 key system 做欄位/value 級別的語意組裝，應在 LinkChat strategy 內完成；default strategy 與 shared consult skeleton 不受影響
 - rag 只處理已被選入的 source 補充資料
 - text-only profile request 仍屬於 profile mode，不屬於 generic consult

@@ -47,7 +47,7 @@ gRPC ProfileConsult
       ├─ map subjectProfile envelope
       ├─ map analysisPayloads[]
       │   ├─ analysisType
-      │   ├─ theoryVersion
+      │   ├─ optional theoryVersion
       │   └─ payload
       ├─ fallback clientIp
       └─ set ConsultModeProfile
@@ -63,7 +63,7 @@ gRPC ProfileConsult
 
 - Given `ProfileConsult` request 的某個 analysis payload 帶 `theoryVersion`
   When grpcapi 建立 command
-  Then 應保留該欄位並原樣往下傳
+  Then 應保留該欄位並原樣往下傳，不在 grpcapi 內賦予 lookup 語意
 
 - Given `ProfileConsult` request 未帶 `subjectProfile` 且 `text` 有值
   When grpcapi 建立 command

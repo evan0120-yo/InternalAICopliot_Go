@@ -41,10 +41,6 @@ type renderedProfileLine struct {
 	Values []string
 }
 
-type theoryTranslationIndex struct {
-	targetMatchKeys map[string]map[string]string
-}
-
 type sourceGraphIndex struct {
 	orderedPrimary []infra.Source
 	primaryByKey   map[string]infra.Source
@@ -73,18 +69,16 @@ type mbtiLinkChatAnalysisRenderer struct{}
 
 // AssembleService builds deterministic prompt instructions.
 type AssembleService struct {
-	store                 *infra.Store
-	cacheMu               sync.RWMutex
-	promptConfigCache     map[string]promptConfigCacheEntry
-	theoryMappingsByScope map[string][]infra.TheoryMapping
+	store             *infra.Store
+	cacheMu           sync.RWMutex
+	promptConfigCache map[string]promptConfigCacheEntry
 }
 
 // NewAssembleService builds the prompt assembly service.
 func NewAssembleService(store *infra.Store) *AssembleService {
 	return &AssembleService{
-		store:                 store,
-		promptConfigCache:     make(map[string]promptConfigCacheEntry),
-		theoryMappingsByScope: make(map[string][]infra.TheoryMapping),
+		store:             store,
+		promptConfigCache: make(map[string]promptConfigCacheEntry),
 	}
 }
 
@@ -204,32 +198,6 @@ func (s *AssembleService) appPromptConfig(ctx context.Context, appID string) (*i
 	}
 	s.cacheMu.Unlock()
 	return cached, found, nil
-}
-
-func (s *AssembleService) theoryMappings(ctx context.Context, appID, moduleKey, theoryVersion string) ([]infra.TheoryMapping, error) {
-	cacheKey := theoryMappingScopeKey(appID, moduleKey, theoryVersion)
-
-	s.cacheMu.RLock()
-	cached, ok := s.theoryMappingsByScope[cacheKey]
-	s.cacheMu.RUnlock()
-	if ok {
-		return append([]infra.TheoryMapping(nil), cached...), nil
-	}
-
-	if s.store == nil {
-		return nil, infra.NewError("THEORY_MAPPING_STORE_UNAVAILABLE", "Theory mapping store is unavailable.", 500)
-	}
-
-	mappings, err := s.store.TheoryMappingsByScopeContext(ctx, appID, moduleKey, theoryVersion)
-	if err != nil {
-		return nil, err
-	}
-	cloned := append([]infra.TheoryMapping(nil), mappings...)
-
-	s.cacheMu.Lock()
-	s.theoryMappingsByScope[cacheKey] = cloned
-	s.cacheMu.Unlock()
-	return append([]infra.TheoryMapping(nil), cloned...), nil
 }
 
 func (defaultProfileContextStrategy) FilterSources(_ context.Context, _ *AssembleService, _ string, sources []infra.Source, subjectProfile *SubjectProfile) ([]infra.Source, error) {
@@ -401,28 +369,12 @@ func (astrologyLinkChatAnalysisRenderer) SourceTags(_ SubjectAnalysisPayload) ([
 	return []string{"astrology"}, nil
 }
 
-func (r astrologyLinkChatAnalysisRenderer) Build(ctx context.Context, service *AssembleService, builderConfig infra.BuilderConfig, appID string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, error) {
+func (r astrologyLinkChatAnalysisRenderer) Build(ctx context.Context, service *AssembleService, builderConfig infra.BuilderConfig, _ string, payload SubjectAnalysisPayload) (renderedAnalysisBlock, error) {
 	payloadValues, err := flattenPayloadToValueMap(payload.Payload)
 	if err != nil {
 		return renderedAnalysisBlock{}, err
 	}
-	if payload.TheoryVersion == nil || strings.TrimSpace(*payload.TheoryVersion) == "" {
-		return renderedAnalysisBlock{}, infra.NewError("THEORY_VERSION_REQUIRED", "theoryVersion is required for linkchat astrology.", 400)
-	}
-
-	trimmedTheoryVersion := strings.TrimSpace(*payload.TheoryVersion)
-	scopeMappings, err := service.theoryMappings(ctx, appID, r.AnalysisType(), trimmedTheoryVersion)
-	if err != nil {
-		return renderedAnalysisBlock{}, err
-	}
-	if len(scopeMappings) == 0 {
-		return renderedAnalysisBlock{}, infra.NewError("THEORY_MAPPING_SCOPE_NOT_FOUND", "Theory mapping scope was not found for the requested analysis type.", 500)
-	}
-
-	translationIndex, err := buildTheoryTranslationIndex(scopeMappings)
-	if err != nil {
-		return renderedAnalysisBlock{}, err
-	}
+	trimmedTheoryVersion := normalizeOptionalString(payload.TheoryVersion)
 
 	allSources, err := service.store.SourcesByBuilderIDContext(ctx, builderConfig.BuilderID)
 	if err != nil {
@@ -443,20 +395,16 @@ func (r astrologyLinkChatAnalysisRenderer) Build(ctx context.Context, service *A
 		if !ok || len(rawValues) == 0 {
 			continue
 		}
-		valueMappings := translationIndex.targetMatchKeys[primaryMatchKey]
-		if len(valueMappings) == 0 {
-			return renderedAnalysisBlock{}, infra.NewError("THEORY_MAPPING_SLOT_NOT_FOUND", "Theory mapping slot was not found for the requested key.", 500)
-		}
 
 		translatedValues := make([]string, 0)
 		for _, rawValue := range rawValues {
-			targetMatchKey, ok := valueMappings[canonicalTheoryRawValue(rawValue)]
-			if !ok {
-				return renderedAnalysisBlock{}, infra.NewError("THEORY_MAPPING_NOT_FOUND", "Theory mapping entry was not found for the requested value.", 500)
+			fragmentMatchKey := canonicalSourceMatchKey(rawValue)
+			if fragmentMatchKey == "" {
+				continue
 			}
-			fragmentSource, ok := graph.fragmentByKey[targetMatchKey]
+			fragmentSource, ok := graph.fragmentByKey[fragmentMatchKey]
 			if !ok {
-				return renderedAnalysisBlock{}, infra.NewError("SOURCE_FRAGMENT_NOT_FOUND", "Composable source fragment was not found for the translated theory value.", 500)
+				return renderedAnalysisBlock{}, infra.NewError("SOURCE_FRAGMENT_NOT_FOUND", "Composable source fragment was not found for the requested canonical value.", 500)
 			}
 			expandedPrompts, err := service.expandComposableSource(ctx, graph, fragmentSource)
 			if err != nil {
@@ -472,7 +420,7 @@ func (r astrologyLinkChatAnalysisRenderer) Build(ctx context.Context, service *A
 
 	return renderedAnalysisBlock{
 		AnalysisType:  payload.AnalysisType,
-		TheoryVersion: &trimmedTheoryVersion,
+		TheoryVersion: trimmedTheoryVersion,
 		Lines:         translatedLines,
 	}, nil
 }
@@ -496,42 +444,6 @@ func (mbtiLinkChatAnalysisRenderer) Build(_ context.Context, _ *AssembleService,
 		TheoryVersion: normalizeOptionalString(payload.TheoryVersion),
 		Lines:         lines,
 	}, nil
-}
-
-func buildTheoryTranslationIndex(mappings []infra.TheoryMapping) (theoryTranslationIndex, error) {
-	index := theoryTranslationIndex{
-		targetMatchKeys: make(map[string]map[string]string),
-	}
-
-	for _, mapping := range mappings {
-		slotKey := strings.TrimSpace(mapping.SlotKey)
-		if slotKey == "" {
-			return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define slotKey.", 500)
-		}
-		rawValueKey := canonicalTheoryRawValue(mapping.RawValue)
-		if rawValueKey == "" {
-			return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define rawValue.", 500)
-		}
-		targetMatchKey := canonicalSourceMatchKey(mapping.TargetMatchKey)
-		if targetMatchKey == "" {
-			return theoryTranslationIndex{}, infra.NewError("INVALID_THEORY_MAPPING", "Theory mapping rows must define targetMatchKey.", 500)
-		}
-		slotMappings, ok := index.targetMatchKeys[slotKey]
-		if !ok {
-			slotMappings = make(map[string]string)
-			index.targetMatchKeys[slotKey] = slotMappings
-		}
-		if _, exists := slotMappings[rawValueKey]; exists {
-			return theoryTranslationIndex{}, infra.NewError("DUPLICATE_THEORY_MAPPING", "Theory mapping rows must not repeat the same slot/rawValue pair.", 500)
-		}
-		slotMappings[rawValueKey] = targetMatchKey
-	}
-
-	return index, nil
-}
-
-func theoryMappingScopeKey(appID, moduleKey, theoryVersion string) string {
-	return strings.Join([]string{appID, moduleKey, theoryVersion}, "\x00")
 }
 
 func buildSourceGraphIndex(sources []infra.Source, analysisType string) (sourceGraphIndex, error) {
