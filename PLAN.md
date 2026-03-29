@@ -174,6 +174,11 @@ live
   - JSON response contract 說明文字
 - frontend 不應自行從完整 preview 字串中裁切這些區塊；應由 backend 直接提供正確 mode 的 `response`
 
+current follow-up：
+- internal React 測試頁不再傳 `mode`
+- 對該測試頁來說，preview mode 的 single source of truth 應回到 backend 啟動設定
+- `/api/profile-consult` 的 request-level `mode` 仍可保留給 Postman、manual debug、或其他非 UI override 路徑使用
+
 ### Scenario group: LinkChat profile-analysis integration
 
 #### 子圖 A：ProfileConsult 請求流
