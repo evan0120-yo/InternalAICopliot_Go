@@ -141,6 +141,39 @@ consult request 進入
   回傳純文字結果
 ```
 
+### Scenario group: AI preview output modes
+
+目前 preview 的輸出策略已拆成 3 種 mode：
+
+```text
+preview_full
+  -> 回完整 prompt preview
+  -> 適合 debug / 檢查 instructions、user message、附件摘要
+
+preview_prompt_body_only
+  -> 不打 OpenAI
+  -> 只回 builder 已組裝好的主體 prompt 內容
+  -> 第一版主要服務 astrology / profile prompt tuning
+  -> 目的是讓操作者可直接 copy 這段內容到外部 web GPT 手動調 prompt
+
+live
+  -> 真正呼叫 OpenAI
+  -> 回 business response 的最終答案
+```
+
+補充規則：
+- `preview_prompt_body_only` 不是 AI final answer preview，也不是對完整 preview 做前端裁切
+- 這個 mode 應由 backend 直接決定 `response` 內容，只回 prompt body 本身
+- 第一版 profile prompt tuning 的目標輸出，是類似 `[SUBJECT_PROFILE]` render 後的主體內容
+- `preview_prompt_body_only` 不應包含：
+  - `[INSTRUCTIONS]`
+  - `[EXECUTION_RULES]`
+  - `[RAW_USER_TEXT]`
+  - `[PROMPT_BLOCK-*]`
+  - `[USER_MESSAGE]`
+  - JSON response contract 說明文字
+- frontend 不應自行從完整 preview 字串中裁切這些區塊；應由 backend 直接提供正確 mode 的 `response`
+
 ### Scenario group: LinkChat profile-analysis integration
 
 #### 子圖 A：ProfileConsult 請求流

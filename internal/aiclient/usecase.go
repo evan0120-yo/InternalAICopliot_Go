@@ -18,6 +18,6 @@ func NewAnalyzeUseCase(service *AnalyzeService) *AnalyzeUseCase {
 }
 
 // Analyze executes the configured AI flow.
-func (u *AnalyzeUseCase) Analyze(ctx context.Context, model, text, instructions string, attachments []infra.Attachment) (infra.ConsultBusinessResponse, error) {
-	return u.service.Analyze(ctx, model, text, instructions, attachments)
+func (u *AnalyzeUseCase) Analyze(ctx context.Context, model, text, instructions, promptBodyPreview string, attachments []infra.Attachment, mode infra.AIExecutionMode) (infra.ConsultBusinessResponse, error) {
+	return u.service.Analyze(ctx, model, text, instructions, promptBodyPreview, attachments, mode)
 }

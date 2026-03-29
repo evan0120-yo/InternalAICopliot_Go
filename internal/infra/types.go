@@ -10,6 +10,15 @@ const (
 	OutputFormatXLSX     OutputFormat = "xlsx"
 )
 
+// AIExecutionMode controls whether the AI layer returns preview text or executes a live run.
+type AIExecutionMode string
+
+const (
+	AIExecutionModePreviewFull           AIExecutionMode = "preview_full"
+	AIExecutionModePreviewPromptBodyOnly AIExecutionMode = "preview_prompt_body_only"
+	AIExecutionModeLive                  AIExecutionMode = "live"
+)
+
 // ParseOutputFormat validates frontend output format input.
 func ParseOutputFormat(raw string) (OutputFormat, bool) {
 	switch OutputFormat(strings.ToLower(strings.TrimSpace(raw))) {
@@ -17,6 +26,20 @@ func ParseOutputFormat(raw string) (OutputFormat, bool) {
 		return OutputFormatMarkdown, true
 	case OutputFormatXLSX:
 		return OutputFormatXLSX, true
+	default:
+		return "", false
+	}
+}
+
+// ParseAIExecutionMode validates frontend preview/live mode input.
+func ParseAIExecutionMode(raw string) (AIExecutionMode, bool) {
+	switch AIExecutionMode(strings.ToLower(strings.TrimSpace(raw))) {
+	case AIExecutionModePreviewFull:
+		return AIExecutionModePreviewFull, true
+	case AIExecutionModePreviewPromptBodyOnly:
+		return AIExecutionModePreviewPromptBodyOnly, true
+	case AIExecutionModeLive:
+		return AIExecutionModeLive, true
 	default:
 		return "", false
 	}

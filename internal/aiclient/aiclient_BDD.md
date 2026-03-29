@@ -27,6 +27,11 @@
   Then 仍應優先走 preview mode
   And 不應上傳附件到 Files API
 
+- Given request 明確指定 `mode=live`
+  When `AnalyzeService.Analyze` 執行
+  Then 應覆蓋全域 preview 開關
+  And 應回到 mock / OpenAI analyze 流程
+
 ## Scenario Group: Mock Analyze
 - Given instructions 中的 `[RAW_USER_TEXT]` 看起來像 prompt injection
   When mock analyze 執行
@@ -65,7 +70,7 @@ analyze
 ## Scenario Group: Prompt Preview
 - Given preview mode 開關為 true
   When analyze 執行
-  Then `response` 應包含 model、instructions、user message text
+  Then `response` 應包含 instructions、user message text
 
 - Given preview mode 開關為 true 且有附件
   When analyze 執行
@@ -79,7 +84,7 @@ analyze
 
 - Given OpenAI 模式啟用
   When analyze 執行
-  Then request payload 必須要求 JSON schema 格式，欄位固定為 `status`、`statusAns`、`response`
+  Then request payload 必須要求 JSON schema 格式，欄位固定為 `status`、`statusAns`、`response`、`responseDetail`
 
 - Given builder 已將 structured profile data 組進 instructions
   When analyze 執行
@@ -110,6 +115,35 @@ analyze
 - mock mode 是目前本地開發與測試的重要 fallback，不是暫時性 stub
 - preview mode 是 local/dev 觀察 prompt 的正式模式，不是臨時 debug print
 - LinkChat profile-analysis 的 module 組合與理論資料，由 builder 負責組 prompt，aiclient 不應理解其業務語意
+
+## Scenario Group: Preview Output Variants
+
+- Given preview 輸出策略為 `preview_full`
+  When analyze 執行
+  Then 應維持目前完整 preview 行為
+  And `response` 應包含完整 prompt preview
+  And business response contract 仍保留 `responseDetail` 欄位
+
+- Given preview 輸出策略為 `preview_prompt_body_only`
+  When analyze 執行
+  Then 不應呼叫 OpenAI
+  And `response` 應只包含 builder 已組裝好的 prompt body
+  And `response` 不應包含 `[INSTRUCTIONS]`
+  And `response` 不應包含 `[EXECUTION_RULES]`
+  And `response` 不應包含 `[RAW_USER_TEXT]`
+  And `response` 不應包含 `[PROMPT_BLOCK-*]`
+  And `response` 不應包含 `[USER_MESSAGE]`
+  And `response` 不應包含 JSON response contract 說明文字
+  And business response contract 仍保留 `responseDetail` 欄位
+
+- Given preview 輸出策略為 `preview_prompt_body_only`
+  When 這條線服務 astrology / profile prompt tuning
+  Then 操作者應可直接複製 `response` 內容到外部 web GPT 做 prompt 調適
+  And 不需要再自行從完整 preview 中手動裁切主體段落
+
+- Given analyze mode 為 `live`
+  When analyze 執行
+  Then 應維持目前 OpenAI analyze 流程
 
 ## Code-Backed Tests
 - `service_test.go`

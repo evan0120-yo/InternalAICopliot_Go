@@ -140,6 +140,7 @@ func TestProfileConsultHandlerAllowsPromptStrategyHintWithoutExternalAuth(t *tes
 	request := httptest.NewRequest(http.MethodPost, "/api/profile-consult", strings.NewReader(`{
 		"appId":"linkchat",
 		"builderId":1,
+		"mode":"preview_prompt_body_only",
 		"subjectProfile":{
 			"subjectId":"user-123",
 			"analysisPayloads":[
@@ -171,6 +172,29 @@ func TestProfileConsultHandlerAllowsPromptStrategyHintWithoutExternalAuth(t *tes
 	}
 	if !envelope.Success {
 		t.Fatalf("expected success envelope, got %+v", envelope)
+	}
+}
+
+func TestProfileConsultHandlerRejectsUnsupportedMode(t *testing.T) {
+	handler := newTestHandler(t)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/profile-consult", strings.NewReader(`{
+		"appId":"linkchat",
+		"builderId":1,
+		"mode":"preview_json_only",
+		"text":"請分析這個人"
+	}`))
+	request.RemoteAddr = "127.0.0.1:4567"
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "INVALID_MODE") {
+		t.Fatalf("expected INVALID_MODE response, got %s", recorder.Body.String())
 	}
 }
 

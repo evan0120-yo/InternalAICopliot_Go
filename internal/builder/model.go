@@ -25,6 +25,7 @@ type BuilderSummary struct {
 // ConsultCommand is the builder consult entry input.
 type ConsultCommand struct {
 	Mode             ConsultMode
+	AIExecutionMode  infra.AIExecutionMode
 	AppID            string
 	BuilderID        int
 	PreloadedBuilder *infra.BuilderConfig
@@ -36,8 +37,9 @@ type ConsultCommand struct {
 }
 
 type promptAssemblyResult struct {
-	Instructions    string
-	UserMessageText string
+	Instructions      string
+	PromptBodyPreview string
+	UserMessageText   string
 }
 
 // SubjectProfile is the structured profile-analysis payload.

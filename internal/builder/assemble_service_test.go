@@ -190,6 +190,19 @@ func TestAssemblePromptRendersDeterministicSubjectProfileBlock(t *testing.T) {
 			t.Fatalf("expected response/responseDetail rule fragment %q, got: %s", fragment, result.Instructions)
 		}
 	}
+	if strings.Contains(result.PromptBodyPreview, "## [SUBJECT_PROFILE]") || strings.Contains(result.PromptBodyPreview, "### [analysis:") {
+		t.Fatalf("did not expect section headings in prompt body preview, got: %s", result.PromptBodyPreview)
+	}
+	for _, fragment := range []string{
+		"moon_sign: Pisces",
+		"sun_sign: Scorpio",
+		"cognitive_stack: Ni|Te\\|aux|Fi\\\\deep",
+		"type: INTJ",
+	} {
+		if !strings.Contains(result.PromptBodyPreview, fragment) {
+			t.Fatalf("expected prompt body preview to contain %q, got: %s", fragment, result.PromptBodyPreview)
+		}
+	}
 }
 
 func TestAssemblePromptUsesLinkChatStrategyForTheoryMappedModules(t *testing.T) {
@@ -356,5 +369,11 @@ func TestAssemblePromptRendersWeightedCanonicalEntriesForLinkChatAstrology(t *te
 	}
 	if strings.Contains(result.Instructions, "capricorn") || strings.Contains(result.Instructions, "aquarius") {
 		t.Fatalf("did not expect raw canonical keys to leak into instructions, got: %s", result.Instructions)
+	}
+	if strings.Contains(result.PromptBodyPreview, "## [SUBJECT_PROFILE]") || strings.Contains(result.PromptBodyPreview, "### [analysis:") {
+		t.Fatalf("did not expect subject-profile headings in prompt body preview, got: %s", result.PromptBodyPreview)
+	}
+	if strings.Contains(result.PromptBodyPreview, "capricorn") || strings.Contains(result.PromptBodyPreview, "aquarius") {
+		t.Fatalf("did not expect raw canonical keys to leak into prompt body preview, got: %s", result.PromptBodyPreview)
 	}
 }

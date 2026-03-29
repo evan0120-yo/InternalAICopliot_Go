@@ -62,6 +62,12 @@ func (h *Handler) profileConsult(w http.ResponseWriter, r *http.Request) {
 		infra.WriteError(w, infra.NewError("INVALID_JSON", "Profile consult request must be valid JSON.", http.StatusBadRequest))
 		return
 	}
+	if strings.TrimSpace(request.Mode) != "" {
+		if _, ok := infra.ParseAIExecutionMode(request.Mode); !ok {
+			infra.WriteError(w, infra.NewError("INVALID_MODE", "Profile consult mode is not supported.", http.StatusBadRequest))
+			return
+		}
+	}
 
 	clientIP := h.useCase.GuardService().ResolveClientIP(r)
 	response, err := h.useCase.PublicProfileConsult(
@@ -70,6 +76,7 @@ func (h *Handler) profileConsult(w http.ResponseWriter, r *http.Request) {
 		request.BuilderID,
 		request.toSubjectProfile(),
 		request.Text,
+		request.executionMode(),
 		clientIP,
 	)
 	if err != nil {
@@ -152,6 +159,12 @@ type profileConsultRequest struct {
 	BuilderID      int                           `json:"builderId"`
 	SubjectProfile *subjectProfileRequestPayload `json:"subjectProfile"`
 	Text           string                        `json:"text"`
+	Mode           string                        `json:"mode,omitempty"`
+}
+
+func (r profileConsultRequest) executionMode() infra.AIExecutionMode {
+	mode, _ := infra.ParseAIExecutionMode(r.Mode)
+	return mode
 }
 
 type subjectProfileRequestPayload struct {

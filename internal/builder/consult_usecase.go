@@ -156,7 +156,15 @@ func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (i
 		return infra.ConsultBusinessResponse{}, infra.NewError("REQUEST_CANCELLED", "Request was cancelled.", 499)
 	}
 
-	businessResponse, err := u.aiUseCase.Analyze(ctx, u.model, promptResult.UserMessageText, promptResult.Instructions, command.Attachments)
+	businessResponse, err := u.aiUseCase.Analyze(
+		ctx,
+		u.model,
+		promptResult.UserMessageText,
+		promptResult.Instructions,
+		promptResult.PromptBodyPreview,
+		command.Attachments,
+		command.AIExecutionMode,
+	)
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}

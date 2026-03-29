@@ -22,6 +22,7 @@ type Config struct {
 	ServerWriteTimeout    time.Duration
 	OpenAITimeout         time.Duration
 	AIPreviewMode         bool
+	AIDefaultMode         AIExecutionMode
 	OpenAIAPIKey          string
 	OpenAIBaseURL         string
 	OpenAIModel           string
@@ -43,6 +44,7 @@ func LoadConfigFromEnv() Config {
 		ServerWriteTimeout:    getenvDurationCompat("INTERNAL_AI_COPILOT_SERVER_WRITE_TIMEOUT", "REWARDBRIDGE_SERVER_WRITE_TIMEOUT", 180*time.Second),
 		OpenAITimeout:         getenvDurationCompat("INTERNAL_AI_COPILOT_OPENAI_TIMEOUT", "REWARDBRIDGE_OPENAI_TIMEOUT", 120*time.Second),
 		AIPreviewMode:         getenvBoolCompat("INTERNAL_AI_COPILOT_AI_PREVIEW_MODE", "REWARDBRIDGE_AI_PREVIEW_MODE", false),
+		AIDefaultMode:         getenvAIExecutionModeCompat("INTERNAL_AI_COPILOT_AI_DEFAULT_MODE", "REWARDBRIDGE_AI_DEFAULT_MODE", ""),
 		OpenAIAPIKey:          os.Getenv("OPENAI_API_KEY"),
 		OpenAIBaseURL:         getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
 		OpenAIModel:           getenvCompat("INTERNAL_AI_COPILOT_AI_MODEL", "REWARDBRIDGE_AI_MODEL", "gpt-4o"),
@@ -185,4 +187,19 @@ func getenvCSVCompat(primaryKey, legacyKey string, fallback []string) []string {
 		}
 	}
 	return getenvCSV(legacyKey, fallback)
+}
+
+func getenvAIExecutionModeCompat(primaryKey, legacyKey string, fallback AIExecutionMode) AIExecutionMode {
+	if value := os.Getenv(primaryKey); value != "" {
+		if parsed, ok := ParseAIExecutionMode(value); ok {
+			return parsed
+		}
+		return fallback
+	}
+	if value := os.Getenv(legacyKey); value != "" {
+		if parsed, ok := ParseAIExecutionMode(value); ok {
+			return parsed
+		}
+	}
+	return fallback
 }

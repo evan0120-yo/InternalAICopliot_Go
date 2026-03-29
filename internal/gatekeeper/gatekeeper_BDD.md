@@ -68,6 +68,10 @@ HTTP multipart request
   When handler 解析 request body
   Then 應回傳 `INVALID_JSON`
 
+- Given `POST /api/profile-consult` 帶入不支援的 `mode`
+  When handler 解析 JSON request
+  Then 應回傳 `INVALID_MODE`
+
 ## Scenario Group: Profile Consult Validation
 ```text
 ProfileConsult request

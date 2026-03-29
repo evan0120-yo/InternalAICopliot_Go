@@ -22,10 +22,12 @@ var (
 )
 
 type analyzeRequest struct {
-	Model        string
-	UserText     string
-	Instructions string
-	Attachments  []infra.Attachment
+	Model             string
+	UserText          string
+	Instructions      string
+	PromptBodyPreview string
+	Attachments       []infra.Attachment
+	Mode              infra.AIExecutionMode
 }
 
 // AnalyzeService handles AI execution and upload details.
@@ -45,15 +47,20 @@ func NewAnalyzeService(config infra.Config) *AnalyzeService {
 }
 
 // Analyze runs the configured AI strategy.
-func (s *AnalyzeService) Analyze(ctx context.Context, model, text, instructions string, attachments []infra.Attachment) (infra.ConsultBusinessResponse, error) {
+func (s *AnalyzeService) Analyze(ctx context.Context, model, text, instructions, promptBodyPreview string, attachments []infra.Attachment, mode infra.AIExecutionMode) (infra.ConsultBusinessResponse, error) {
 	request := analyzeRequest{
-		Model:        model,
-		UserText:     text,
-		Instructions: instructions,
-		Attachments:  attachments,
+		Model:             model,
+		UserText:          text,
+		Instructions:      instructions,
+		PromptBodyPreview: promptBodyPreview,
+		Attachments:       attachments,
+		Mode:              mode,
 	}
-	if s.config.AIPreviewMode {
+	switch s.resolveAnalyzeMode(request.Mode) {
+	case infra.AIExecutionModePreviewFull:
 		return s.previewAnalyze(request)
+	case infra.AIExecutionModePreviewPromptBodyOnly:
+		return s.previewPromptBodyAnalyze(request)
 	}
 	if strings.TrimSpace(s.config.OpenAIAPIKey) == "" {
 		return s.mockAnalyze(request), nil
@@ -61,11 +68,35 @@ func (s *AnalyzeService) Analyze(ctx context.Context, model, text, instructions 
 	return s.openAIAnalyze(ctx, request)
 }
 
+func (s *AnalyzeService) resolveAnalyzeMode(requestMode infra.AIExecutionMode) infra.AIExecutionMode {
+	switch requestMode {
+	case infra.AIExecutionModePreviewFull, infra.AIExecutionModePreviewPromptBodyOnly, infra.AIExecutionModeLive:
+		return requestMode
+	default:
+		if s.config.AIDefaultMode != "" {
+			return s.config.AIDefaultMode
+		}
+		if s.config.AIPreviewMode {
+			return infra.AIExecutionModePreviewFull
+		}
+		return infra.AIExecutionModeLive
+	}
+}
+
 func (s *AnalyzeService) previewAnalyze(request analyzeRequest) (infra.ConsultBusinessResponse, error) {
 	return infra.ConsultBusinessResponse{
 		Status:    true,
 		StatusAns: "PROMPT_PREVIEW",
 		Response:  buildPreviewText(request),
+		Preview:   true,
+	}, nil
+}
+
+func (s *AnalyzeService) previewPromptBodyAnalyze(request analyzeRequest) (infra.ConsultBusinessResponse, error) {
+	return infra.ConsultBusinessResponse{
+		Status:    true,
+		StatusAns: "PROMPT_PREVIEW",
+		Response:  strings.TrimSpace(request.PromptBodyPreview),
 		Preview:   true,
 	}, nil
 }

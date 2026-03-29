@@ -118,11 +118,16 @@ Header：
 - `builderId` required
 - `subjectProfile` optional
 - `text` optional
+- `mode` optional
+  - `preview_full`
+  - `preview_prompt_body_only`
+  - `live`
 
 限制：
 - 此 route 僅供 local/dev prompt testing 使用
 - 不承擔 external app auth 語意
 - production 不應直接對公網暴露此 route
+- gatekeeper 只驗 `mode` 是否為支援值，實際輸出策略由下游 aiclient 決定
 
 ### gRPC generic `Consult`
 generic `Consult` 仍承接 generic consult 語意：

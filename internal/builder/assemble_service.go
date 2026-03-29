@@ -138,8 +138,9 @@ func (s *AssembleService) AssemblePrompt(ctx context.Context, builderConfig infr
 	}
 
 	return promptAssemblyResult{
-		Instructions:    promptBuilder.String(),
-		UserMessageText: consultUserMessageText,
+		Instructions:      promptBuilder.String(),
+		PromptBodyPreview: buildPromptBodyPreview(profileBlock),
+		UserMessageText:   consultUserMessageText,
 	}, nil
 }
 
@@ -627,6 +628,34 @@ func buildRenderedSubjectProfileSection(subjectProfile *renderedSubjectProfile, 
 		}
 	}
 	return builder.String()
+}
+
+func buildPromptBodyPreview(profileBlock string) string {
+	trimmed := strings.TrimSpace(profileBlock)
+	if trimmed == "" {
+		return ""
+	}
+
+	lines := strings.Split(trimmed, "\n")
+	bodyLines := make([]string, 0, len(lines))
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "## [SUBJECT_PROFILE]") {
+			continue
+		}
+		if strings.HasPrefix(line, "### [analysis:") {
+			continue
+		}
+		if strings.HasPrefix(line, "theory_version:") {
+			continue
+		}
+		bodyLines = append(bodyLines, line)
+	}
+
+	return strings.Join(bodyLines, "\n")
 }
 
 func renderDefaultSubjectProfile(subjectProfile *SubjectProfile) (*renderedSubjectProfile, error) {

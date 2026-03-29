@@ -28,6 +28,7 @@ func TestAnalyzeReturnsPromptPreviewWhenPreviewModeEnabled(t *testing.T) {
 		"gpt-4o",
 		"user message",
 		"assembled instructions",
+		"",
 		[]infra.Attachment{
 			{
 				FileName:    "birth-chart.png",
@@ -35,6 +36,7 @@ func TestAnalyzeReturnsPromptPreviewWhenPreviewModeEnabled(t *testing.T) {
 				Data:        []byte("12345"),
 			},
 		},
+		"",
 	)
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
@@ -72,6 +74,7 @@ func TestAnalyzePreviewModeTakesPriorityWhenOpenAIKeyExists(t *testing.T) {
 		"gpt-4o",
 		"user message",
 		"assembled instructions",
+		"",
 		[]infra.Attachment{
 			{
 				FileName:    "attachment.pdf",
@@ -79,6 +82,7 @@ func TestAnalyzePreviewModeTakesPriorityWhenOpenAIKeyExists(t *testing.T) {
 				Data:        []byte("abc"),
 			},
 		},
+		"",
 	)
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
@@ -104,7 +108,7 @@ theory_version: astro-v1
 人生主軸: 深層洞察
 情緒本能: 敏感共感`
 
-	response, err := service.Analyze(context.Background(), "gpt-4o", "profile text", instructions, nil)
+	response, err := service.Analyze(context.Background(), "gpt-4o", "profile text", instructions, "", nil, "")
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
 	}
@@ -126,5 +130,102 @@ theory_version: astro-v1
 	}
 	if strings.Contains(response.Response, "THEORY_CODEBOOK") || strings.Contains(response.Response, "ASTRO_SUN_SCO_01") || strings.Contains(response.Response, `"model":`) {
 		t.Fatalf("did not expect obsolete codebook content, got %s", response.Response)
+	}
+}
+
+func TestAnalyzeReturnsPromptBodyOnlyWhenRequested(t *testing.T) {
+	service := NewAnalyzeService(infra.Config{AIPreviewMode: true})
+
+	response, err := service.Analyze(
+		context.Background(),
+		"gpt-4o",
+		"user message",
+		"assembled instructions",
+		"OS 內核: 內在敏感\n主執行緒: 50% 魔羯 / 50% 水瓶",
+		nil,
+		infra.AIExecutionModePreviewPromptBodyOnly,
+	)
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if response.StatusAns != "PROMPT_PREVIEW" || !response.Preview {
+		t.Fatalf("expected prompt body preview response, got %+v", response)
+	}
+	if response.Response != "OS 內核: 內在敏感\n主執行緒: 50% 魔羯 / 50% 水瓶" {
+		t.Fatalf("expected prompt body only preview, got %q", response.Response)
+	}
+	for _, forbidden := range []string{"## [INSTRUCTIONS]", "## [USER_MESSAGE]", "assembled instructions"} {
+		if strings.Contains(response.Response, forbidden) {
+			t.Fatalf("did not expect full preview fragment %q in %q", forbidden, response.Response)
+		}
+	}
+}
+
+func TestAnalyzeLiveModeOverridesGlobalPreviewSwitch(t *testing.T) {
+	service := NewAnalyzeService(infra.Config{AIPreviewMode: true})
+
+	response, err := service.Analyze(
+		context.Background(),
+		"gpt-4o",
+		"請依 instructions 執行",
+		"## [RAW_USER_TEXT]\n請幫我整理需求\n## [FRAMEWORK_TAIL]",
+		"",
+		nil,
+		infra.AIExecutionModeLive,
+	)
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if response.StatusAns == "PROMPT_PREVIEW" || response.Preview {
+		t.Fatalf("expected live mode to bypass preview response, got %+v", response)
+	}
+}
+
+func TestAnalyzeUsesConfiguredDefaultModeWhenRequestModeMissing(t *testing.T) {
+	service := NewAnalyzeService(infra.Config{
+		AIPreviewMode: false,
+		AIDefaultMode: infra.AIExecutionModePreviewPromptBodyOnly,
+	})
+
+	response, err := service.Analyze(
+		context.Background(),
+		"gpt-4o",
+		"user message",
+		"assembled instructions",
+		"OS 內核: 內在敏感\n主執行緒: 50% 魔羯 / 50% 水瓶",
+		nil,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if response.StatusAns != "PROMPT_PREVIEW" || !response.Preview {
+		t.Fatalf("expected configured default mode to return prompt preview, got %+v", response)
+	}
+	if response.Response != "OS 內核: 內在敏感\n主執行緒: 50% 魔羯 / 50% 水瓶" {
+		t.Fatalf("expected prompt body preview from default mode, got %q", response.Response)
+	}
+}
+
+func TestAnalyzeConfiguredDefaultModeWinsOverLegacyPreviewFlag(t *testing.T) {
+	service := NewAnalyzeService(infra.Config{
+		AIPreviewMode: true,
+		AIDefaultMode: infra.AIExecutionModePreviewPromptBodyOnly,
+	})
+
+	response, err := service.Analyze(
+		context.Background(),
+		"gpt-4o",
+		"user message",
+		"assembled instructions",
+		"主執行緒: prompt body",
+		nil,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if response.Response != "主執行緒: prompt body" {
+		t.Fatalf("expected configured default mode to override legacy preview flag, got %q", response.Response)
 	}
 }

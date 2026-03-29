@@ -74,7 +74,7 @@ func (u *UseCase) Consult(ctx context.Context, appID string, builderID int, text
 
 // PublicProfileConsult validates and forwards a public structured profile consult request.
 // appID is treated as an optional prompt-strategy hint and does not trigger external app authorization.
-func (u *UseCase) PublicProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, text, clientIP string) (infra.ConsultBusinessResponse, error) {
+func (u *UseCase) PublicProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, text string, mode infra.AIExecutionMode, clientIP string) (infra.ConsultBusinessResponse, error) {
 	builderConfig, normalizedProfile, err := u.guardService.ValidateProfileConsult(ctx, appID, builderID, subjectProfile, text, clientIP)
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
@@ -82,6 +82,7 @@ func (u *UseCase) PublicProfileConsult(ctx context.Context, appID string, builde
 
 	return u.builderConsult.Consult(ctx, builder.ConsultCommand{
 		Mode:             builder.ConsultModeProfile,
+		AIExecutionMode:  mode,
 		AppID:            appID,
 		BuilderID:        builderID,
 		PreloadedBuilder: &builderConfig,
