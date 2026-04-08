@@ -9,6 +9,7 @@
 - grpcapi transport：將 gRPC request 轉成 gatekeeper 可驗的 command
 - gatekeeper handler：解析 HTTP request 並將合法請求交給 usecase
 - guard service：驗證 consult request 與解析 client IP
+- promptguard usecase：針對 raw user text 做 prompt injection guard 決策
 
 ## Scenario Group: List Builders
 - Given public user 呼叫 `GET /api/builders`
@@ -247,6 +248,55 @@ Consult 驗證主鏈
   When usecase 執行 consult
   Then 應將空 `appId` 轉交給 builder consult usecase，讓下游使用 default prompt strategy
 
+## Scenario Group: PromptGuard Integration For Profile Consult
+```text
+ProfileConsult / PublicProfileConsult
+        │
+        ├─ gatekeeper validation
+        ├─ builderCode != linkchat-astrology？ -> 直接 builder consult
+        ├─ text 為空？ -> 直接 builder consult
+        └─ text 有值
+            └─ promptguard usecase
+                ├─ allow -> builder consult
+                ├─ block -> 正常 business response
+                └─ internal failure -> 系統錯誤
+```
+
+- Given `ProfileConsult` 或 `PublicProfileConsult` request 已通過 gatekeeper 驗證
+  And `text` 有值
+  When gatekeeper usecase 執行 profile consult orchestration
+  Then 應先呼叫 promptguard usecase
+  And 不應直接把 request 送進 builder consult 主流程
+
+- Given profile consult request 的 builder 不是 `linkchat-astrology`
+  When gatekeeper usecase 處理 profile consult
+  Then 第一版應跳過 promptguard
+  And 應直接繼續 builder consult 主流程
+
+- Given promptguard evaluation 回傳 `allow`
+  When gatekeeper usecase 繼續執行 profile consult
+  Then 應將原本 validated request 轉交給 builder consult usecase
+
+- Given promptguard evaluation 回傳 `block`
+  When gatekeeper usecase 處理 profile consult
+  Then 不應再呼叫 builder consult usecase
+  And 應直接回正常 business response
+  And 該 response 應以 `status=false` 表示 blocked，而不是 validation 4xx
+
+- Given promptguard evaluation 過程發生 builder / aiclient / config / parse failure
+  When gatekeeper usecase 處理 profile consult
+  Then 應將其視為系統錯誤
+  And 不應把這類 failure 誤當成 `status=false` 的正常 block
+
+- Given profile consult request 沒有 `text`
+  When gatekeeper usecase 處理 profile consult
+  Then 應跳過 promptguard
+  And 應直接繼續 builder consult 主流程
+
+- Given request 為 generic consult 或 external generic consult
+  When gatekeeper usecase 執行 consult
+  Then 第一版不應呼叫 promptguard usecase
+
 ## Acceptance Notes
 - gatekeeper 目前處理 internal API：`GET /api/builders`、`POST /api/consult`
 - gatekeeper 目前也處理 public local/dev profile prompt testing API：`POST /api/profile-consult`
@@ -255,6 +305,8 @@ Consult 驗證主鏈
 - gatekeeper 不應自行組裝 prompt，也不應直接接觸 repository 細節
 - `POST /api/profile-consult` 的 `appId` 只作為 prompt strategy hint，不代表通過 external app auth
 - LinkChat analysis-specific payload parsing 應落在 builder 內第二層 factory，而不是 gatekeeper
+- promptguard orchestration 應放在 gatekeeper usecase，不應塞進 guard service
+- 第一版 promptguard integration 只先套用在 profile astrology 主流程，不擴到 generic consult
 
 ## Code-Backed Tests
 - `service_test.go`

@@ -178,6 +178,39 @@ AssemblePrompt
   When user text 有值
   Then prompt 應追加 `[USER_INPUT]` 區塊
 
+## Scenario Group: PromptGuard Prompt Assembly
+```text
+Promptguard service
+        │
+        └─ builder dedicated guard prompt assembly
+            ├─ minimal guard context only
+            ├─ no source / rag / attachments
+            └─ dedicated guard JSON contract
+```
+
+- Given promptguard service 需要第二層 LLM guard
+  When builder 執行 dedicated guard prompt assembly
+  Then 應只使用最小必要 guard context 組出專用 prompt
+  And 不應沿用 main consult 的全量 prompt assembly
+
+- Given promptguard path 正在組 guard prompt
+  When builder 執行 dedicated guard prompt assembly
+  Then 不應載入或展開 source
+  And 不應 resolve rag
+  And 不應插入附件摘要
+  And 不應組出主分析用的 `[SUBJECT_PROFILE]` 內容
+  And `UserMessageText` 應使用 promptguard 專用訊息，而不是主 consult 訊息
+
+- Given main consult prompt 目前已內含 prompt injection / override 規則
+  When builder 抽出 dedicated guard prompt
+  Then 應只保留 promptguard 所需的 injection-detection 與固定 guard JSON 規則
+  And 不應把 main consult 的回覆風格、輸出格式與附件錯誤說明整段搬進 guard prompt
+
+- Given promptguard 在星座/profile 主流程內需要 guard prompt
+  When builder 執行 dedicated guard prompt assembly
+  Then builder 應只負責組 prompt
+  And 不應在 builder 內做 allow/block 決策
+
 ## Scenario Group: Graph
 ```text
 SaveGraph
@@ -280,6 +313,7 @@ Template command
 - `ConsultModeProfile` 與 `ConsultModeGeneric` 必須由 transport / gatekeeper 明確決定，不可由 builder 自行猜測
 - prompt assembly 的 app-aware 差異應落在 shared assembly skeleton 內部的 strategy，而不是複製整條 consult flow
 - strategy registry 目前沒有 TTL / invalidation；更新 Firestore 後需重啟服務才保證吃到最新值
+- promptguard integration 第一版只先接 profile astrology flow；builder 在這條線上只新增 dedicated guard prompt assembly，不新增第二條完整 consult flow
 
 ## Code-Backed Tests
 - `consult_usecase_test.go`

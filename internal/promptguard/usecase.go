@@ -1,5 +1,7 @@
 package promptguard
 
+import "context"
+
 // EvaluateUseCase is the caller-facing promptguard entrypoint.
 type EvaluateUseCase struct {
 	service *Service
@@ -10,7 +12,7 @@ func NewEvaluateUseCase(service *Service) *EvaluateUseCase {
 	return &EvaluateUseCase{service: service}
 }
 
-// Evaluate runs promptguard evaluation for raw user text.
-func (u *EvaluateUseCase) Evaluate(rawUserText string) (Evaluation, error) {
-	return u.service.Evaluate(rawUserText)
+// Evaluate runs promptguard evaluation for one gatekeeper command.
+func (u *EvaluateUseCase) Evaluate(ctx context.Context, command Command) (Evaluation, error) {
+	return u.service.Evaluate(ctx, command)
 }

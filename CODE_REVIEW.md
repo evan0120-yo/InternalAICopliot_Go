@@ -20,7 +20,7 @@
 - HTTP 和 gRPC 共用同一組 gatekeeper / builder / aiclient / output 邊界，不分兩套業務流程。
 - generic consult 和 profile consult 被明確拆成兩個 mode，不讓 builder 自己猜。
 - AI 執行邏輯已拆成 `preview / mock / live`，`live` 再切 `openai / gemma` provider。
-- repo 內另外長出一個獨立的 `promptguard` module，準備把 prompt injection guard 先拆成自己的 decision flow，但目前還沒接進 runtime 主流程。
+- repo 內另外長出一個獨立的 `promptguard` module，而且現在已經接進 `linkchat-astrology` 的 profile 主流程；generic consult 仍不走這條 guard。
 - LinkChat 的 prompt 差異不塞在 transport，而是塞在 builder 的 app-aware strategy。
 - local 開發刻意保留 Firestore emulator + reset/seed on start。
 
@@ -151,6 +151,10 @@ profile request 通過 transport parse
    │
    ├─ text 和 normalized subjectProfile 不能同時為空
    │
+   ├─ 第一版 promptguard 條件命中？
+   │  ├─ builderCode=linkchat-astrology 且 text 非空 -> 先做 guard
+   │  └─ 否 -> 直接進 builder profile mode
+   │
    └─ 進 builder profile mode
       │
       ├─ 先依 strategy 過濾 sources
@@ -188,6 +192,8 @@ linkchat
 > 注意：LinkChat strategy 有 process-local cache，改 Firestore 的 appPromptConfig 後，不重啟不保證會立即吃到新設定。
 
 > 注意：code 有 `mbti` renderer，但目前 seed builder 只放了 astrology source graph；如果沒有對應 `mbti` sources，profile source filtering 會直接變成空集合而失敗。
+
+> 注意：`promptguard` 第一版只掛在 `linkchat-astrology` 且 `text` 非空的 profile request。其他 builders、generic consult、純 structured profile request 目前都直接跳過這層。
 
 ## E. AI 執行層現在怎麼切
 
@@ -232,30 +238,41 @@ Analyze
 
 ### PromptGuard 目前的位置
 
-repo 裡現在已經有一個獨立的 `promptguard` module，但它還是獨立件，沒有接進一般 consult、profile consult 或 LinkChat 星座主流程。
+repo 裡現在已經有一個獨立的 `promptguard` module，而且第一版已經接進 LinkChat 星座 profile 主流程。
 
 ```text
-promptguard evaluate
+ProfileConsult / PublicProfileConsult
    │
-   ├─ ScoreText(rawUserText)
-   │  └─ 第一版固定回 needs_llm
-   │     score=50
+   ├─ gatekeeper validate
+   ├─ builderCode=linkchat-astrology 且 text 非空？
+   │  ├─ 否 -> 直接 builder consult
+   │  └─ 是
+   │     └─ promptguard.Evaluate
+   │        ├─ ScoreText(rawUserText)
+   │        │  └─ 第一版固定回 needs_llm
+   │        └─ EvaluateWithLLM(command)
+   │           ├─ builder.AssemblePromptGuard
+   │           └─ aiclient.AnalyzeGuard
+   │              ├─ cloud -> hosted Gemma
+   │              └─ local -> local endpoint
    │
-   └─ EvaluateWithLLM(rawUserText)
-      ├─ mode=cloud -> placeholder evaluation
-      └─ mode=local -> placeholder evaluation
+   ├─ guard allow -> builder consult
+   ├─ guard block -> 正常 business response
+   └─ guard failure -> system error
 ```
 
-它現在比較像把模組邊界先切好：
+它現在不只是切 module 邊界，而是真的有 runtime 作用：
 - 有自己的 usecase / service
 - 有自己的 env
 - 有 `allow / block / needs_llm` decision contract
+- `app.New()` 會把它接到 gatekeeper / builder / aiclient
+- 第二層 guard 已經會真的打 cloud/local Gemma analyze path
 
-但這版還沒有兩件事：
-- 還沒真的打外部 Gemma 或 local endpoint
-- `app.New()` / gatekeeper / builder / aiclient 都還沒引用它
+> 注意：第一版 `ScoreText` 還是 placeholder，現在的實際判斷幾乎都會升級到第二層 LLM guard。
 
-> 注意：這代表現在系統實際仍然只靠 `aiclient.mockAnalyze` 裡的簡單 keyword heuristic 做 mock path 的 prompt injection 判斷；`promptguard` 本身不會在 runtime 生效。
+> 注意：第二層 guard 的 builder path 是 dedicated prompt assembly，不讀 `source / rag / attachments / [SUBJECT_PROFILE]` 主分析內容。
+
+> 注意：若 `promptguard` 專用 env 沒設，現在會優先讀 dedicated env；缺值時再回退讀主 Gemma 相容 env，避免 local/dev 需要維護兩套一樣的 key。
 
 ## F. Output 與檔案回傳
 
@@ -425,16 +442,21 @@ main
      -> infra.NewStoreWithOptions
      -> rag.NewResolveService / UseCase
      -> aiclient.NewAnalyzeService / UseCase
-     -> output.NewRenderService / UseCase
-     -> builder.NewQueryService
-     -> builder.NewAssembleService
-     -> builder.NewGraphService / UseCase
-     -> builder.NewTemplateService / UseCase
-     -> builder.NewConsultUseCase(cfg.ResolvedAIModel())
-     -> gatekeeper.NewGuardService
-     -> gatekeeper.NewUseCase
-     -> gatekeeper.NewHandler
-     -> builder.NewAdminHandler
+  -> output.NewRenderService / UseCase
+  -> builder.NewQueryService
+  -> builder.NewAssembleService
+  -> builder.NewGraphService / UseCase
+  -> builder.NewTemplateService / UseCase
+  -> builder.NewConsultUseCase(cfg.ResolvedAIModel())
+  -> gatekeeper.NewGuardService
+  -> promptguard.LoadConfigFromEnv
+  -> promptguard.NewService
+     -> builder.AssemblePromptGuard closure
+     -> aiUseCase.AnalyzeGuard cloud/local closures
+  -> promptguard.NewEvaluateUseCase
+  -> gatekeeper.NewUseCase(promptguard injected)
+  -> gatekeeper.NewHandler
+  -> builder.NewAdminHandler
   -> HTTP server
   -> gRPC server
 ```
@@ -453,11 +475,16 @@ main
 | AI provider | `INTERNAL_AI_COPILOT_AI_PROVIDER` | `openai` |
 | OpenAI model | `INTERNAL_AI_COPILOT_AI_MODEL` | `gpt-4o` |
 | Gemma model | `INTERNAL_AI_COPILOT_GEMMA_MODEL` | `gemma-4-31b-it` |
+| promptguard mode | `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE` | `cloud` |
+| promptguard model | `INTERNAL_AI_COPILOT_PROMPTGUARD_MODEL` | fallback `gemma-4-31b-it` |
+| promptguard base URL | `INTERNAL_AI_COPILOT_PROMPTGUARD_BASE_URL` | fallback hosted Gemma URL |
+| promptguard API key | `INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY` | fallback 主 Gemma 相容 env |
 
 補充：
 - `REWARDBRIDGE_*` legacy 前綴仍可 fallback。
 - `AIPreviewMode` 舊 bool 仍存在，只在 `AIDefaultMode` 空時做 fallback。
 - `ResolvedAIModel()` 會依 provider 回 `OpenAIModel` 或 `GemmaModel`。
+- promptguard config 會先讀自己的 env，再回退讀主 Gemma 相容 env，例如 `INTERNAL_AI_COPILOT_GEMMA_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY`。
 
 ## B. 查 Builder 列表
 
@@ -760,17 +787,26 @@ preview / mock / live 都沿用這個 shape。
 - internal/promptguard/service.go (line 5)
 - internal/promptguard/config.go (line 15)
 - internal/app/app.go (line 27)
+- internal/gatekeeper/usecase.go (line 79)
+- internal/builder/assemble_service.go (line 149)
+- internal/aiclient/guard_analyze.go (line 42)
 
-目前 `promptguard` 的實際 call chain 只有 module 內部：
+目前 `promptguard` 的實際 runtime call chain 已經是：
 
 ```text
-EvaluateUseCase.Evaluate
-  -> Service.Evaluate
-     -> Service.ScoreText
-        -> scoreTextDefault
-     -> decision=needs_llm
-        -> Service.EvaluateWithLLM
-           -> resolvedMode()==local ? local placeholder : cloud placeholder
+gatekeeper.UseCase.PublicProfileConsult / ProfileConsult
+  -> evaluatePromptGuard
+     -> shouldRunPromptGuard
+        -> builderCode == linkchat-astrology
+        -> text != ""
+     -> promptguard.EvaluateUseCase.Evaluate
+        -> promptguard.Service.Evaluate
+           -> ScoreText
+           -> decision=needs_llm
+              -> EvaluateWithLLM
+                 -> builder.AssemblePromptGuard
+                 -> aiUseCase.AnalyzeGuard
+                    -> cloud or local Gemma
 ```
 
 第一版 placeholder 真相：
@@ -778,8 +814,10 @@ EvaluateUseCase.Evaluate
 | 步驟 | 目前行為 |
 | --- | --- |
 | `ScoreText` | 固定回 `decision=needs_llm`、`score=50`、`reason=TEXT_RULE_PLACEHOLDER`、`source=text_rule` |
-| `EvaluateWithLLM cloud` | 固定回 `decision=needs_llm`、`reason=LLM_GUARD_CLOUD_PLACEHOLDER` |
-| `EvaluateWithLLM local` | 固定回 `decision=needs_llm`、`reason=LLM_GUARD_LOCAL_PLACEHOLDER` |
+| `EvaluateWithLLM` | 若 builder assembler 或 llm route 沒 wiring，才回 placeholder `LLM_GUARD_CLOUD_PLACEHOLDER` / `LLM_GUARD_LOCAL_PLACEHOLDER` |
+| `EvaluateWithLLM` 完整 wiring 後 | 會先組 dedicated guard prompt，再打 `aiclient.AnalyzeGuard` |
+| `AnalyzeGuard status=true` | 映射成 `decision=allow` |
+| `AnalyzeGuard status=false` | 映射成 `decision=block` |
 | `mode` 缺失或非法 | fallback 到 `cloud` |
 
 目前專用 env：
@@ -793,8 +831,10 @@ EvaluateUseCase.Evaluate
 
 目前最重要的 current truth：
 - 它已經是獨立 module，不再只是規格文件。
-- 但它還沒有在 `app.New()` 被建起來，也沒有被注入 gatekeeper、builder、aiclient。
-- 所以它現在不影響任何 consult request，也不會真的攔 prompt injection。
+- 它已經在 `app.New()` 被建起來，並注入 gatekeeper、builder、aiclient。
+- 第一版只影響 `linkchat-astrology` 的 profile consult，generic consult 不受影響。
+- gatekeeper block 時不丟 validation 4xx，而是直接回正常 business response：`status=false`、`statusAns=prompts有違法注入內容`、`response=取消回應`。
+- 這條路現在真的可能因為外部 Gemma/local guard 失敗而把 request 當成 system error 擋下。
 
 ## F. Output 與 transport 回應
 

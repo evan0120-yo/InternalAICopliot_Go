@@ -192,3 +192,111 @@ func TestBuildResponsesPayloadRequiresResponseDetail(t *testing.T) {
 		t.Fatalf("expected responseDetail in required fields, got %+v", requiredAny)
 	}
 }
+
+func TestAnalyzeGuardRoutesToCloudGemma(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1beta/models/gemma-4-31b-it:generateContent" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("x-goog-api-key"); got != "guard-key" {
+			t.Fatalf("unexpected guard api key header: %q", got)
+		}
+
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("Decode returned error: %v", err)
+		}
+		configSection, ok := payload["generationConfig"].(map[string]any)
+		if !ok || configSection["responseMimeType"] != "application/json" {
+			t.Fatalf("expected generationConfig responseMimeType, got %+v", payload["generationConfig"])
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"candidates": []map[string]any{
+				{
+					"content": map[string]any{
+						"parts": []map[string]any{
+							{
+								"text": `{"status":true,"statusAns":"SAFE","reason":"normal request"}`,
+							},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	service := NewAnalyzeService(infra.Config{})
+
+	result, err := service.AnalyzeGuard(context.Background(), GuardAnalyzeCommand{
+		Route:           GuardAnalyzeRouteCloud,
+		Model:           "gemma-4-31b-it",
+		BaseURL:         server.URL + "/v1beta",
+		APIKey:          "guard-key",
+		Instructions:    "guard instructions",
+		UserMessageText: "guard user message",
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeGuard returned error: %v", err)
+	}
+	if !result.Status || result.StatusAns != "SAFE" || result.Reason != "normal request" {
+		t.Fatalf("unexpected guard result: %+v", result)
+	}
+}
+
+func TestAnalyzeGuardRoutesToLocalGemmaWithoutAPIKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models/local-gemma:generateContent" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if got := r.Header.Get("x-goog-api-key"); got != "" {
+			t.Fatalf("expected local route to omit api key header, got %q", got)
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"candidates": []map[string]any{
+				{
+					"content": map[string]any{
+						"parts": []map[string]any{
+							{
+								"text": `{"status":false,"statusAns":"prompts有違法注入內容","reason":"override attempt"}`,
+							},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	service := NewAnalyzeService(infra.Config{})
+
+	result, err := service.AnalyzeGuard(context.Background(), GuardAnalyzeCommand{
+		Route:           GuardAnalyzeRouteLocal,
+		Model:           "local-gemma",
+		BaseURL:         server.URL,
+		Instructions:    "guard instructions",
+		UserMessageText: "guard user message",
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeGuard returned error: %v", err)
+	}
+	if result.Status || result.StatusAns != "prompts有違法注入內容" || result.Reason != "override attempt" {
+		t.Fatalf("unexpected guard result: %+v", result)
+	}
+}
+
+func TestAnalyzeGuardLocalModeRequiresBaseURL(t *testing.T) {
+	service := NewAnalyzeService(infra.Config{})
+
+	_, err := service.AnalyzeGuard(context.Background(), GuardAnalyzeCommand{
+		Route:           GuardAnalyzeRouteLocal,
+		Model:           "local-gemma",
+		Instructions:    "guard instructions",
+		UserMessageText: "guard user message",
+	})
+	if err == nil || !strings.Contains(err.Error(), "PROMPTGUARD_LOCAL_BASE_URL_MISSING") {
+		t.Fatalf("expected PROMPTGUARD_LOCAL_BASE_URL_MISSING, got %v", err)
+	}
+}

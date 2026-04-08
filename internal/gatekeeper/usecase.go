@@ -2,24 +2,28 @@ package gatekeeper
 
 import (
 	"context"
+	"strings"
 
 	"com.citrus.internalaicopilot/internal/builder"
 	"com.citrus.internalaicopilot/internal/infra"
+	"com.citrus.internalaicopilot/internal/promptguard"
 )
 
 // UseCase is the gatekeeper orchestration entrypoint.
 type UseCase struct {
-	guardService   *GuardService
-	builderQuery   *builder.QueryService
-	builderConsult *builder.ConsultUseCase
+	guardService       *GuardService
+	promptGuardUseCase *promptguard.EvaluateUseCase
+	builderQuery       *builder.QueryService
+	builderConsult     *builder.ConsultUseCase
 }
 
 // NewUseCase builds the gatekeeper entrypoint.
-func NewUseCase(guardService *GuardService, builderQuery *builder.QueryService, builderConsult *builder.ConsultUseCase) *UseCase {
+func NewUseCase(guardService *GuardService, promptGuardUseCase *promptguard.EvaluateUseCase, builderQuery *builder.QueryService, builderConsult *builder.ConsultUseCase) *UseCase {
 	return &UseCase{
-		guardService:   guardService,
-		builderQuery:   builderQuery,
-		builderConsult: builderConsult,
+		guardService:       guardService,
+		promptGuardUseCase: promptGuardUseCase,
+		builderQuery:       builderQuery,
+		builderConsult:     builderConsult,
 	}
 }
 
@@ -79,6 +83,12 @@ func (u *UseCase) PublicProfileConsult(ctx context.Context, appID string, builde
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
+	if blockedResponse, err := u.evaluatePromptGuard(ctx, appID, builderConfig, text); err != nil || blockedResponse != nil {
+		if err != nil {
+			return infra.ConsultBusinessResponse{}, err
+		}
+		return *blockedResponse, nil
+	}
 
 	return u.builderConsult.Consult(ctx, builder.ConsultCommand{
 		Mode:             builder.ConsultModeProfile,
@@ -125,6 +135,12 @@ func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID in
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
+	if blockedResponse, err := u.evaluatePromptGuard(ctx, appID, builderConfig, text); err != nil || blockedResponse != nil {
+		if err != nil {
+			return infra.ConsultBusinessResponse{}, err
+		}
+		return *blockedResponse, nil
+	}
 
 	return u.builderConsult.Consult(ctx, builder.ConsultCommand{
 		Mode:             builder.ConsultModeProfile,
@@ -135,4 +151,45 @@ func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID in
 		ClientIP:         clientIP,
 		SubjectProfile:   normalizedProfile,
 	})
+}
+
+func (u *UseCase) evaluatePromptGuard(ctx context.Context, appID string, builderConfig infra.BuilderConfig, text string) (*infra.ConsultBusinessResponse, error) {
+	if u.promptGuardUseCase == nil || !shouldRunPromptGuard(builderConfig, text) {
+		return nil, nil
+	}
+
+	evaluation, err := u.promptGuardUseCase.Evaluate(ctx, promptguard.Command{
+		AppID:         appID,
+		BuilderConfig: builderConfig,
+		RawUserText:   text,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	switch evaluation.Decision {
+	case promptguard.DecisionAllow:
+		return nil, nil
+	case promptguard.DecisionBlock:
+		responseDetail := strings.TrimSpace(evaluation.Reason)
+		if responseDetail == "" {
+			responseDetail = "promptguard blocked request"
+		}
+		response := infra.ConsultBusinessResponse{
+			Status:         false,
+			StatusAns:      "prompts有違法注入內容",
+			Response:       "取消回應",
+			ResponseDetail: responseDetail,
+		}
+		return &response, nil
+	default:
+		return nil, infra.NewError("PROMPTGUARD_DECISION_UNRESOLVED", "Promptguard did not return a final allow/block decision.", 500)
+	}
+}
+
+func shouldRunPromptGuard(builderConfig infra.BuilderConfig, text string) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	return strings.TrimSpace(builderConfig.BuilderCode) == "linkchat-astrology"
 }

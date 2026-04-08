@@ -36,8 +36,9 @@ type liveAnalyzeProvider interface {
 
 // AnalyzeService handles AI execution mode and provider routing.
 type AnalyzeService struct {
-	config    infra.Config
-	providers map[infra.AIProvider]liveAnalyzeProvider
+	config     infra.Config
+	httpClient *http.Client
+	providers  map[infra.AIProvider]liveAnalyzeProvider
 }
 
 // NewAnalyzeService constructs the AI client service.
@@ -46,13 +47,14 @@ func NewAnalyzeService(config infra.Config) *AnalyzeService {
 	return newAnalyzeServiceWithProviders(config, map[infra.AIProvider]liveAnalyzeProvider{
 		infra.AIProviderOpenAI: newOpenAIProvider(config, client),
 		infra.AIProviderGemma:  newGemmaProvider(config, client),
-	})
+	}, client)
 }
 
-func newAnalyzeServiceWithProviders(config infra.Config, providers map[infra.AIProvider]liveAnalyzeProvider) *AnalyzeService {
+func newAnalyzeServiceWithProviders(config infra.Config, providers map[infra.AIProvider]liveAnalyzeProvider, client *http.Client) *AnalyzeService {
 	return &AnalyzeService{
-		config:    config,
-		providers: providers,
+		config:     config,
+		httpClient: client,
+		providers:  providers,
 	}
 }
 

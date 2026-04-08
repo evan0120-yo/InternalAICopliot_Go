@@ -42,6 +42,12 @@ type promptAssemblyResult struct {
 	UserMessageText   string
 }
 
+// GuardPromptAssemblyResult is the dedicated promptguard prompt payload.
+type GuardPromptAssemblyResult struct {
+	Instructions    string
+	UserMessageText string
+}
+
 // SubjectProfile is the structured profile-analysis payload.
 type SubjectProfile struct {
 	SubjectID        string

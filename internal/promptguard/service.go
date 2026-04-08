@@ -1,28 +1,69 @@
 package promptguard
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+	"strings"
+)
+
+// ServiceOption customizes promptguard service dependencies.
+type ServiceOption func(*Service)
+
+// WithScoreTextFunc overrides the first-layer text scoring function.
+func WithScoreTextFunc(fn func(rawUserText string) (Evaluation, error)) ServiceOption {
+	return func(service *Service) {
+		if fn != nil {
+			service.scoreTextFn = fn
+		}
+	}
+}
+
+// WithGuardPromptAssembler wires the builder-owned guard prompt assembly step.
+func WithGuardPromptAssembler(fn func(context.Context, Command) (GuardPrompt, error)) ServiceOption {
+	return func(service *Service) {
+		service.guardPromptFn = fn
+	}
+}
+
+// WithCloudLLMFunc wires the hosted Gemma guard route.
+func WithCloudLLMFunc(fn func(context.Context, GuardLLMRequest) (GuardLLMResponse, error)) ServiceOption {
+	return func(service *Service) {
+		service.cloudLLMFn = fn
+	}
+}
+
+// WithLocalLLMFunc wires the local Gemma guard route.
+func WithLocalLLMFunc(fn func(context.Context, GuardLLMRequest) (GuardLLMResponse, error)) ServiceOption {
+	return func(service *Service) {
+		service.localLLMFn = fn
+	}
+}
 
 // Service executes the promptguard decision flow.
 type Service struct {
 	config Config
 
-	scoreTextFn func(rawUserText string) (Evaluation, error)
-	cloudLLMFn  func(rawUserText string) (Evaluation, error)
-	localLLMFn  func(rawUserText string) (Evaluation, error)
+	scoreTextFn   func(rawUserText string) (Evaluation, error)
+	guardPromptFn func(context.Context, Command) (GuardPrompt, error)
+	cloudLLMFn    func(context.Context, GuardLLMRequest) (GuardLLMResponse, error)
+	localLLMFn    func(context.Context, GuardLLMRequest) (GuardLLMResponse, error)
 }
 
 // NewService constructs the promptguard service.
-func NewService(config Config) *Service {
+func NewService(config Config, options ...ServiceOption) *Service {
 	service := &Service{config: config}
 	service.scoreTextFn = service.scoreTextDefault
-	service.cloudLLMFn = service.evaluateWithCloudGemmaDefault
-	service.localLLMFn = service.evaluateWithLocalGemmaDefault
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
 	return service
 }
 
 // Evaluate runs text scoring first, then falls back to LLM guard when needed.
-func (s *Service) Evaluate(rawUserText string) (Evaluation, error) {
-	evaluation, err := s.ScoreText(rawUserText)
+func (s *Service) Evaluate(ctx context.Context, command Command) (Evaluation, error) {
+	evaluation, err := s.ScoreText(command.RawUserText)
 	if err != nil {
 		return Evaluation{}, err
 	}
@@ -31,7 +72,7 @@ func (s *Service) Evaluate(rawUserText string) (Evaluation, error) {
 	case DecisionAllow, DecisionBlock:
 		return evaluation, nil
 	case DecisionNeedsLLM:
-		return s.EvaluateWithLLM(rawUserText)
+		return s.EvaluateWithLLM(ctx, command)
 	default:
 		return Evaluation{}, fmt.Errorf("promptguard: unsupported decision %q", evaluation.Decision)
 	}
@@ -43,13 +84,42 @@ func (s *Service) ScoreText(rawUserText string) (Evaluation, error) {
 }
 
 // EvaluateWithLLM routes second-layer guard evaluation to cloud or local mode.
-func (s *Service) EvaluateWithLLM(rawUserText string) (Evaluation, error) {
-	switch s.config.resolvedMode() {
-	case ModeLocal:
-		return s.localLLMFn(rawUserText)
-	default:
-		return s.cloudLLMFn(rawUserText)
+func (s *Service) EvaluateWithLLM(ctx context.Context, command Command) (Evaluation, error) {
+	llmMode := s.config.resolvedMode()
+	llmFn := s.cloudLLMFn
+	placeholderReason := llmGuardCloudPlaceholderReason
+	if llmMode == ModeLocal {
+		llmFn = s.localLLMFn
+		placeholderReason = llmGuardLocalPlaceholderReason
 	}
+
+	if s.guardPromptFn == nil || llmFn == nil {
+		return Evaluation{
+			Decision: DecisionNeedsLLM,
+			Score:    needsLLMPlaceholderScore,
+			Reason:   placeholderReason,
+			Source:   SourceLLMGuard,
+		}, nil
+	}
+
+	guardPrompt, err := s.guardPromptFn(ctx, command)
+	if err != nil {
+		return Evaluation{}, err
+	}
+
+	llmResponse, err := llmFn(ctx, GuardLLMRequest{
+		Mode:            llmMode,
+		Model:           s.config.resolvedModel(),
+		BaseURL:         s.config.resolvedBaseURL(),
+		APIKey:          strings.TrimSpace(s.config.APIKey),
+		Instructions:    guardPrompt.Instructions,
+		UserMessageText: guardPrompt.UserMessageText,
+	})
+	if err != nil {
+		return Evaluation{}, err
+	}
+
+	return mapGuardLLMResponse(llmResponse), nil
 }
 
 func (s *Service) scoreTextDefault(rawUserText string) (Evaluation, error) {
@@ -62,22 +132,28 @@ func (s *Service) scoreTextDefault(rawUserText string) (Evaluation, error) {
 	}, nil
 }
 
-func (s *Service) evaluateWithCloudGemmaDefault(rawUserText string) (Evaluation, error) {
-	_ = rawUserText
-	return Evaluation{
-		Decision: DecisionNeedsLLM,
-		Score:    needsLLMPlaceholderScore,
-		Reason:   llmGuardCloudPlaceholderReason,
-		Source:   SourceLLMGuard,
-	}, nil
-}
+func mapGuardLLMResponse(response GuardLLMResponse) Evaluation {
+	reason := strings.TrimSpace(response.Reason)
+	if reason == "" {
+		reason = strings.TrimSpace(response.StatusAns)
+	}
+	if reason == "" {
+		reason = "LLM_GUARD_EMPTY_REASON"
+	}
 
-func (s *Service) evaluateWithLocalGemmaDefault(rawUserText string) (Evaluation, error) {
-	_ = rawUserText
+	if response.Status {
+		return Evaluation{
+			Decision: DecisionAllow,
+			Score:    needsLLMPlaceholderScore,
+			Reason:   reason,
+			Source:   SourceLLMGuard,
+		}
+	}
+
 	return Evaluation{
-		Decision: DecisionNeedsLLM,
+		Decision: DecisionBlock,
 		Score:    needsLLMPlaceholderScore,
-		Reason:   llmGuardLocalPlaceholderReason,
+		Reason:   reason,
 		Source:   SourceLLMGuard,
-	}, nil
+	}
 }

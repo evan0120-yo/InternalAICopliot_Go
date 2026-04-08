@@ -1,6 +1,10 @@
 package promptguard
 
-import "strings"
+import (
+	"strings"
+
+	"com.citrus.internalaicopilot/internal/infra"
+)
 
 // Decision is the normalized guard outcome.
 type Decision string
@@ -33,6 +37,36 @@ const (
 	llmGuardCloudPlaceholderReason = "LLM_GUARD_CLOUD_PLACEHOLDER"
 	llmGuardLocalPlaceholderReason = "LLM_GUARD_LOCAL_PLACEHOLDER"
 )
+
+// Command is the promptguard entry contract from gatekeeper.
+type Command struct {
+	AppID         string
+	BuilderConfig infra.BuilderConfig
+	RawUserText   string
+}
+
+// GuardPrompt is the builder-owned dedicated guard prompt payload.
+type GuardPrompt struct {
+	Instructions    string
+	UserMessageText string
+}
+
+// GuardLLMRequest is the aiclient-facing second-layer guard request.
+type GuardLLMRequest struct {
+	Mode            Mode
+	Model           string
+	BaseURL         string
+	APIKey          string
+	Instructions    string
+	UserMessageText string
+}
+
+// GuardLLMResponse is the parsed dedicated guard JSON contract.
+type GuardLLMResponse struct {
+	Status    bool   `json:"status"`
+	StatusAns string `json:"statusAns"`
+	Reason    string `json:"reason"`
+}
 
 // Evaluation is the unified promptguard result contract.
 type Evaluation struct {

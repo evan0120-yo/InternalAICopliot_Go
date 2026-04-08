@@ -31,92 +31,33 @@ func newGemmaProvider(config infra.Config, client *http.Client) *gemmaProvider {
 }
 
 func (p *gemmaProvider) Analyze(ctx context.Context, request analyzeRequest) (infra.ConsultBusinessResponse, error) {
-	if strings.TrimSpace(p.config.GemmaAPIKey) == "" {
-		return infra.ConsultBusinessResponse{}, infra.NewError("GEMMA_API_KEY_MISSING", "Gemma API key is required for live Gemma mode.", http.StatusInternalServerError)
-	}
-
 	request.Model = requestModelOrFallback(request.Model, p.config.GemmaModel)
 	parts, err := p.buildParts(ctx, request)
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
 
-	payload := map[string]any{
-		"system_instruction": map[string]any{
-			"parts": []map[string]any{
-				{"text": request.Instructions},
-			},
-		},
-		"contents": []map[string]any{
-			{
-				"role":  "user",
-				"parts": parts,
-			},
-		},
-		"generationConfig": map[string]any{
-			"responseMimeType":   "application/json",
-			"responseJsonSchema": consultResponseSchema(),
-		},
-	}
-
-	body, err := json.Marshal(payload)
+	raw, err := executeGemmaJSONAnalyze(ctx, p.client, gemmaJSONRequest{
+		APIKey:            p.config.GemmaAPIKey,
+		BaseURL:           p.config.GemmaBaseURL,
+		Model:             request.Model,
+		SystemInstruction: request.Instructions,
+		Parts:             parts,
+		ResponseSchema:    consultResponseSchema(),
+		RequireAPIKey:     true,
+		MissingAPIKeyCode: "GEMMA_API_KEY_MISSING",
+		MissingAPIKeyMsg:  "Gemma API key is required for live Gemma mode.",
+		FailureCode:       "GEMMA_ANALYSIS_FAILED",
+		FailureMsg:        "Gemma consult analysis failed.",
+		EmptyOutputCode:   "GEMMA_EMPTY_OUTPUT",
+		EmptyOutputMsg:    "Gemma returned no structured response.",
+		LogPrefix:         "gemma generateContent",
+	})
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
 
-	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, resolveGemmaGenerateContentURL(p.config.GemmaBaseURL, request.Model), bytes.NewReader(body))
-	if err != nil {
-		return infra.ConsultBusinessResponse{}, err
-	}
-	httpRequest.Header.Set("x-goog-api-key", p.config.GemmaAPIKey)
-	httpRequest.Header.Set("Content-Type", "application/json")
-
-	response, err := p.client.Do(httpRequest)
-	if err != nil {
-		return infra.ConsultBusinessResponse{}, infra.NewError("GEMMA_ANALYSIS_FAILED", "Gemma consult analysis failed.", http.StatusBadGateway)
-	}
-	defer response.Body.Close()
-
-	responseBody, err := io.ReadAll(response.Body)
-	if err != nil {
-		return infra.ConsultBusinessResponse{}, infra.NewError("GEMMA_ANALYSIS_FAILED", "Failed to read Gemma response.", http.StatusBadGateway)
-	}
-	if response.StatusCode >= 400 {
-		log.Printf("gemma generateContent failed: status=%d body=%s", response.StatusCode, previewBody(responseBody))
-		return infra.ConsultBusinessResponse{}, infra.NewError("GEMMA_ANALYSIS_FAILED", "Gemma consult analysis failed.", http.StatusBadGateway)
-	}
-
-	var parsed struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
-	}
-	if err := json.Unmarshal(responseBody, &parsed); err != nil {
-		return infra.ConsultBusinessResponse{}, infra.NewError("GEMMA_ANALYSIS_FAILED", "Gemma returned an unreadable response.", http.StatusBadGateway)
-	}
-	if len(parsed.Candidates) == 0 || len(parsed.Candidates[0].Content.Parts) == 0 {
-		return infra.ConsultBusinessResponse{}, infra.NewError("GEMMA_EMPTY_OUTPUT", "Gemma returned no structured response.", http.StatusBadGateway)
-	}
-
-	var textBuilder strings.Builder
-	for _, part := range parsed.Candidates[0].Content.Parts {
-		if strings.TrimSpace(part.Text) == "" {
-			continue
-		}
-		if textBuilder.Len() > 0 {
-			textBuilder.WriteString("\n")
-		}
-		textBuilder.WriteString(part.Text)
-	}
-	if textBuilder.Len() == 0 {
-		return infra.ConsultBusinessResponse{}, infra.NewError("GEMMA_EMPTY_OUTPUT", "Gemma returned no structured response.", http.StatusBadGateway)
-	}
-
-	return parseBusinessResponseJSON([]byte(textBuilder.String()), "GEMMA_ANALYSIS_FAILED", "Gemma response did not match the expected JSON contract.")
+	return parseBusinessResponseJSON(raw, "GEMMA_ANALYSIS_FAILED", "Gemma response did not match the expected JSON contract.")
 }
 
 func (p *gemmaProvider) buildParts(ctx context.Context, request analyzeRequest) ([]map[string]any, error) {

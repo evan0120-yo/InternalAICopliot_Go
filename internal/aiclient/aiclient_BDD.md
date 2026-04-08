@@ -6,6 +6,7 @@
 ## Actors
 - builder consult usecase：將已組裝好的 instructions、user text 與附件交給 aiclient
 - aiclient usecase：對 builder 暴露單一 analyze 入口
+- promptguard service：在 text scoring 需要第二層 LLM 判定時，呼叫 aiclient 的 dedicated guard analyze
 
 ## Scenario Group: Analyze Mode Selection
 - Given preview mode 開關為 true
@@ -113,6 +114,54 @@ analyze
   Then 差異應封裝在 provider 實作內
   And 不應把 provider-specific 附件假設擴散到 builder
 
+## Scenario Group: PromptGuard Analyze
+```text
+promptguard service
+      │
+      ├─ mode=cloud -> hosted Gemma
+      └─ mode=local -> local Gemma
+             │
+             └─ dedicated guard JSON
+```
+
+- Given promptguard service 發起第二層 LLM guard
+  And `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE=cloud`
+  When aiclient 執行 promptguard analyze
+  Then 應使用 promptguard 專用 cloud config
+  And 應將 request 送到 hosted Gemma
+
+- Given promptguard service 發起第二層 LLM guard
+  And `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE=local`
+  When aiclient 執行 promptguard analyze
+  Then 應使用 promptguard 專用 local config
+  And 應將 request 送到 local Gemma endpoint
+
+- Given promptguard analyze 走 `cloud`
+  When aiclient 組 request
+  Then 應要求 API key
+  And 缺值時應回 `PROMPTGUARD_GEMMA_API_KEY_MISSING`
+
+- Given promptguard analyze 走 `local`
+  When aiclient 組 request
+  Then local route 可省略 API key
+  And 缺少 `BaseURL` 時應回 `PROMPTGUARD_LOCAL_BASE_URL_MISSING`
+
+- Given promptguard analyze 收到合法 guard JSON
+  When aiclient 完成 parse
+  Then 應回傳 dedicated guard result
+  And `status=true` 應代表 allow
+  And `status=false` 應代表 block
+
+- Given promptguard analyze 收到 `status=false`
+  When aiclient 完成 parse
+  Then 不應把這類結果視為 provider error
+  And 不應自行轉成 HTTP/business failure
+
+- Given promptguard analyze 發生 transport failure、provider failure、JSON parse failure 或 contract mismatch
+  When aiclient 處理回應
+  Then 應回傳系統錯誤給 promptguard service
+  And 不應自行合成 `status=false` 的 block result
+
 ## Scenario Group: Prompt Preview
 - Given preview mode 開關為 true
   When analyze 執行
@@ -163,6 +212,7 @@ analyze
 - LinkChat profile-analysis 的 module 組合與理論資料，由 builder 負責組 prompt，aiclient 不應理解其業務語意
 - mock mode 由顯式啟動設定控制，不再由 provider credential 缺值隱式觸發
 - execution mode 與 live provider 分開決策，不混在同一個欄位
+- promptguard 的第二層 LLM guard 使用獨立 env 與 dedicated guard JSON，不與主 consult analyze contract 混用
 
 ## Scenario Group: Preview Output Variants
 

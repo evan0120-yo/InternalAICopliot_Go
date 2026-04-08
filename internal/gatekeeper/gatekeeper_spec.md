@@ -10,6 +10,8 @@ Gatekeeper 是系統的 consult validation boundary。HTTP handler 直接承接 
 
 它負責接收 consult/builders 請求、做基礎驗證、解析 client IP，然後把請求交給 Builder。
 
+在第一版 promptguard integration 中，Gatekeeper 的 `ProfileConsult` / `PublicProfileConsult` orchestration 會在通過既有驗證後，先把 `raw user text` 送進 promptguard usecase；只有 promptguard 明確放行後，才會繼續進 builder 主 consult flow。
+
 對應 Java：`com.citrus.internalaicopilot.gatekeeper`
 
 ## Layering In This Module
@@ -41,6 +43,8 @@ gRPC transport adapter 不在此 module 內，但應重用同一個 gatekeeper u
 - 為 builder command 設定正確的 `ConsultMode`
 - 解析 client IP
 - 將 validated `appId` 或 optional public `appId` 傳給 builder，供 prompt strategy 選擇
+- 在第一版 astrology/profile 主流程中，於 builder consult 前先呼叫 promptguard usecase
+- 依 promptguard 結果決定直接回 blocked business response，或繼續轉交 builder usecase
 - 將合法請求轉交給 builder usecase
 
 ## Layer Responsibilities
@@ -53,15 +57,47 @@ gRPC transport adapter 不在此 module 內，但應重用同一個 gatekeeper u
 
 ### UseCase
 - orchestration for `ListBuilders` / `ListExternalBuilders` / `Consult` / `ExternalConsult`
-- bridge gatekeeper service and builder usecase
+- bridge gatekeeper service、promptguard usecase 與 builder usecase
 - map validated request to builder command
 - 承接 HTTP 或 gRPC transport 已轉好的 consult payload
 - 保留 generic / profile consult 的明確 mode 語意
+- 對第一版 profile astrology flow 負責 `validate -> promptguard -> builder consult` 的串接順序
+- gatekeeper usecase 應只依 promptguard evaluation 做放行或擋下決策，不自行組 guard prompt 或解析 guard JSON
 
 ### Service
 - guard validation
 - client IP resolution
 - structured profile consult field validation
+- gatekeeper service 仍只負責同步驗證，不直接承擔 promptguard orchestration
+
+## Profile PromptGuard Integration
+
+第一版 promptguard integration 只接在星座/profile 主流程，不改 generic consult 路徑。
+
+```text
+ProfileConsult / PublicProfileConsult
+        │
+        ├─ Gatekeeper Service validation
+        │
+        ├─ raw text 為空？
+        │   ├─ 是 -> 直接進 builder consult 主流程
+        │   └─ 否
+        │
+        ├─ promptguard usecase
+        │   ├─ allow -> 繼續 builder consult 主流程
+        │   ├─ block -> 直接回 blocked business response
+        │   └─ system/internal failure -> 回系統錯誤
+        │
+        └─ builder consult 主流程
+```
+
+規則：
+- Gatekeeper 只把 `raw user text` 與最小必要 consult context 交給 promptguard usecase。
+- 若 request 沒有 `raw user text`，Gatekeeper 不應為了 promptguard 額外組 guard prompt。
+- 第一版 current scope 只在 `builderCode=linkchat-astrology` 時啟用 promptguard。
+- Gatekeeper 不應自己接 builder 來組 guard prompt，也不應自己打 aiclient 做第二層 guard。
+- `status=false` 的 promptguard block 應視為正常 business response，而不是 validation 4xx。
+- 第一版不把 generic consult / external generic consult 納入 promptguard integration。
 
 ## Request Contract
 
@@ -128,6 +164,7 @@ Header：
 - 不承擔 external app auth 語意
 - production 不應直接對公網暴露此 route
 - gatekeeper 只驗 `mode` 是否為支援值，實際輸出策略由下游 aiclient 決定
+- 第一版 promptguard integration 應先套用在這條 profile consult 星座主流程
 
 ### gRPC generic `Consult`
 generic `Consult` 仍承接 generic consult 語意：
@@ -234,6 +271,15 @@ Request 進入 Gatekeeper
 │   └── 若提供，不可為空白                                      │
 └───────────────────────────────────┬───────────────────────────┘
                                     ▼
+┌─ PromptGuard（第一版僅 Profile astrology flow）───────────────┐
+│  raw user text 為空？                                         │
+│   ├── 是 -> 跳過 promptguard                                  │
+│   └── 否                                                      │
+│        ├── promptguard allow -> 繼續                          │
+│        ├── promptguard block -> 回 blocked business response  │
+│        └── promptguard system failure -> 回系統錯誤           │
+└───────────────────────────────────┬───────────────────────────┘
+                                    ▼
                             全部通過，轉交 Builder
 ```
 
@@ -248,3 +294,5 @@ Request 進入 Gatekeeper
 - Gatekeeper 不負責 raw value / alias -> canonical key 正規化；那是 external app（例如 LinkChat）自己的責任
 - Gatekeeper 可驗共享的 weighted-entry envelope 規則，但不負責解讀 `capricorn`、`pisces` 等 domain key 的語意
 - public prompt-testing routes 的安全性預設由部署/環境隔離保護，不由 gatekeeper 在第一版內做 app auth
+- promptguard 是獨立 module；gatekeeper 只在 usecase 層調用它，不把 promptguard 寫進 gatekeeper service
+- Gatekeeper 不為 promptguard path 讀取 source / rag；那是下游 promptguard + builder 的邊界

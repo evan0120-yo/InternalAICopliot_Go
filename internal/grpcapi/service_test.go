@@ -61,7 +61,7 @@ func TestProfileConsultPassesTheoryMappedPayloadThroughService(t *testing.T) {
 	aiUseCase := aiclient.NewAnalyzeUseCase(aiclient.NewAnalyzeService(cfg))
 	outputUseCase := output.NewRenderUseCase(output.NewRenderService())
 	builderConsult := builder.NewConsultUseCase(store, ragUseCase, aiUseCase, outputUseCase, builder.NewAssembleService(store), "gpt-4o")
-	useCase := gatekeeper.NewUseCase(gatekeeper.NewGuardService(cfg, store), builderQuery, builderConsult)
+	useCase := gatekeeper.NewUseCase(gatekeeper.NewGuardService(cfg, store), nil, builderQuery, builderConsult)
 	service := New(useCase)
 
 	theoryVersion := "astro-v1"

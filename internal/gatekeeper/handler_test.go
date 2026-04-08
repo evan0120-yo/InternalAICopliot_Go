@@ -311,7 +311,7 @@ func newTestHandlerWithSeed(t *testing.T, seed infra.StoreSeedData) http.Handler
 	aiUseCase := aiclient.NewAnalyzeUseCase(aiclient.NewAnalyzeService(cfg))
 	outputUseCase := output.NewRenderUseCase(output.NewRenderService())
 	builderConsult := builder.NewConsultUseCase(store, ragUseCase, aiUseCase, outputUseCase, builder.NewAssembleService(store), "gpt-4o")
-	useCase := NewUseCase(NewGuardService(cfg, store), builderQuery, builderConsult)
+	useCase := NewUseCase(NewGuardService(cfg, store), nil, builderQuery, builderConsult)
 
 	handler := NewHandler(useCase)
 	mux := http.NewServeMux()

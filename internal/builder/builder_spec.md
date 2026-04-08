@@ -12,6 +12,8 @@ Builder 是 Go 版後端的編排中心。它接收 Gatekeeper 傳來的 consult
 
 在 LinkChat profile-analysis 這條線上，builder 會保留單一 builder 作為整體 source/rag 骨架，並在 app-aware strategy 內再做第二層 analysis factory 分流，例如 `astrology`、`mbti`。
 
+在第一版 promptguard integration 中，builder 也會提供一條 dedicated guard prompt assembly 能力，供 promptguard module 呼叫；這條 path 只負責組 prompt，不負責 allow/block 決策。
+
 對應 Java：
 - `com.citrus.internalaicopilot.builder`
 - `com.citrus.internalaicopilot.source`
@@ -35,9 +37,11 @@ UseCase -> Service -> Repository
 - concurrency orchestration with `context` + goroutine / wait coordination
 - 依 `ConsultMode` 與 app-specific strategy 做 source selection / prompt assembly
 - 傳遞 `appId` 到 prompt assembly 階段
+- 對 promptguard 暴露 dedicated guard prompt assembly 能力
 
 ### Service responsibilities
 - prompt assembly
+- dedicated promptguard prompt assembly
 - app-aware prompt assembly strategy dispatch
 - override strategies
 - graph normalize / merge / validation rules
@@ -230,6 +234,7 @@ builder 負責：
 - app-aware strategy 與 analysis factory 的 prompt assembly
 - prompt assembly
 - overall consult orchestration
+- dedicated guard prompt assembly
 
 rag 負責：
 - 根據 `retrievalMode` resolve rag config
@@ -246,6 +251,7 @@ rag 負責：
 - LinkChat strategy 若要用 `analysisType`、slot key、value key 做更細的語意片段組裝，應在 strategy 內自己查表與拼接
 - source graph 若新增 `sourceIds[]`，代表 source 可以再引用其他 source；這不改變 rag 屬於 source 的關係
 - `source.moduleKey` 若存在，僅作 internal tag；它可以被 LinkChat strategy 使用，也可以被忽略，不需要升級成新的 shared request contract
+- promptguard path 不走 rag resolution；promptguard 不應為了 injection 判斷額外讀取 source / rag
 
 ## Use Cases In This Module
 - `ConsultUseCase`
@@ -278,6 +284,29 @@ Gatekeeper -> ConsultUseCase
   -> ai client analyze
   -> output render
 ```
+
+## PromptGuard Prompt Assembly Boundary
+第一版 promptguard integration 不應重用整條 main consult prompt assembly。builder 應提供 dedicated guard prompt assembly path，讓 promptguard service 可在需要 LLM guard 時取得專用 prompt。
+
+最小必要輸入應以 guard context 為主，例如：
+- `appId`
+- `builderId`
+- `builderCode`
+- `builderName`
+- `ConsultModeProfile`
+- analysis summary（若此 builder 需要最小 analysis hint）
+- `rawUserText`
+
+規則：
+- builder 在 promptguard path 只負責組出 deterministic guard prompt，不直接做 allow/block 決策。
+- 第一版 promptguard path 不應載入或展開：
+  - source prompts
+  - rag contents
+  - attachments
+  - full main consult instructions
+  - `[SUBJECT_PROFILE]` 主分析內容
+- promptguard path 應只搬移 prompt injection / override 判定所需的 guard policy，不應把 main consult 的回覆風格、附件失敗說明、輸出格式要求整段搬進來。
+- main consult prompt 內現有的 prompt-injection clauses 在新路徑穩定前仍可保留，作為第二道保險；dedicated guard prompt 才是未來主要承接者。
 
 ## Prompt Assembly
 第一版目標與 Java 一致，並加上 app-aware structured profile/context block：
@@ -400,3 +429,4 @@ SaveGraph 輸入
 - 若 LinkChat 需要用自己的 key system 做欄位/value 級別的語意組裝，應在 LinkChat strategy 內完成；default strategy 與 shared consult skeleton 不受影響
 - rag 只處理已被選入的 source 補充資料
 - text-only profile request 仍屬於 profile mode，不屬於 generic consult
+- promptguard 第一版只先掛在這條 profile astrology 主流程；builder 在這條線上只提供 dedicated guard prompt assembly，不擴成完整第二條 consult orchestration

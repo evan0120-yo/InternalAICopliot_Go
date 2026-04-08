@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"runtime/debug"
@@ -12,6 +13,7 @@ import (
 	"com.citrus.internalaicopilot/internal/grpcapi"
 	"com.citrus.internalaicopilot/internal/infra"
 	"com.citrus.internalaicopilot/internal/output"
+	"com.citrus.internalaicopilot/internal/promptguard"
 	"com.citrus.internalaicopilot/internal/rag"
 
 	"google.golang.org/grpc"
@@ -56,7 +58,58 @@ func New(cfg infra.Config) (*App, error) {
 	builderHandler := builder.NewAdminHandler(builderGraphUseCase, builderTemplateUseCase)
 
 	gatekeeperGuardService := gatekeeper.NewGuardService(cfg, store)
-	gatekeeperUseCase := gatekeeper.NewUseCase(gatekeeperGuardService, builderQueryService, builderConsultUseCase)
+	promptGuardConfig := promptguard.LoadConfigFromEnv()
+	promptGuardService := promptguard.NewService(
+		promptGuardConfig,
+		promptguard.WithGuardPromptAssembler(func(ctx context.Context, command promptguard.Command) (promptguard.GuardPrompt, error) {
+			result, err := builderAssembleService.AssemblePromptGuard(ctx, command.BuilderConfig, command.AppID, command.RawUserText)
+			if err != nil {
+				return promptguard.GuardPrompt{}, err
+			}
+			return promptguard.GuardPrompt{
+				Instructions:    result.Instructions,
+				UserMessageText: result.UserMessageText,
+			}, nil
+		}),
+		promptguard.WithCloudLLMFunc(func(ctx context.Context, request promptguard.GuardLLMRequest) (promptguard.GuardLLMResponse, error) {
+			result, err := aiUseCase.AnalyzeGuard(ctx, aiclient.GuardAnalyzeCommand{
+				Route:           aiclient.GuardAnalyzeRouteCloud,
+				Model:           request.Model,
+				BaseURL:         request.BaseURL,
+				APIKey:          request.APIKey,
+				Instructions:    request.Instructions,
+				UserMessageText: request.UserMessageText,
+			})
+			if err != nil {
+				return promptguard.GuardLLMResponse{}, err
+			}
+			return promptguard.GuardLLMResponse{
+				Status:    result.Status,
+				StatusAns: result.StatusAns,
+				Reason:    result.Reason,
+			}, nil
+		}),
+		promptguard.WithLocalLLMFunc(func(ctx context.Context, request promptguard.GuardLLMRequest) (promptguard.GuardLLMResponse, error) {
+			result, err := aiUseCase.AnalyzeGuard(ctx, aiclient.GuardAnalyzeCommand{
+				Route:           aiclient.GuardAnalyzeRouteLocal,
+				Model:           request.Model,
+				BaseURL:         request.BaseURL,
+				APIKey:          request.APIKey,
+				Instructions:    request.Instructions,
+				UserMessageText: request.UserMessageText,
+			})
+			if err != nil {
+				return promptguard.GuardLLMResponse{}, err
+			}
+			return promptguard.GuardLLMResponse{
+				Status:    result.Status,
+				StatusAns: result.StatusAns,
+				Reason:    result.Reason,
+			}, nil
+		}),
+	)
+	promptGuardUseCase := promptguard.NewEvaluateUseCase(promptGuardService)
+	gatekeeperUseCase := gatekeeper.NewUseCase(gatekeeperGuardService, promptGuardUseCase, builderQueryService, builderConsultUseCase)
 	gatekeeperHandler := gatekeeper.NewHandler(gatekeeperUseCase)
 
 	mux := http.NewServeMux()

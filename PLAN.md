@@ -197,7 +197,7 @@ AI_DEFAULT_MODE
          └─ gemma
 ```
 
-planned startup env：
+startup env：
 - `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE`
 - `INTERNAL_AI_COPILOT_AI_MOCK_MODE`
 - `INTERNAL_AI_COPILOT_AI_PROVIDER`
@@ -212,6 +212,71 @@ current follow-up：
 - internal React 測試頁不再傳 `mode`
 - 對該測試頁來說，preview mode 的 single source of truth 應回到 backend 啟動設定
 - `/api/profile-consult` 的 request-level `mode` 仍可保留給 Postman、manual debug、或其他非 UI override 路徑使用
+
+### Scenario group: promptguard integration
+
+第一版 promptguard 先只接到星座 profile 主流程，不要求 generic consult 一起接上。
+
+整體串接點：
+
+```text
+gatekeeper usecase
+│
+├─ 先做原本 request validation
+│
+├─ promptguard usecase
+│  │
+│  ├─ text scoring
+│  │  ├─ block -> 直接回 block result
+│  │  ├─ allow -> 直接放行
+│  │  └─ needs_llm
+│  │
+│  └─ needs_llm
+│     ├─ builder 組 dedicated guard prompt
+│     ├─ aiclient 打 guard model
+│     └─ parse guard json
+│
+└─ guard 通過
+   -> builder consult main flow
+```
+
+規則：
+- `promptguard` 應保留獨立 module，不直接把整段邏輯寫死在 `gatekeeper service`
+- `gatekeeper usecase` 才是決定「先 guard，再進主流程」的入口編排點
+- 第二層 `builder + aiclient` orchestration 應由 `promptguard service` 自己負責，不回流給 `gatekeeper`
+- 第一版 text scoring 仍固定回 `needs_llm`
+
+promptguard 第二層 builder 參與方式：
+
+```text
+builder guard prompt
+├─ raw user text
+├─ builder identity
+├─ app identity
+├─ consult mode
+└─ optional analysis type summary
+```
+
+第一版不應帶：
+- source prompts
+- rag contents
+- attachments
+- main consult 的完整 instructions
+
+guard LLM return contract 第一版建議：
+
+```json
+{
+  "status": true,
+  "statusAns": "SAFE",
+  "reason": "internal guard note"
+}
+```
+
+block handling：
+- `status=true` -> allow，繼續主流程
+- `status=false` -> block，回正常 business response
+- provider / parser / schema failure -> system error
 
 ### Scenario group: LinkChat profile-analysis integration
 
@@ -702,6 +767,7 @@ Go/
 └── internal/
     ├── app/
     ├── gatekeeper/
+    ├── promptguard/
     ├── grpcapi/
     ├── builder/
     ├── rag/
@@ -743,6 +809,7 @@ Handler → UseCase → Service → Repository
                     │    │  structured consult validation              │
                     │    │  client IP resolve                          │
                     │    │  optional appId pass-through                │
+                    │    │  promptguard usecase dispatch               │
                     │                                                 │
   gRPC request ───→ │  grpcapi (gRPC transport adapter)               │
                     │    │  protobuf mapping                          │
@@ -756,6 +823,7 @@ Handler → UseCase → Service → Repository
                     │                                                 │
                     │  builder                                        │
                     │    ├── consult orchestration（主編排）           │
+                    │    ├── dedicated guard prompt assembly           │
                     │    ├── source / template domain                 │
                     │    ├── graph save / load                        │
                     │    ├── template CRUD                            │
@@ -772,6 +840,11 @@ Handler → UseCase → Service → Repository
                     │    │   mode dispatch    └── structured output   │
                     │    └── 未來 vector/          parse              │
                     │       external 擴充                             │
+                    │                                                 │
+                    │  promptguard                                    │
+                    │    ├── text scoring                             │
+                    │    ├── guard decision                           │
+                    │    └── guard llm orchestration                  │
                     └────────────────────────┬────────────────────────┘
                                             │
                                             ▼
@@ -809,11 +882,14 @@ Handler → UseCase → Service → Repository
 ### 模組間呼叫方向
 
 ```text
-gatekeeper ──→ builder ──→ rag
-    │              │
-    │              ├──→ aiclient
-    │              │
-    │              └──→ output
+gatekeeper ──→ promptguard ──→ builder
+    │               │             │
+    │               │             ├──→ aiclient
+    │               │             └──→ rag
+    │               │
+    │               └────────────→ aiclient
+    │
+    └──────────────→ builder ───→ output
     │
 grpcapi ───→ gatekeeper
     │
