@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"mime"
 	"net/http"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"com.citrus.internalaicopilot/internal/infra"
@@ -55,7 +57,7 @@ func newAnalyzeServiceWithProviders(config infra.Config, providers map[infra.AIP
 }
 
 // Analyze runs the configured AI strategy.
-func (s *AnalyzeService) Analyze(ctx context.Context, model, text, instructions, promptBodyPreview string, attachments []infra.Attachment, mode infra.AIExecutionMode) (infra.ConsultBusinessResponse, error) {
+func (s *AnalyzeService) Analyze(ctx context.Context, model, text, instructions, promptBodyPreview string, attachments []infra.Attachment, mode infra.AIExecutionMode) (response infra.ConsultBusinessResponse, err error) {
 	request := analyzeRequest{
 		Model:             model,
 		UserText:          text,
@@ -64,7 +66,22 @@ func (s *AnalyzeService) Analyze(ctx context.Context, model, text, instructions,
 		Attachments:       attachments,
 		Mode:              mode,
 	}
-	switch s.resolveAnalyzeMode(request.Mode) {
+	resolvedMode := s.resolveAnalyzeMode(request.Mode)
+	executionRoute := s.describeExecutionRoute(resolvedMode)
+	builderCode := extractBuilderCode(request.Instructions)
+	startedAt := time.Now()
+
+	log.Printf("ai analyze started mode=%s route=%s model=%s attachments=%d builderCode=%s", resolvedMode, executionRoute, strings.TrimSpace(request.Model), len(request.Attachments), builderCode)
+	defer func() {
+		durationMs := time.Since(startedAt).Milliseconds()
+		if err != nil {
+			log.Printf("ai analyze failed mode=%s route=%s model=%s attachments=%d builderCode=%s duration_ms=%d err=%v", resolvedMode, executionRoute, strings.TrimSpace(request.Model), len(request.Attachments), builderCode, durationMs, err)
+			return
+		}
+		log.Printf("ai analyze completed mode=%s route=%s model=%s attachments=%d builderCode=%s status=%t preview=%t duration_ms=%d", resolvedMode, executionRoute, strings.TrimSpace(request.Model), len(request.Attachments), builderCode, response.Status, response.Preview, durationMs)
+	}()
+
+	switch resolvedMode {
 	case infra.AIExecutionModePreviewFull:
 		return s.previewAnalyze(request)
 	case infra.AIExecutionModePreviewPromptBodyOnly:
@@ -79,6 +96,20 @@ func (s *AnalyzeService) Analyze(ctx context.Context, model, text, instructions,
 		return infra.ConsultBusinessResponse{}, err
 	}
 	return provider.Analyze(ctx, request)
+}
+
+func (s *AnalyzeService) describeExecutionRoute(mode infra.AIExecutionMode) string {
+	switch mode {
+	case infra.AIExecutionModePreviewFull, infra.AIExecutionModePreviewPromptBodyOnly:
+		return "preview"
+	case infra.AIExecutionModeLive:
+		if s.config.AIMockMode {
+			return "mock"
+		}
+		return string(s.config.ResolvedAIProvider())
+	default:
+		return "unknown"
+	}
 }
 
 func (s *AnalyzeService) liveProvider() (liveAnalyzeProvider, error) {

@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+	"time"
 
 	"com.citrus.internalaicopilot/internal/aiclient"
 	"com.citrus.internalaicopilot/internal/builder"
@@ -63,7 +64,7 @@ func New(cfg infra.Config) (*App, error) {
 	builderHandler.Register(mux)
 
 	return &App{
-		handler:           withPanicRecovery(withCORS(mux, cfg.CORSAllowedOrigins)),
+		handler:           withRequestLogging(withPanicRecovery(withCORS(mux, cfg.CORSAllowedOrigins))),
 		store:             store,
 		gatekeeperUseCase: gatekeeperUseCase,
 	}, nil
@@ -102,6 +103,18 @@ func withPanicRecovery(next http.Handler) http.Handler {
 	})
 }
 
+func withRequestLogging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		startedAt := time.Now()
+		log.Printf("http request started method=%s path=%s remote_addr=%s origin=%q", r.Method, r.URL.Path, r.RemoteAddr, r.Header.Get("Origin"))
+
+		recorder := &loggingResponseWriter{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+
+		log.Printf("http request completed method=%s path=%s status=%d bytes=%d duration_ms=%d", r.Method, r.URL.Path, recorder.status(), recorder.bytesWritten, time.Since(startedAt).Milliseconds())
+	})
+}
+
 func withCORS(next http.Handler, allowedOrigins []string) http.Handler {
 	if len(allowedOrigins) == 0 {
 		allowedOrigins = []string{"http://localhost:3000", "http://127.0.0.1:3000"}
@@ -130,4 +143,31 @@ func resolveAllowedOrigin(origin string, allowedOrigins []string) (string, bool)
 		}
 	}
 	return "", false
+}
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	statusCode   int
+	bytesWritten int
+}
+
+func (w *loggingResponseWriter) WriteHeader(statusCode int) {
+	w.statusCode = statusCode
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (w *loggingResponseWriter) Write(body []byte) (int, error) {
+	if w.statusCode == 0 {
+		w.statusCode = http.StatusOK
+	}
+	written, err := w.ResponseWriter.Write(body)
+	w.bytesWritten += written
+	return written, err
+}
+
+func (w *loggingResponseWriter) status() int {
+	if w.statusCode == 0 {
+		return http.StatusOK
+	}
+	return w.statusCode
 }
