@@ -25,7 +25,8 @@ AI_MOCK_MODE    = false
 AI_PROVIDER     = openai
 ```
 
-- 如果沿用同一個 PowerShell 視窗，`$env:` 變數會保留。切模式時，建議整段重貼，不要只改一行。
+- 下方啟動指令預設是給 `cmd.exe` 用的。
+- 如果沿用同一個 `cmd.exe` 視窗，`set` 過的環境變數會保留。切模式時，建議整段重貼，不要只改一行。
 
 ## 常用環境變數
 
@@ -46,128 +47,69 @@ AI_PROVIDER     = openai
 - `INTERNAL_AI_COPILOT_GEMMA_BASE_URL`
 - `INTERNAL_AI_COPILOT_GEMMA_MODEL`
 
-## PowerShell 啟動指令
+## cmd.exe 啟動指令
+
+以下指令可直接貼到 Windows 命令提示字元 `cmd.exe`。
+全部都是單行版本。
 
 ### 1. 預設啟動
 
-```powershell
-Set-Location "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go"
-Remove-Item Env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE -ErrorAction SilentlyContinue
-Remove-Item Env:INTERNAL_AI_COPILOT_AI_MOCK_MODE -ErrorAction SilentlyContinue
-Remove-Item Env:INTERNAL_AI_COPILOT_AI_PROVIDER -ErrorAction SilentlyContinue
-Remove-Item Env:INTERNAL_AI_COPILOT_AI_MODEL -ErrorAction SilentlyContinue
-Remove-Item Env:INTERNAL_AI_COPILOT_GEMMA_MODEL -ErrorAction SilentlyContinue
-Remove-Item Env:OPENAI_BASE_URL -ErrorAction SilentlyContinue
-Remove-Item Env:INTERNAL_AI_COPILOT_GEMMA_BASE_URL -ErrorAction SilentlyContinue
-go run .\cmd\api
+```bat
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=" && set "INTERNAL_AI_COPILOT_AI_MODEL=" && set "INTERNAL_AI_COPILOT_GEMMA_MODEL=" && set "OPENAI_BASE_URL=" && set "INTERNAL_AI_COPILOT_GEMMA_BASE_URL=" && go run .\cmd\api
 ```
 
 ### 2. preview_full
 
-```powershell
-Set-Location "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go"
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="preview_full"
-$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="false"
-$env:INTERNAL_AI_COPILOT_AI_PROVIDER="openai"
-go run .\cmd\api
+```bat
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=preview_full" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=openai" && go run .\cmd\api
 ```
 
 ### 3. preview_prompt_body_only
 
-```powershell
-Set-Location "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go"
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="preview_prompt_body_only"
-$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="false"
-$env:INTERNAL_AI_COPILOT_AI_PROVIDER="openai"
-go run .\cmd\api
+```bat
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=preview_prompt_body_only" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=openai" && go run .\cmd\api
 ```
 
 ### 4. live + mock
 
-```powershell
-Set-Location "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go"
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
-$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="true"
-$env:INTERNAL_AI_COPILOT_AI_PROVIDER="openai"
-go run .\cmd\api
+```bat
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=true" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=openai" && go run .\cmd\api
 ```
 
 ### 5. live + openai，使用預設 model
 
-```powershell
-Set-Location "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go"
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
-$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="false"
-$env:INTERNAL_AI_COPILOT_AI_PROVIDER="openai"
-Remove-Item Env:INTERNAL_AI_COPILOT_AI_MODEL -ErrorAction SilentlyContinue
-Remove-Item Env:OPENAI_BASE_URL -ErrorAction SilentlyContinue
-$env:OPENAI_API_KEY="sk-你的-openai-key"
-go run .\cmd\api
+```bat
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=openai" && set "INTERNAL_AI_COPILOT_AI_MODEL=" && set "OPENAI_BASE_URL=" && set "OPENAI_API_KEY=sk-你的-openai-key" && go run .\cmd\api
 ```
 
 ### 6. live + openai，指定 model
 
-```powershell
-Set-Location "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go"
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
-$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="false"
-$env:INTERNAL_AI_COPILOT_AI_PROVIDER="openai"
-$env:INTERNAL_AI_COPILOT_AI_MODEL="gpt-4.1-mini"
-Remove-Item Env:OPENAI_BASE_URL -ErrorAction SilentlyContinue
-$env:OPENAI_API_KEY="sk-你的-openai-key"
-go run .\cmd\api
+```bat
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=openai" && set "INTERNAL_AI_COPILOT_AI_MODEL=gpt-4.1-mini" && set "OPENAI_BASE_URL=" && set "OPENAI_API_KEY=sk-你的-openai-key" && go run .\cmd\api
 ```
 
 ### 7. live + gemma，使用預設 model
 
-```powershell
-Set-Location "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go"
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
-$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="false"
-$env:INTERNAL_AI_COPILOT_AI_PROVIDER="gemma"
-Remove-Item Env:INTERNAL_AI_COPILOT_GEMMA_MODEL -ErrorAction SilentlyContinue
-Remove-Item Env:INTERNAL_AI_COPILOT_GEMMA_BASE_URL -ErrorAction SilentlyContinue
-$env:INTERNAL_AI_COPILOT_GEMMA_API_KEY="你的-gemma-api-key"
-go run .\cmd\api
+```bat
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=gemma" && set "INTERNAL_AI_COPILOT_GEMMA_MODEL=" && set "INTERNAL_AI_COPILOT_GEMMA_BASE_URL=" && set "INTERNAL_AI_COPILOT_GEMMA_API_KEY=你的-gemma-api-key" && go run .\cmd\api
 ```
 
 ### 8. live + gemma，指定 model
 
-```powershell
-Set-Location "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go"
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
-$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="false"
-$env:INTERNAL_AI_COPILOT_AI_PROVIDER="gemma"
-$env:INTERNAL_AI_COPILOT_GEMMA_MODEL="gemma-4-31b-it"
-Remove-Item Env:INTERNAL_AI_COPILOT_GEMMA_BASE_URL -ErrorAction SilentlyContinue
-$env:INTERNAL_AI_COPILOT_GEMMA_API_KEY="你的-gemma-api-key"
-go run .\cmd\api
+```bat
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=gemma" && set "INTERNAL_AI_COPILOT_GEMMA_MODEL=gemma-4-31b-it" && set "INTERNAL_AI_COPILOT_GEMMA_BASE_URL=" && set "INTERNAL_AI_COPILOT_GEMMA_API_KEY=你的-gemma-api-key" && go run .\cmd\api
 ```
 
 ### 9. live + openai，自訂 base URL
 
-```powershell
-Set-Location "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go"
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
-$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="false"
-$env:INTERNAL_AI_COPILOT_AI_PROVIDER="openai"
-$env:INTERNAL_AI_COPILOT_AI_MODEL="gpt-4o"
-$env:OPENAI_BASE_URL="https://你的-openai-compatible-endpoint/v1"
-$env:OPENAI_API_KEY="sk-你的-openai-key"
-go run .\cmd\api
+```bat
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=openai" && set "INTERNAL_AI_COPILOT_AI_MODEL=gpt-4o" && set "OPENAI_BASE_URL=https://你的-openai-compatible-endpoint/v1" && set "OPENAI_API_KEY=sk-你的-openai-key" && go run .\cmd\api
 ```
 
 ### 10. live + gemma，自訂 base URL
 
-```powershell
-Set-Location "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go"
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
-$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="false"
-$env:INTERNAL_AI_COPILOT_AI_PROVIDER="gemma"
-$env:INTERNAL_AI_COPILOT_GEMMA_MODEL="gemma-4-31b-it"
-$env:INTERNAL_AI_COPILOT_GEMMA_BASE_URL="https://generativelanguage.googleapis.com/v1beta"
-$env:INTERNAL_AI_COPILOT_GEMMA_API_KEY="你的-gemma-api-key"
-go run .\cmd\api
+```bat
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=gemma" && set "INTERNAL_AI_COPILOT_GEMMA_MODEL=gemma-4-31b-it" && set "INTERNAL_AI_COPILOT_GEMMA_BASE_URL=https://generativelanguage.googleapis.com/v1beta" && set "INTERNAL_AI_COPILOT_GEMMA_API_KEY=你的-gemma-api-key" && go run .\cmd\api
 ```
 
 ## 補充
