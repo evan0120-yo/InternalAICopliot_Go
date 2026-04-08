@@ -20,6 +20,7 @@
 - HTTP 和 gRPC 共用同一組 gatekeeper / builder / aiclient / output 邊界，不分兩套業務流程。
 - generic consult 和 profile consult 被明確拆成兩個 mode，不讓 builder 自己猜。
 - AI 執行邏輯已拆成 `preview / mock / live`，`live` 再切 `openai / gemma` provider。
+- repo 內另外長出一個獨立的 `promptguard` module，準備把 prompt injection guard 先拆成自己的 decision flow，但目前還沒接進 runtime 主流程。
 - LinkChat 的 prompt 差異不塞在 transport，而是塞在 builder 的 app-aware strategy。
 - local 開發刻意保留 Firestore emulator + reset/seed on start。
 
@@ -228,6 +229,33 @@ Analyze
 > 注意：request-level mode override 目前只有 HTTP `/api/profile-consult` 真的接上。一般 consult 和 gRPC generic consult 沒有這條 override。
 
 > 注意：mock analyze 會想從 instructions 裡抓 `builderCode=...` 決定特殊模板，但目前正式 prompt 組裝沒有把這個 marker 放進去，所以 runtime 通常只會走 general mock fallback。
+
+### PromptGuard 目前的位置
+
+repo 裡現在已經有一個獨立的 `promptguard` module，但它還是獨立件，沒有接進一般 consult、profile consult 或 LinkChat 星座主流程。
+
+```text
+promptguard evaluate
+   │
+   ├─ ScoreText(rawUserText)
+   │  └─ 第一版固定回 needs_llm
+   │     score=50
+   │
+   └─ EvaluateWithLLM(rawUserText)
+      ├─ mode=cloud -> placeholder evaluation
+      └─ mode=local -> placeholder evaluation
+```
+
+它現在比較像把模組邊界先切好：
+- 有自己的 usecase / service
+- 有自己的 env
+- 有 `allow / block / needs_llm` decision contract
+
+但這版還沒有兩件事：
+- 還沒真的打外部 Gemma 或 local endpoint
+- `app.New()` / gatekeeper / builder / aiclient 都還沒引用它
+
+> 注意：這代表現在系統實際仍然只靠 `aiclient.mockAnalyze` 裡的簡單 keyword heuristic 做 mock path 的 prompt injection 判斷；`promptguard` 本身不會在 runtime 生效。
 
 ## F. Output 與檔案回傳
 
@@ -724,6 +752,49 @@ preview / mock / live 都沿用這個 shape。
 | Gemma 空 output | `GEMMA_EMPTY_OUTPUT` |
 | Gemma upload 失敗 / 被拒 | `GEMMA_ATTACHMENT_UPLOAD_FAILED` / `GEMMA_ATTACHMENT_UPLOAD_REJECTED` |
 | provider 未註冊 | `AI_PROVIDER_UNSUPPORTED` |
+
+### PromptGuard module 現況
+
+關鍵檔案：
+- internal/promptguard/usecase.go (line 3)
+- internal/promptguard/service.go (line 5)
+- internal/promptguard/config.go (line 15)
+- internal/app/app.go (line 27)
+
+目前 `promptguard` 的實際 call chain 只有 module 內部：
+
+```text
+EvaluateUseCase.Evaluate
+  -> Service.Evaluate
+     -> Service.ScoreText
+        -> scoreTextDefault
+     -> decision=needs_llm
+        -> Service.EvaluateWithLLM
+           -> resolvedMode()==local ? local placeholder : cloud placeholder
+```
+
+第一版 placeholder 真相：
+
+| 步驟 | 目前行為 |
+| --- | --- |
+| `ScoreText` | 固定回 `decision=needs_llm`、`score=50`、`reason=TEXT_RULE_PLACEHOLDER`、`source=text_rule` |
+| `EvaluateWithLLM cloud` | 固定回 `decision=needs_llm`、`reason=LLM_GUARD_CLOUD_PLACEHOLDER` |
+| `EvaluateWithLLM local` | 固定回 `decision=needs_llm`、`reason=LLM_GUARD_LOCAL_PLACEHOLDER` |
+| `mode` 缺失或非法 | fallback 到 `cloud` |
+
+目前專用 env：
+
+| 設定 | env |
+| --- | --- |
+| promptguard mode | `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE` |
+| promptguard model | `INTERNAL_AI_COPILOT_PROMPTGUARD_MODEL` |
+| promptguard base URL | `INTERNAL_AI_COPILOT_PROMPTGUARD_BASE_URL` |
+| promptguard API key | `INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY` |
+
+目前最重要的 current truth：
+- 它已經是獨立 module，不再只是規格文件。
+- 但它還沒有在 `app.New()` 被建起來，也沒有被注入 gatekeeper、builder、aiclient。
+- 所以它現在不影響任何 consult request，也不會真的攔 prompt injection。
 
 ## F. Output 與 transport 回應
 
