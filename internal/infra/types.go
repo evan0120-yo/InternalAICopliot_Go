@@ -19,6 +19,14 @@ const (
 	AIExecutionModeLive                  AIExecutionMode = "live"
 )
 
+// AIProvider controls which live AI provider handles requests.
+type AIProvider string
+
+const (
+	AIProviderOpenAI AIProvider = "openai"
+	AIProviderGemma  AIProvider = "gemma"
+)
+
 // ParseOutputFormat validates frontend output format input.
 func ParseOutputFormat(raw string) (OutputFormat, bool) {
 	switch OutputFormat(strings.ToLower(strings.TrimSpace(raw))) {
@@ -45,6 +53,18 @@ func ParseAIExecutionMode(raw string) (AIExecutionMode, bool) {
 	}
 }
 
+// ParseAIProvider validates configured live provider input.
+func ParseAIProvider(raw string) (AIProvider, bool) {
+	switch AIProvider(strings.ToLower(strings.TrimSpace(raw))) {
+	case AIProviderOpenAI:
+		return AIProviderOpenAI, true
+	case AIProviderGemma:
+		return AIProviderGemma, true
+	default:
+		return "", false
+	}
+}
+
 // ConsultFilePayload is the optional rendered file payload.
 type ConsultFilePayload struct {
 	FileName    string `json:"fileName"`
@@ -54,11 +74,12 @@ type ConsultFilePayload struct {
 
 // ConsultBusinessResponse matches the frontend contract.
 type ConsultBusinessResponse struct {
-	Status    bool                `json:"status"`
-	StatusAns string              `json:"statusAns"`
-	Response  string              `json:"response"`
-	File      *ConsultFilePayload `json:"file,omitempty"`
-	Preview   bool                `json:"-"`
+	Status         bool                `json:"status"`
+	StatusAns      string              `json:"statusAns"`
+	Response       string              `json:"response"`
+	ResponseDetail string              `json:"responseDetail"`
+	File           *ConsultFilePayload `json:"file,omitempty"`
+	Preview        bool                `json:"-"`
 }
 
 // Attachment represents a single consult upload.

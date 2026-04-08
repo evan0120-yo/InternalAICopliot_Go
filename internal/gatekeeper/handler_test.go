@@ -303,6 +303,7 @@ func newTestHandlerWithSeed(t *testing.T, seed infra.StoreSeedData) http.Handler
 		ConsultMaxFiles:     10,
 		ConsultMaxFileSize:  20 * 1024 * 1024,
 		ConsultMaxTotalSize: 50 * 1024 * 1024,
+		AIMockMode:          true,
 	}
 
 	builderQuery := builder.NewQueryService(store)

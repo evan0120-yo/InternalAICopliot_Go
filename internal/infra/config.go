@@ -23,9 +23,14 @@ type Config struct {
 	OpenAITimeout         time.Duration
 	AIPreviewMode         bool
 	AIDefaultMode         AIExecutionMode
+	AIMockMode            bool
+	AIProvider            AIProvider
 	OpenAIAPIKey          string
 	OpenAIBaseURL         string
 	OpenAIModel           string
+	GemmaAPIKey           string
+	GemmaBaseURL          string
+	GemmaModel            string
 }
 
 // LoadConfigFromEnv reads runtime config with dev-safe defaults.
@@ -45,9 +50,38 @@ func LoadConfigFromEnv() Config {
 		OpenAITimeout:         getenvDurationCompat("INTERNAL_AI_COPILOT_OPENAI_TIMEOUT", "REWARDBRIDGE_OPENAI_TIMEOUT", 120*time.Second),
 		AIPreviewMode:         getenvBoolCompat("INTERNAL_AI_COPILOT_AI_PREVIEW_MODE", "REWARDBRIDGE_AI_PREVIEW_MODE", false),
 		AIDefaultMode:         getenvAIExecutionModeCompat("INTERNAL_AI_COPILOT_AI_DEFAULT_MODE", "REWARDBRIDGE_AI_DEFAULT_MODE", ""),
+		AIMockMode:            getenvBoolCompat("INTERNAL_AI_COPILOT_AI_MOCK_MODE", "REWARDBRIDGE_AI_MOCK_MODE", false),
+		AIProvider:            getenvAIProviderCompat("INTERNAL_AI_COPILOT_AI_PROVIDER", "REWARDBRIDGE_AI_PROVIDER", AIProviderOpenAI),
 		OpenAIAPIKey:          os.Getenv("OPENAI_API_KEY"),
 		OpenAIBaseURL:         getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
 		OpenAIModel:           getenvCompat("INTERNAL_AI_COPILOT_AI_MODEL", "REWARDBRIDGE_AI_MODEL", "gpt-4o"),
+		GemmaAPIKey:           getenvCompat("INTERNAL_AI_COPILOT_GEMMA_API_KEY", "REWARDBRIDGE_GEMMA_API_KEY", getenv("GEMINI_API_KEY", os.Getenv("GOOGLE_API_KEY"))),
+		GemmaBaseURL:          getenvCompat("INTERNAL_AI_COPILOT_GEMMA_BASE_URL", "REWARDBRIDGE_GEMMA_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
+		GemmaModel:            getenvCompat("INTERNAL_AI_COPILOT_GEMMA_MODEL", "REWARDBRIDGE_GEMMA_MODEL", "gemma-4-31b-it"),
+	}
+}
+
+// ResolvedAIProvider returns the normalized configured live provider.
+func (c Config) ResolvedAIProvider() AIProvider {
+	if parsed, ok := ParseAIProvider(string(c.AIProvider)); ok {
+		return parsed
+	}
+	return AIProviderOpenAI
+}
+
+// ResolvedAIModel returns the default model for the configured provider.
+func (c Config) ResolvedAIModel() string {
+	switch c.ResolvedAIProvider() {
+	case AIProviderGemma:
+		if value := strings.TrimSpace(c.GemmaModel); value != "" {
+			return value
+		}
+		return "gemma-4-31b-it"
+	default:
+		if value := strings.TrimSpace(c.OpenAIModel); value != "" {
+			return value
+		}
+		return "gpt-4o"
 	}
 }
 
@@ -198,6 +232,21 @@ func getenvAIExecutionModeCompat(primaryKey, legacyKey string, fallback AIExecut
 	}
 	if value := os.Getenv(legacyKey); value != "" {
 		if parsed, ok := ParseAIExecutionMode(value); ok {
+			return parsed
+		}
+	}
+	return fallback
+}
+
+func getenvAIProviderCompat(primaryKey, legacyKey string, fallback AIProvider) AIProvider {
+	if value := os.Getenv(primaryKey); value != "" {
+		if parsed, ok := ParseAIProvider(value); ok {
+			return parsed
+		}
+		return fallback
+	}
+	if value := os.Getenv(legacyKey); value != "" {
+		if parsed, ok := ParseAIProvider(value); ok {
 			return parsed
 		}
 	}

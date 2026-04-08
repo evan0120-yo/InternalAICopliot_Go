@@ -49,7 +49,7 @@ func New(cfg infra.Config) (*App, error) {
 	builderAssembleService := builder.NewAssembleService(store)
 	builderGraphService := builder.NewGraphService(store, builderQueryService)
 	builderTemplateService := builder.NewTemplateService(store, builderQueryService)
-	builderConsultUseCase := builder.NewConsultUseCase(store, ragUseCase, aiUseCase, outputUseCase, builderAssembleService, cfg.OpenAIModel)
+	builderConsultUseCase := builder.NewConsultUseCase(store, ragUseCase, aiUseCase, outputUseCase, builderAssembleService, cfg.ResolvedAIModel())
 	builderGraphUseCase := builder.NewGraphUseCase(builderGraphService)
 	builderTemplateUseCase := builder.NewTemplateUseCase(builderTemplateService)
 	builderHandler := builder.NewAdminHandler(builderGraphUseCase, builderTemplateUseCase)

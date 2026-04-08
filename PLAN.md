@@ -141,9 +141,11 @@ consult request 進入
   回傳純文字結果
 ```
 
-### Scenario group: AI preview output modes
+### Scenario group: AI execution mode and provider selection
 
-目前 preview 的輸出策略已拆成 3 種 mode：
+目前已確認的方向是把 execution mode、mock mode、provider selection 分開，而不是混成單一條件。
+
+execution mode 維持 3 種：
 
 ```text
 preview_full
@@ -157,7 +159,9 @@ preview_prompt_body_only
   -> 目的是讓操作者可直接 copy 這段內容到外部 web GPT 手動調 prompt
 
 live
-  -> 真正呼叫 OpenAI
+  -> 進入 live path
+  -> 若 mock mode 開啟，回 mock analyze
+  -> 若 mock mode 關閉，依 provider 選 OpenAI 或 Gemma
   -> 回 business response 的最終答案
 ```
 
@@ -173,6 +177,36 @@ live
   - `[USER_MESSAGE]`
   - JSON response contract 說明文字
 - frontend 不應自行從完整 preview 字串中裁切這些區塊；應由 backend 直接提供正確 mode 的 `response`
+- mock mode 需保留，但啟動條件應改為顯式環境變數，不再依賴 provider credential 缺值
+- provider selection 應從 execution mode 拆開，至少支援：
+  - `openai`
+  - `gemma`
+
+目標決策樹：
+
+```text
+AI_DEFAULT_MODE
+├─ preview_full
+├─ preview_prompt_body_only
+└─ live
+   ├─ AI_MOCK_MODE=true
+   │  └─ mock analyze
+   └─ AI_MOCK_MODE=false
+      └─ AI_PROVIDER
+         ├─ openai
+         └─ gemma
+```
+
+planned startup env：
+- `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE`
+- `INTERNAL_AI_COPILOT_AI_MOCK_MODE`
+- `INTERNAL_AI_COPILOT_AI_PROVIDER`
+
+設計意圖：
+- 操作者可保留多組啟動指令，依用途切換 preview / mock / openai / gemma
+- backend 啟動設定維持 internal 測試頁的 single source of truth
+- request-level `mode` 仍可保留給 manual debug / Postman 的覆蓋路徑
+- provider-specific HTTP payload、附件契約與錯誤 mapping 應封裝在 aiclient provider 內部，不外漏到 builder / gatekeeper
 
 current follow-up：
 - internal React 測試頁不再傳 `mode`

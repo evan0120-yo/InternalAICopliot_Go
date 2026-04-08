@@ -110,12 +110,101 @@ Go 版 local 開發必須支援一種與 Java `create-drop + initData` 等價的
 - `INTERNAL_AI_COPILOT_FIRESTORE_EMULATOR_HOST`
 - `INTERNAL_AI_COPILOT_STORE_RESET_ON_START`
 - `INTERNAL_AI_COPILOT_AI_PREVIEW_MODE`
+- `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE`
+- `INTERNAL_AI_COPILOT_AI_MOCK_MODE`
+- `INTERNAL_AI_COPILOT_AI_PROVIDER`
 
 AI preview mode 使用原則：
-- 開啟時，aiclient 不呼叫 GPT / OpenAI
+- 開啟時，aiclient 不呼叫任何 live AI provider
 - 直接回傳原本準備送給 AI 的完整 preview 內容
 - 用途是 local/dev 檢查 prompt、user message 與附件摘要
 - 不應在未受保護的 production 環境長期啟用
+
+### AI startup switching rule
+以下規則已落地到 code 與測試。
+
+目標：
+- 用 backend 啟動環境變數顯式決定 preview / mock / live
+- 用 backend 啟動環境變數顯式決定 live provider
+- 不再以 provider credential 缺值隱式觸發 mock
+- 讓操作者可以保留多組啟動指令，按用途切換 OpenAI 或 Gemma
+
+目標環境變數：
+- `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE`
+- `INTERNAL_AI_COPILOT_AI_MOCK_MODE`
+- `INTERNAL_AI_COPILOT_AI_PROVIDER`
+
+目標值：
+
+```text
+INTERNAL_AI_COPILOT_AI_DEFAULT_MODE
+├─ preview_full
+├─ preview_prompt_body_only
+└─ live
+
+INTERNAL_AI_COPILOT_AI_MOCK_MODE
+├─ true
+└─ false
+
+INTERNAL_AI_COPILOT_AI_PROVIDER
+├─ openai
+└─ gemma
+```
+
+判斷規則：
+
+```text
+先看 AI_DEFAULT_MODE
+├─ preview_full
+├─ preview_prompt_body_only
+└─ live
+   ├─ AI_MOCK_MODE=true  -> mock analyze
+   └─ AI_MOCK_MODE=false -> 依 AI_PROVIDER 選 live provider
+      ├─ openai
+      └─ gemma
+```
+
+啟動指令應維持 PowerShell 環境變數方式，方便在 IDE / 筆記中保留多組命令。例如：
+
+```powershell
+cd D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go
+$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="preview_full"
+go run .\cmd\api
+```
+
+```powershell
+cd D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go
+$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="preview_prompt_body_only"
+go run .\cmd\api
+```
+
+```powershell
+cd D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go
+$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
+$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="true"
+go run .\cmd\api
+```
+
+```powershell
+cd D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go
+$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
+$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="false"
+$env:INTERNAL_AI_COPILOT_AI_PROVIDER="openai"
+go run .\cmd\api
+```
+
+```powershell
+cd D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go
+$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
+$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="false"
+$env:INTERNAL_AI_COPILOT_AI_PROVIDER="gemma"
+go run .\cmd\api
+```
+
+補充：
+- request-level `mode` 仍可保留給 Postman / manual debug 做 override
+- backend 啟動設定仍是 internal 測試頁與日常開發的 single source of truth
+- PowerShell `$env:` 會留在同一個 shell session，切換命令時應把相關 env 設完整
 
 舊前綴相容：
 - `REWARDBRIDGE_*` 目前仍保留 fallback，相容既有本機與部署設定
@@ -668,15 +757,17 @@ Go/
 - `model.go`
 
 責任：
-- OpenAI Responses API
-- attachment upload
+- preview / mock / live mode selection
+- live provider routing
+- provider-specific attachment upload
 - structured output parse
 
 規則：
 - usecase 作為對外入口
-- service 放 API request/response 細節與錯誤 mapping
+- service 放 mode 決策、provider routing、API request/response 細節與錯誤 mapping
 - 不做 prompt assembly
 - 不理解 `analysisPayloads` 與 `subjectProfile` 的業務語意
+- planned 設計中，live provider 至少會有 `openai` 與 `gemma`
 
 ### output
 對應 Java：

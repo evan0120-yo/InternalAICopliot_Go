@@ -14,14 +14,6 @@
   And 應直接回傳 `status=true`、`statusAns=PROMPT_PREVIEW`
   And `response` 應包含完整 AI request preview
 
-- Given `OpenAIAPIKey` 為空
-  When `AnalyzeService.Analyze` 執行
-  Then 應走 mock analyze 流程，不呼叫外部 OpenAI API
-
-- Given `OpenAIAPIKey` 有值
-  When `AnalyzeService.Analyze` 執行
-  Then 應走 OpenAI Responses API 與 Files API 流程
-
 - Given preview mode 開關為 true 且 `OpenAIAPIKey` 有值
   When `AnalyzeService.Analyze` 執行
   Then 仍應優先走 preview mode
@@ -30,7 +22,46 @@
 - Given request 明確指定 `mode=live`
   When `AnalyzeService.Analyze` 執行
   Then 應覆蓋全域 preview 開關
-  And 應回到 mock / OpenAI analyze 流程
+  And 後續應依 `mock mode + provider` 決定 live path
+
+## Scenario Group: Execution Mode And Provider Selection
+- Given `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=preview_full`
+  When `AnalyzeService.Analyze` 執行
+  Then 不應呼叫外部 AI provider
+  And 應直接回傳完整 prompt preview
+
+- Given `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=preview_prompt_body_only`
+  When `AnalyzeService.Analyze` 執行
+  Then 不應呼叫外部 AI provider
+  And 應只回 builder 已組裝好的 prompt body
+
+- Given `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live`
+  And `INTERNAL_AI_COPILOT_AI_MOCK_MODE=true`
+  When `AnalyzeService.Analyze` 執行
+  Then 應走 mock analyze
+  And 不應呼叫外部 AI provider
+
+- Given `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live`
+  And `INTERNAL_AI_COPILOT_AI_MOCK_MODE=false`
+  And `INTERNAL_AI_COPILOT_AI_PROVIDER=openai`
+  When `AnalyzeService.Analyze` 執行
+  Then 應走 OpenAI provider live path
+
+- Given `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live`
+  And `INTERNAL_AI_COPILOT_AI_MOCK_MODE=false`
+  And `INTERNAL_AI_COPILOT_AI_PROVIDER=gemma`
+  When `AnalyzeService.Analyze` 執行
+  Then 應走 Gemma provider live path
+
+- Given request 明確指定 `mode=live`
+  When backend 全域預設為 preview family
+  Then 仍應覆蓋全域 preview 設定
+  And 後續應依 `mock mode + provider` 決定 live path
+
+- Given provider credential 缺值
+  When `AnalyzeService.Analyze` 執行
+  Then 不應自動把 credential 缺值視為 mock mode
+  And mock 是否啟用應由顯式設定決定
 
 ## Scenario Group: Mock Analyze
 - Given instructions 中的 `[RAW_USER_TEXT]` 看起來像 prompt injection
@@ -53,9 +84,11 @@
 ```text
 analyze
      │
-     ├─ preview mode？
-     │   ├─ 是 -> 直接回 preview response
-     │   └─ 否
+     ├─ execution mode？
+     │   ├─ preview family -> 直接回 preview
+     │   └─ live
+     │       ├─ mock mode -> 直接回 mock analyze
+     │       └─ provider=openai
      ├─ normalize instructions / user text
      ├─ attachments 存在？
      │   ├─ 是 -> upload Files API
@@ -66,6 +99,19 @@ analyze
      ├─ parse structured JSON
      └─ map OpenAI errors -> business errors
 ```
+
+## Scenario Group: Gemma Provider Analyze
+- Given analyze mode 為 `live`
+  And `INTERNAL_AI_COPILOT_AI_MOCK_MODE=false`
+  And provider 為 `gemma`
+  When analyze 執行
+  Then aiclient 應走 Gemma provider live path
+  And builder / gatekeeper 不需要知道 Gemma request shape
+
+- Given Gemma provider 與 OpenAI provider 的附件契約不同
+  When analyze 執行
+  Then 差異應封裝在 provider 實作內
+  And 不應把 provider-specific 附件假設擴散到 builder
 
 ## Scenario Group: Prompt Preview
 - Given preview mode 開關為 true
@@ -115,6 +161,8 @@ analyze
 - mock mode 是目前本地開發與測試的重要 fallback，不是暫時性 stub
 - preview mode 是 local/dev 觀察 prompt 的正式模式，不是臨時 debug print
 - LinkChat profile-analysis 的 module 組合與理論資料，由 builder 負責組 prompt，aiclient 不應理解其業務語意
+- mock mode 由顯式啟動設定控制，不再由 provider credential 缺值隱式觸發
+- execution mode 與 live provider 分開決策，不混在同一個欄位
 
 ## Scenario Group: Preview Output Variants
 
@@ -152,3 +200,4 @@ analyze
 ## Open Questions
 - 目前沒有獨立測試直接驗證 OpenAI HTTP payload 與上傳流程
 - prompt injection 判斷仍是 keyword heuristic，未來是否要抽成可設定策略尚未定案
+- Gemma provider 目前以 Gemini API `generateContent` + Files upload 實作；若官方 hosted Gemma contract 後續變動，需再同步核對

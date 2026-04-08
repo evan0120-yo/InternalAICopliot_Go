@@ -162,7 +162,10 @@ func TestAnalyzeReturnsPromptBodyOnlyWhenRequested(t *testing.T) {
 }
 
 func TestAnalyzeLiveModeOverridesGlobalPreviewSwitch(t *testing.T) {
-	service := NewAnalyzeService(infra.Config{AIPreviewMode: true})
+	service := NewAnalyzeService(infra.Config{
+		AIPreviewMode: true,
+		AIMockMode:    true,
+	})
 
 	response, err := service.Analyze(
 		context.Background(),

@@ -115,8 +115,8 @@ func TestAppSupportsExternalBuilderListAndConsultFlow(t *testing.T) {
 	if err := json.Unmarshal(buildersBytes, &builders); err != nil {
 		t.Fatalf("Unmarshal builders returned error: %v", err)
 	}
-	if len(builders) != 2 {
-		t.Fatalf("expected 2 builders for linkchat, got %+v", builders)
+	if len(builders) != 3 {
+		t.Fatalf("expected 3 builders for linkchat, got %+v", builders)
 	}
 
 	var body bytes.Buffer
@@ -208,5 +208,6 @@ func newIntegrationTestConfig(t *testing.T) infra.Config {
 		ConsultMaxTotalSize: 50 * 1024 * 1024,
 		FirestoreProjectID:  fmt.Sprintf("internal-ai-copilot-app-test-%d", time.Now().UnixNano()),
 		StoreResetOnStart:   true,
+		AIMockMode:          true,
 	}
 }
