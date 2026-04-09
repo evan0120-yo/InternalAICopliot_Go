@@ -38,12 +38,50 @@ raw user text
 1. 先做 text scoring
 2. 若 text scoring 結果是 `needs_llm`，再進入 LLM guard
 
-第一版 text scoring 的真實文本判讀暫不落地。
-在這版中，text scoring 先固定回：
-- `decision=needs_llm`
-- `source=text_rule`
-- `reason=TEXT_RULE_PLACEHOLDER`
-- `score=50`
+目前 text scoring 已落成第一版 rule-based classifier：
+- 明顯安全 -> `allow`
+- 明顯高風險 -> `block`
+- 灰區 -> `needs_llm`
+
+第二層 LLM guard 仍只在 `needs_llm` 時才觸發。
+
+## First-Layer Text Risk Classifier Domain
+第一層 `text scoring` 的本質不是生成答案，而是對 `raw user text` 做風險分類。
+
+應先把它理解成：
+
+```text
+raw user text
+  -> normalization
+  -> feature matching
+  -> rule categories
+  -> risk scoring
+  -> decision routing
+  -> explainability / match trace
+```
+
+這條線後續真正落地時，至少有 6 個核心概念：
+
+1. `Normalization`
+   - 先把文字整理成穩定可比對的形態
+   - 例如大小寫統一、空白正規化、全半形處理、零寬字元過濾
+2. `Feature Matching`
+   - 從文字中抓出可疑特徵
+   - 例如 keyword、phrase、regex、combo rule
+3. `Rule Categories`
+   - 把命中的規則歸類成風險型別
+   - 例如 `override_attempt`、`prompt_exfiltration`、`role_spoofing`、`safety_bypass`
+4. `Risk Scoring`
+   - 把命中的 feature 轉成可累加的風險分數
+5. `Decision Routing`
+   - 依 score threshold 決定 `allow`、`block`、`needs_llm`
+6. `Explainability / Match Trace`
+   - 除了最終 decision 外，也要能追蹤命中的規則與分類
+
+這表示：
+- 第一層本質上是 text risk classifier，不是回答生成器
+- 它的責任是把「明顯安全 / 明顯危險 / 灰區」先分流
+- 灰區才升級到第二層 Gemma/local guard
 
 ## Layering In This Module
 
@@ -84,7 +122,7 @@ gatekeeper usecase
 - 不自己硬寫最終 guard prompt 字串
 - 不解析 astrology / mbti / profile payload 業務內容
 - 不負責對客最終回答生成
-- 不在第一版內實作完整 keyword / regex / scoring rule engine
+- 不在第一版內實作完整 production-grade 規則覆蓋與調參系統
 - 不在第一版內把完整主流程 source / rag 載進 guard path
 - 不在第一版內重用 main consult 的整份 instructions
 
@@ -108,6 +146,51 @@ Service
 - `Service` 內部分成三個方法
 - 不因為有 text scoring 與 llm guard 兩條路，就拆成兩個 usecase
 - 第二層 builder / aiclient orchestration 應封裝在 `promptguard service` 內，不回流到 `gatekeeper`
+- 不另外拆新 module；第一層規則引擎仍屬於 `promptguard` 內部責任
+
+`ScoreText` 的內部細部架構建議再拆成 pipeline：
+
+```text
+ScoreText(rawUserText)
+  -> normalize(rawUserText)
+  -> match(normalizedText)
+  -> categorize(matches)
+  -> score(matches, categories)
+  -> route(score, matches, categories)
+  -> build evaluation
+```
+
+理由：
+- 不要一邊 match 一邊直接 return allow/block
+- 要先收集訊號，再統一做 score 與 routing
+- 這樣後續比較容易調 threshold、debug false positive、保留 explainability
+
+建議檔案切法：
+
+```text
+internal/promptguard/
+  usecase.go
+  service.go
+  model.go
+  config.go
+  text_normalizer.go
+  feature_matcher.go
+  rule_catalog.go
+  score_engine.go
+  decision_router.go
+```
+
+責任：
+- `text_normalizer.go`
+  - 正規化文字
+- `feature_matcher.go`
+  - 套規則並產生命中 feature
+- `rule_catalog.go`
+  - 集中管理 rule 資料
+- `score_engine.go`
+  - 計算 score 與 matched categories
+- `decision_router.go`
+  - 把 score 映射成 `allow / block / needs_llm`
 
 建議 command 至少包含：
 - `rawUserText`
@@ -138,6 +221,80 @@ source
 - `reason`
 - `source`
 
+目的：
+- 讓 risk scoring 可 debug
+- 讓 false positive / false negative 可追查
+- 讓 threshold 調整有依據
+
+目前第一版已包含：
+- `matchedRules`
+- `matchedCategories`
+
+建議另外保留一層內部分析模型，而不是只剩對外 `Evaluation`：
+
+```text
+TextAnalysis
+├─ rawText
+├─ normalizedText
+├─ matchedRules
+├─ matchedCategories
+├─ score
+├─ decision
+└─ reason
+```
+
+說明：
+- `TextAnalysis` 供內部 normalizer / matcher / scorer / router 串接
+- `Evaluation` 仍是 module 對外統一結果
+- 不要把所有內部 trace 都直接混進外部 contract
+
+第一版 `model.go` 建議至少有以下概念型別：
+
+```text
+Decision
+├─ allow
+├─ block
+└─ needs_llm
+
+Source
+├─ text_rule
+└─ llm_guard
+
+RuleCategory
+├─ override_attempt
+├─ prompt_exfiltration
+├─ role_spoofing
+└─ safety_bypass
+```
+
+說明：
+- `Decision`
+  - 作為整個 module 的最終 routing key，不應在程式中散落裸字串
+- `Source`
+  - 表示這次結果來自第一層 text rule，還是第二層 llm guard
+- `RuleCategory`
+  - 給 matcher、scorer、router、trace 共用
+  - 第一版先收斂，不一開始把 category 拆得過細
+
+建議的資料層次：
+
+```text
+Rule
+  -> RuleMatch
+     -> TextAnalysis
+        -> Evaluation
+```
+
+意義：
+- `Rule`
+  - 靜態規則定義
+- `RuleMatch`
+  - 單次請求的動態命中證據
+- `TextAnalysis`
+  - 第一層 pipeline 的完整中間結果
+- `Evaluation`
+  - module 對外暴露的輕量決策結果
+
 ## Decision Rule
 
 ```text
@@ -161,22 +318,173 @@ promptguard evaluate
 ```
 
 ## First-Version Text Scoring Rule
-這版 text scoring 的目標不是完成真正規則引擎，而是先把主流程接好。
-
-因此第一版暫定：
+第一版 text scoring 已採 rule-based pipeline：
 
 ```text
 ScoreText(rawUserText)
-  -> 一律回 needs_llm
-  -> score 先回固定 placeholder value = 50
-  -> reason = TEXT_RULE_PLACEHOLDER
-  -> source = text_rule
+  -> normalize(rawUserText)
+  -> match features
+  -> map categories
+  -> accumulate score
+  -> route decision
+  -> return evaluation + trace
 ```
 
-這代表：
-- 第一版不靠 text scoring 做真實攔截
-- 第一版先把主 decision flow 與 LLM 接點建立起來
-- 真正 keyword / regex / scoring rule 後續再補
+目前行為：
+- `normalized text` 先經過：
+  - lowercase
+  - trim
+  - 多空白合併
+  - 換行正規化
+  - 全半形統一
+  - 零寬字元過濾
+- matcher 以 rule catalog 產生 `RuleMatch`
+- score engine 直接累加 `RuleMatch.Weight`
+- decision router 以 threshold 做：
+  - `allow`
+  - `block`
+  - `needs_llm`
+
+第一版 decision 方向：
+- `score=0` -> `allow`
+- `score>=8` -> `block`
+- 其餘 -> `needs_llm`
+
+第一版已能直接攔截明顯 prompt injection / override / exfiltration 類型文字，不再把所有輸入都升級到 LLM。
+
+rule 管理原則：
+- rule 應盡量以資料結構集中管理，不要散成很多 `if strings.Contains(...)`
+- rule 應自帶：
+  - rule id
+  - category
+  - match type
+  - pattern / phrase / combo
+  - weight
+- category 應在 rule 命中時就能確定，不要留到後面再硬猜
+
+第一版 `Rule` 設計建議：
+
+```text
+Rule
+├─ ID
+├─ Category
+├─ MatchType
+├─ Weight
+├─ Enabled
+├─ Pattern
+└─ Terms
+```
+
+欄位意圖：
+- `ID`
+  - 供 log、trace、測試斷言與後續 rule 維護使用
+- `Category`
+  - 直接表達這條 rule 屬於哪一種風險型別
+- `MatchType`
+  - 決定 matcher 如何解讀這條 rule
+- `Weight`
+  - 命中後累加到總分
+- `Enabled`
+  - 方便暫時停用某條 rule，不必修改 matcher 流程
+- `Pattern`
+  - 給 `keyword / phrase / regex` 使用
+- `Terms`
+  - 給 `combo` 使用
+- 預處理欄位
+  - 靜態 catalog 初始化後，應額外持有 pre-normalized pattern / terms 與 pre-compiled regex，避免 request hot path 重複處理靜態資料
+
+第一版 `MatchType` 建議只保留 4 種：
+- `keyword`
+- `phrase`
+- `regex`
+- `combo`
+
+設計原則：
+- `Rule` 應該是資料，而不是 scattered branch logic
+- 新增或調整 rule 時，應優先改 rule catalog，而不是去改 matcher 主流程
+- 第一版先避免塞入過多 metadata，例如 `severity`、`confidence`、`description`
+- 等第一版實戰後，再決定是否需要更多欄位
+
+`RuleMatch` 設計建議：
+
+```text
+RuleMatch
+├─ RuleID
+├─ Category
+├─ MatchType
+├─ Weight
+└─ Evidence
+```
+
+欄位意圖：
+- `RuleID`
+  - 表示這次實際命中了哪條 rule
+- `Category`
+  - 讓 scorer / router 不必再次回查 rule catalog
+- `MatchType`
+  - 保留這次命中的 feature 類型
+- `Weight`
+  - 保留這條命中對總分的實際貢獻
+- `Evidence`
+  - 表示這次真正抓到的文字證據，例如 phrase、regex 片段、combo 摘要
+
+說明：
+- `Rule` 是靜態定義
+- `RuleMatch` 是單次請求中的動態證據
+- explainability、debug、false positive / false negative 排查，都應以 `RuleMatch` 為核心
+
+normalizer 第一版建議只做必要轉換：
+- lowercase
+- trim
+- 多空白合併
+- 換行正規化
+- 全半形統一
+- 去除零寬字元
+
+matcher 第一版責任：
+- 只負責把 normalized text 套 rule catalog
+- 只負責回傳 `[]RuleMatch`
+- 不在 matcher 中直接做 allow/block/needs_llm 決策
+- 靜態 rule catalog 的 pattern / terms normalize 與 regex compile，應在 catalog 初始化時先做完，不應在每次 request 中重複執行
+- 若 regex rule 在初始化時 compile 失敗，第一版應停用該 rule，而不是讓 request path 直接 panic
+- `keyword` 與 `phrase` 在第一版目前都採 substring matching；兩者差異先只體現在 catalog 權重與命名意圖上，不在 matcher 行為上分流
+
+score engine 第一版責任：
+- 直接累加 `RuleMatch.Weight`
+- 同步收集 matched categories
+- 產生簡短 reason
+- 第一版先不做複雜 category multiplier，後續再視實戰調整
+
+decision router 第一版責任：
+- 吃 score / matches / categories
+- 回 `allow / block / needs_llm`
+- 先採 threshold-based routing，不在第一版加入過多特例判斷
+
+第一版 service 對外責任應收斂為：
+- `ScoreText(rawUserText)`
+  - 僅負責第一層 text classifier
+- `EvaluateWithLLM(command)`
+  - 僅負責第二層 Gemma/local guard
+- `Evaluate(command)`
+  - 作為總控，統一路由 `allow / block / needs_llm`
+
+第一版測試規劃：
+- `text_normalizer` tests
+- `feature_matcher` tests
+- `score_engine` tests
+- `decision_router` tests
+- `ScoreText` integration-like tests
+
+第一版實作順序已收斂為：
+1. `model.go`
+2. `rule_catalog.go`
+3. `text_normalizer.go`
+4. `feature_matcher.go`
+5. `score_engine.go`
+6. `decision_router.go`
+7. `service.ScoreText()` 接上真正 pipeline
+8. 補齊測試
+9. 文件回寫同步
 
 ## Main-Flow Integration Target
 第一版先和星座主流程串。

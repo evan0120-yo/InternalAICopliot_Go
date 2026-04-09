@@ -252,5 +252,5 @@ promptguard service
 
 ## Open Questions
 - 目前沒有獨立測試直接驗證 OpenAI HTTP payload 與上傳流程
-- promptguard 第一版 text scoring 仍固定回 `needs_llm`；真正的 rule-based score 何時落地仍待定
+- promptguard 第一版 text scoring 已落地為 rule-based classifier；後續仍需持續調整 thresholds 與 rule catalog 品質
 - Gemma provider 目前以 Gemini API `generateContent` + Files upload 實作；若官方 hosted Gemma contract 後續變動，需再同步核對

@@ -43,6 +43,16 @@
   Then 應由 `promptguard service` 自己向下呼叫 `builder` 與 `aiclient`
   And 不應把這段 orchestration 回流給 `gatekeeper`
 
+- Given 第一層規則引擎是 `promptguard` 的內部責任
+  When 設計 module 邊界
+  Then 不應另外拆成新的獨立 module
+  And 應保留在 `promptguard` module 內部演進
+
+- Given `ScoreText(rawUserText)` 已開始承接第一層規則引擎
+  When 設計 service 內部結構
+  Then 不應把 normalize / match / score / route 全塞在一個大函式內
+  And 應拆成可測試的內部 pipeline
+
 ## Scenario Group: Evaluation Contract
 - Given `promptguard` 回傳風險判定結果
   When 任一方法完成 evaluation
@@ -66,14 +76,167 @@
   And `text_rule`
   And `llm_guard`
 
-## Scenario Group: First-Version Text Scoring Placeholder
+- Given 第一層規則引擎需要保留中間分析資訊
+  When 設計內部資料結構
+  Then 應有一層內部 analysis model
+  And 該 model 應可承接 normalized text / matched rules / categories / score / decision
+  And 不應只剩外部 `Evaluation`
+
+- Given `promptguard` 的內部模型
+  When 定義第一版型別邊界
+  Then 應至少有：
+  And `Decision`
+  And `Source`
+  And `RuleCategory`
+  And `Rule`
+  And `RuleMatch`
+  And `TextAnalysis`
+  And `Evaluation`
+
+- Given `promptguard` 的資料流
+  When 描述第一層 pipeline 的內部層次
+  Then 應符合：
+  And `Rule -> RuleMatch -> TextAnalysis -> Evaluation`
+
+## Scenario Group: First-Version Text Scoring Rule Engine
 - Given 第一版 `ScoreText(rawUserText)`
-  When 尚未落地真正的 keyword / regex / scoring rule
-  Then 不應自行猜測 allow 或 block
-  And 應固定回傳 `decision=needs_llm`
+  When input 沒命中任何風險規則
+  Then 應回傳 `decision=allow`
+  And `score` 應為 `0`
   And `source` 應為 `text_rule`
-  And `reason` 應為 placeholder reason
-  And `score` 應為固定 placeholder 分數 `50`
+
+- Given 第一版 `ScoreText(rawUserText)`
+  When input 只命中低風險或灰區規則
+  Then 應回傳 `decision=needs_llm`
+  And 不應直接 block
+  And 應保留 matched rules 與 matched categories trace
+
+- Given 第一版 `ScoreText(rawUserText)`
+  When input 命中高風險規則
+  Then 應回傳 `decision=block`
+  And 不應先進入第二層 llm guard
+
+## Scenario Group: First-Layer Text Classifier Domain
+- Given `promptguard` 的第一層已落地為第一版規則引擎
+  When 定義它的技術邊界
+  Then 應把它視為 text risk classifier
+  And 不應把它視為生成式回答器
+
+- Given 第一層 text risk classifier
+  When 定義最小處理流程
+  Then 應至少包含：
+  And `Normalization`
+  And `Feature Matching`
+  And `Rule Categories`
+  And `Risk Scoring`
+  And `Decision Routing`
+  And `Explainability / Match Trace`
+
+- Given `Normalization`
+  When 第一層開始處理 `raw user text`
+  Then 應先做文字正規化
+  And 後續 feature matching 應以 normalized text 為基礎
+
+- Given `Feature Matching`
+  When 第一層開始抓風險訊號
+  Then 應以 keyword、phrase、regex 或 combo rule 命中作為 feature
+  And 不應只靠單一敏感詞直接做最終 allow/block
+
+- Given `Rule Categories`
+  When feature 被命中
+  Then 應能將其歸類到明確風險型別
+  And 至少預留 override / prompt leakage / role spoofing / safety bypass 這類分類能力
+
+- Given `Risk Scoring`
+  When 多個 feature 同時命中
+  Then 風險分數應可累加
+  And 不應退化成只有 true/false 的單一步驟
+
+- Given `Decision Routing`
+  When score 計算完成
+  Then 應能把結果映射成 `allow`、`block`、`needs_llm`
+  And `needs_llm` 應代表灰區案例升級到第二層 guard
+
+- Given `Explainability / Match Trace`
+  When 第一層回傳 evaluation
+  Then 不應只剩最終分數
+  And 後續應能擴充 matched rules / categories 等 trace 資訊
+
+- Given rule engine 會持續演進
+  When 定義 rule 的保存方式
+  Then rule 應盡量以資料結構集中管理
+  And 不應散成大量 `if strings.Contains(...)` 的 branch code
+
+- Given 第一版 rule engine
+  When 設計單條 rule 的資料形狀
+  Then rule 應至少包含：
+  And `ID`
+  And `Category`
+  And `MatchType`
+  And `Weight`
+  And `Enabled`
+  And `Pattern`
+  And `Terms`
+
+- Given `MatchType`
+  When 第一版定義可支援的 feature 類型
+  Then 應先限制為：
+  And `keyword`
+  And `phrase`
+  And `regex`
+  And `combo`
+
+- Given 第一版 rule catalog
+  When 新增或調整規則
+  Then 應優先改 rule 資料
+  And 不應優先去改 matcher 主流程
+
+- Given 單次輸入命中了一條或多條 rule
+  When 產生 explainability trace
+  Then 系統應保留 `RuleMatch`
+  And `RuleMatch` 應至少包含：
+  And `RuleID`
+  And `Category`
+  And `MatchType`
+  And `Weight`
+  And `Evidence`
+
+- Given `RuleMatch`
+  When 後續進入 score / route / debug
+  Then 應把它視為單次請求中的動態證據
+  And 不應只剩 rule catalog 的靜態定義
+
+- Given 第一版 normalizer
+  When 對 `raw user text` 做前處理
+  Then 應先只做必要轉換
+  And 包含 lowercase、trim、空白正規化、換行正規化、全半形統一、零寬字元過濾
+
+- Given 第一版 matcher
+  When 套用 rule catalog
+  Then 應只負責回傳 `RuleMatch`
+  And 不應在 matcher 內直接做 allow/block/needs_llm 決策
+  And 靜態 pattern / terms normalize 與 regex compile 應先在 catalog 初始化時完成
+
+- Given 某條 regex rule 的 pattern 非法
+  When promptguard 初始化第一版 rule catalog
+  Then 該 rule 應被停用
+  And 不應把 request path 變成 runtime panic
+
+- Given `keyword` 與 `phrase`
+  When 第一版 matcher 套用這兩種 rule
+  Then 目前都可採 substring matching
+  And 兩者差異先只體現在權重與 catalog 命名意圖上
+
+- Given 第一版 score engine
+  When 多個 `RuleMatch` 被命中
+  Then 應先直接累加各自 `Weight`
+  And 同步收集 matched categories
+  And 第一版不要求複雜 category multiplier
+
+- Given 第一版 decision router
+  When score 與 match trace 已存在
+  Then 應先採 threshold-based routing
+  And 不應在第一版引入過多特例分支
 
 ## Scenario Group: Main Decision Flow
 - Given `Evaluate(command)` 被呼叫
@@ -211,6 +374,6 @@
 
 ## Acceptance Notes
 - 第一版重點是 decision flow 與 module boundary，不是完整規則品質
-- text scoring 在第一版是 placeholder，目的是先把主流程接起來
-- LLM guard 在 current wiring 下已會經過 builder+aiclient，未 wiring 時仍保留 placeholder fallback
+- text scoring 現在已是第一版 rule-based classifier，不再固定回 `needs_llm`
+- LLM guard 在 current wiring 下已會經過 builder+aiclient；只有未 wiring builder/llm route 時，才保留 placeholder fallback
 - 這版文件已確認一個 usecase + 一個 service 的結構，不採兩個 usecase 分拆

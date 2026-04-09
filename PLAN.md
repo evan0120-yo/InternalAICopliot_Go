@@ -247,6 +247,98 @@ gatekeeper usecase
 - 第一版 text scoring 仍固定回 `needs_llm`
 - 一旦 promptguard 正式接管 text injection / override guard，main consult prompt 不應再重複執行這段檢查
 
+第一層 text scoring 的 domain baseline：
+
+```text
+raw user text
+  -> normalization
+  -> feature matching
+  -> rule categories
+  -> risk scoring
+  -> decision routing
+  -> explainability / match trace
+```
+
+補充規則：
+- 第一層本質上是 text risk classifier，不是生成式回答器
+- 它的責任是把明顯安全、明顯危險、灰區輸入先分流
+- 灰區才升級到第二層 Gemma/local guard
+- 第一版規則引擎已開始落地，並沿這 6 個概念實作
+- 第一層規則引擎不另外拆新 module，仍留在 `promptguard` 內部演進
+- 第一版型別應至少有：
+  - `Decision`
+  - `Source`
+  - `RuleCategory`
+  - `Rule`
+  - `RuleMatch`
+  - `TextAnalysis`
+  - `Evaluation`
+- 資料流建議為：
+  - `Rule -> RuleMatch -> TextAnalysis -> Evaluation`
+- `ScoreText` 內部建議拆成：
+  - normalize
+  - match
+  - categorize
+  - score
+  - route
+- rule 應集中成資料結構，而不是散在很多 keyword if-else
+- `Rule` 第一版建議至少有：
+  - `ID`
+  - `Category`
+  - `MatchType`
+  - `Weight`
+  - `Enabled`
+  - `Pattern`
+  - `Terms`
+- 靜態 rule catalog 初始化時，應先完成：
+  - pattern / terms normalize
+  - regex compile
+  - 非法 regex rule disable
+- `RuleMatch` 第一版建議至少有：
+  - `RuleID`
+  - `Category`
+  - `MatchType`
+  - `Weight`
+  - `Evidence`
+- `Rule` 代表靜態規則定義；`RuleMatch` 代表單次請求中的動態命中證據
+- `MatchType` 第一版先收斂為：
+  - `keyword`
+  - `phrase`
+  - `regex`
+  - `combo`
+- normalizer 第一版先只做：
+  - lowercase
+  - trim
+  - 多空白合併
+  - 換行正規化
+  - 全半形統一
+  - 零寬字元過濾
+- matcher 第一版只負責吐出 `RuleMatch`
+- `keyword` 與 `phrase` 在第一版可先共用 substring matching；差異先只保留在權重與 catalog 命名意圖
+- score engine 第一版先直接累加 `RuleMatch.Weight`
+- decision router 第一版先採 threshold-based routing
+- 內部應保留一層 analysis model，承接 normalized text / matched rules / categories / score / decision
+- 第一版 service 對外仍收斂成：
+  - `ScoreText`
+  - `EvaluateWithLLM`
+  - `Evaluate`
+- 第一版測試應至少覆蓋：
+  - `text_normalizer`
+  - `feature_matcher`
+  - `score_engine`
+  - `decision_router`
+  - `ScoreText`
+- 第一版實作順序已收斂為：
+  1. `model.go`
+  2. `rule_catalog.go`
+  3. `text_normalizer.go`
+  4. `feature_matcher.go`
+  5. `score_engine.go`
+  6. `decision_router.go`
+  7. `service.ScoreText()` 接上真正 pipeline
+  8. 測試補齊
+  9. 文件同步
+
 promptguard 第二層 builder 參與方式：
 
 ```text

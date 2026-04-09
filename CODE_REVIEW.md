@@ -249,7 +249,9 @@ ProfileConsult / PublicProfileConsult
    │  └─ 是
    │     └─ promptguard.Evaluate
    │        ├─ ScoreText(rawUserText)
-   │        │  └─ 第一版固定回 needs_llm
+   │        │  ├─ no match -> allow
+   │        │  ├─ high-risk -> block
+   │        │  └─ gray area -> needs_llm
    │        └─ EvaluateWithLLM(command)
    │           ├─ builder.AssemblePromptGuard
    │           └─ aiclient.AnalyzeGuard
@@ -267,8 +269,10 @@ ProfileConsult / PublicProfileConsult
 - 有 `allow / block / needs_llm` decision contract
 - `app.New()` 會把它接到 gatekeeper / builder / aiclient
 - 第二層 guard 已經會真的打 cloud/local Gemma analyze path
+- 第一層不再只是 placeholder；現在會先做文字正規化、規則命中、分數累加，再依風險分數決定放行、攔截或升級到 Gemma
+- 第一層結果會附帶 `matchedRules` / `matchedCategories` trace，方便之後調 rule 與排查誤殺
 
-> 注意：第一版 `ScoreText` 還是 placeholder，現在的實際判斷幾乎都會升級到第二層 LLM guard。
+> 注意：`ScoreText` 現在已是第一版 rule-based classifier，只有灰區輸入才會升級到第二層 LLM guard。
 
 > 注意：第二層 guard 的 builder path 是 dedicated prompt assembly，不讀 `source / rag / attachments / [SUBJECT_PROFILE]` 主分析內容。
 
@@ -805,23 +809,35 @@ gatekeeper.UseCase.PublicProfileConsult / ProfileConsult
      -> promptguard.EvaluateUseCase.Evaluate
         -> promptguard.Service.Evaluate
            -> ScoreText
-           -> decision=needs_llm
-              -> EvaluateWithLLM
-                 -> builder.AssemblePromptGuard
-                 -> aiUseCase.AnalyzeGuard
-                    -> cloud or local Gemma
+              ├─ allow -> 直接放行
+              ├─ block -> 直接攔截
+              └─ needs_llm
+                 -> EvaluateWithLLM
+                    -> builder.AssemblePromptGuard
+                    -> aiUseCase.AnalyzeGuard
+                       -> cloud or local Gemma
 ```
 
-第一版 placeholder 真相：
+目前第一版 text classifier 真相：
 
 | 步驟 | 目前行為 |
 | --- | --- |
-| `ScoreText` | 固定回 `decision=needs_llm`、`score=50`、`reason=TEXT_RULE_PLACEHOLDER`、`source=text_rule` |
+| `ScoreText` | 先做 normalize / match / score / route；normalize 目前包含去零寬字元、全半形收斂、空白收斂、lowercase；靜態 rule catalog 會先做 pattern/terms normalize 與 regex compile；`score=0` allow、`score>=8` block、其餘 `needs_llm` |
 | `EvaluateWithLLM` | 若 builder assembler 或 llm route 沒 wiring，才回 placeholder `LLM_GUARD_CLOUD_PLACEHOLDER` / `LLM_GUARD_LOCAL_PLACEHOLDER` |
 | `EvaluateWithLLM` 完整 wiring 後 | 會先組 dedicated guard prompt，再打 `aiclient.AnalyzeGuard` |
 | `AnalyzeGuard status=true` | 映射成 `decision=allow` |
 | `AnalyzeGuard status=false` | 映射成 `decision=block` |
 | `mode` 缺失或非法 | fallback 到 `cloud` |
+
+第一版 rule engine 目前固定用四類 category：
+- `override_attempt`
+- `prompt_exfiltration`
+- `role_spoofing`
+- `safety_bypass`
+
+第一版 `Evaluation` 除了 `decision / score / reason / source`，也已經帶：
+- `matchedRules`
+- `matchedCategories`
 
 目前主要啟動方式：
 
@@ -835,6 +851,9 @@ gatekeeper.UseCase.PublicProfileConsult / ProfileConsult
 - 它已經是獨立 module，不再只是規格文件。
 - 它已經在 `app.New()` 被建起來，並注入 gatekeeper、builder、aiclient。
 - 第一版只影響 `linkchat-astrology` 的 profile consult，generic consult 不受影響。
+- 第一層 text scoring 已能直接攔截明顯 override / prompt leakage / role spoofing / safety bypass 類文字。
+- 若 catalog 內某條 regex rule 非法，現在會在初始化時直接停用該 rule，而不是在 request hot path 觸發 panic。
+- `keyword` 與 `phrase` 在第一版 matcher 目前都走 substring matching；兩者差異暫時只在 rule weight 與 catalog 命名意圖。
 - gatekeeper block 時不丟 validation 4xx，而是直接回正常 business response：`status=false`、`statusAns=prompts有違法注入內容`、`response=取消回應`。
 - `AI_PROFILE` 合法時，promptguard 直接依 profile 決定 cloud/local、model 與 base URL；只有 profile 缺失或非法時才回退讀舊版 `PROMPTGUARD_*` env。
 - 這條路現在真的可能因為外部 Gemma/local guard 失敗而把 request 當成 system error 擋下。

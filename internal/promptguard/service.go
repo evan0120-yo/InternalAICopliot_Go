@@ -123,13 +123,14 @@ func (s *Service) EvaluateWithLLM(ctx context.Context, command Command) (Evaluat
 }
 
 func (s *Service) scoreTextDefault(rawUserText string) (Evaluation, error) {
-	_ = rawUserText
-	return Evaluation{
-		Decision: DecisionNeedsLLM,
-		Score:    needsLLMPlaceholderScore,
-		Reason:   textRulePlaceholderReason,
-		Source:   SourceTextRule,
-	}, nil
+	analysis := TextAnalysis{
+		RawText:        rawUserText,
+		NormalizedText: normalizeText(rawUserText),
+	}
+	analysis.Matches = matchFeatures(analysis.NormalizedText, defaultRuleCatalog)
+	analysis.Score, analysis.MatchedCategories = scoreAnalysis(analysis.Matches)
+	analysis.Decision, analysis.Reason = routeDecision(analysis.Score, analysis.Matches, analysis.MatchedCategories)
+	return analysis.Evaluation(), nil
 }
 
 func mapGuardLLMResponse(response GuardLLMResponse) Evaluation {
