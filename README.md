@@ -27,7 +27,7 @@
 - profile `1~5` 的 promptguard 都是 cloud Gemma。
 - profile `6~7` 的 promptguard 都是 local Gemma，預設 base URL 為 `http://localhost:11434`。
 - 主 AI 預設 model：
-  - OpenAI: `gpt-4o`
+  - OpenAI: `gpt-5.4`
   - Gemma: `gemma-4-31b-it`
 
 ## 需要哪些 API key

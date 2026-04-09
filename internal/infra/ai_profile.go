@@ -12,7 +12,7 @@ const (
 
 	DefaultOpenAIBaseURL     = "https://api.openai.com/v1"
 	DefaultGemmaBaseURL      = "https://generativelanguage.googleapis.com/v1beta"
-	DefaultOpenAIModel       = "gpt-4o"
+	DefaultOpenAIModel       = "gpt-5.4"
 	DefaultGemmaModel        = "gemma-4-31b-it"
 	DefaultLocalGemmaBaseURL = "http://localhost:11434"
 )

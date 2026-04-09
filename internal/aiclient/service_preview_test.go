@@ -25,7 +25,7 @@ func TestAnalyzeReturnsPromptPreviewWhenPreviewModeEnabled(t *testing.T) {
 
 	response, err := service.Analyze(
 		context.Background(),
-		"gpt-4o",
+		"gpt-5.4",
 		"user message",
 		"assembled instructions",
 		"",
@@ -71,7 +71,7 @@ func TestAnalyzePreviewModeTakesPriorityWhenOpenAIKeyExists(t *testing.T) {
 
 	response, err := service.Analyze(
 		context.Background(),
-		"gpt-4o",
+		"gpt-5.4",
 		"user message",
 		"assembled instructions",
 		"",
@@ -108,7 +108,7 @@ theory_version: astro-v1
 人生主軸: 深層洞察
 情緒本能: 敏感共感`
 
-	response, err := service.Analyze(context.Background(), "gpt-4o", "profile text", instructions, "", nil, "")
+	response, err := service.Analyze(context.Background(), "gpt-5.4", "profile text", instructions, "", nil, "")
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestAnalyzeReturnsPromptBodyOnlyWhenRequested(t *testing.T) {
 
 	response, err := service.Analyze(
 		context.Background(),
-		"gpt-4o",
+		"gpt-5.4",
 		"user message",
 		"assembled instructions",
 		"OS 內核: 內在敏感\n主執行緒: 50% 魔羯 / 50% 水瓶",
@@ -169,7 +169,7 @@ func TestAnalyzeLiveModeOverridesGlobalPreviewSwitch(t *testing.T) {
 
 	response, err := service.Analyze(
 		context.Background(),
-		"gpt-4o",
+		"gpt-5.4",
 		"請依 instructions 執行",
 		"## [RAW_USER_TEXT]\n請幫我整理需求\n## [FRAMEWORK_TAIL]",
 		"",
@@ -192,7 +192,7 @@ func TestAnalyzeUsesConfiguredDefaultModeWhenRequestModeMissing(t *testing.T) {
 
 	response, err := service.Analyze(
 		context.Background(),
-		"gpt-4o",
+		"gpt-5.4",
 		"user message",
 		"assembled instructions",
 		"OS 內核: 內在敏感\n主執行緒: 50% 魔羯 / 50% 水瓶",
@@ -218,7 +218,7 @@ func TestAnalyzeConfiguredDefaultModeWinsOverLegacyPreviewFlag(t *testing.T) {
 
 	response, err := service.Analyze(
 		context.Background(),
-		"gpt-4o",
+		"gpt-5.4",
 		"user message",
 		"assembled instructions",
 		"主執行緒: prompt body",

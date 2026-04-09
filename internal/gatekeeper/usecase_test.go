@@ -113,7 +113,7 @@ func newPromptGuardTestUseCase(t *testing.T, promptGuardUseCase *promptguard.Eva
 	ragUseCase := rag.NewResolveUseCase(rag.NewResolveService(store))
 	aiUseCase := aiclient.NewAnalyzeUseCase(aiclient.NewAnalyzeService(cfg))
 	outputUseCase := output.NewRenderUseCase(output.NewRenderService())
-	builderConsult := builder.NewConsultUseCase(store, ragUseCase, aiUseCase, outputUseCase, builderAssembleService, "gpt-4o")
+	builderConsult := builder.NewConsultUseCase(store, ragUseCase, aiUseCase, outputUseCase, builderAssembleService, "gpt-5.4")
 
 	return NewUseCase(NewGuardService(cfg, store), promptGuardUseCase, builderQuery, builderConsult)
 }

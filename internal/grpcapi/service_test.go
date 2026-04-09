@@ -60,7 +60,7 @@ func TestProfileConsultPassesTheoryMappedPayloadThroughService(t *testing.T) {
 	ragUseCase := rag.NewResolveUseCase(rag.NewResolveService(store))
 	aiUseCase := aiclient.NewAnalyzeUseCase(aiclient.NewAnalyzeService(cfg))
 	outputUseCase := output.NewRenderUseCase(output.NewRenderService())
-	builderConsult := builder.NewConsultUseCase(store, ragUseCase, aiUseCase, outputUseCase, builder.NewAssembleService(store), "gpt-4o")
+	builderConsult := builder.NewConsultUseCase(store, ragUseCase, aiUseCase, outputUseCase, builder.NewAssembleService(store), "gpt-5.4")
 	useCase := gatekeeper.NewUseCase(gatekeeper.NewGuardService(cfg, store), nil, builderQuery, builderConsult)
 	service := New(useCase)
 
