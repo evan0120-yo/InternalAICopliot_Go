@@ -201,9 +201,10 @@ Promptguard service
   And 不應組出主分析用的 `[SUBJECT_PROFILE]` 內容
   And `UserMessageText` 應使用 promptguard 專用訊息，而不是主 consult 訊息
 
-- Given main consult prompt 目前已內含 prompt injection / override 規則
-  When builder 抽出 dedicated guard prompt
+- Given promptguard dedicated guard 已成為唯一的 text injection / override 判定承接者
+  When builder 組 dedicated guard prompt
   Then 應只保留 promptguard 所需的 injection-detection 與固定 guard JSON 規則
+  And main consult prompt 不應再重複這些 guard 規則
   And 不應把 main consult 的回覆風格、輸出格式與附件錯誤說明整段搬進 guard prompt
 
 - Given promptguard 在星座/profile 主流程內需要 guard prompt

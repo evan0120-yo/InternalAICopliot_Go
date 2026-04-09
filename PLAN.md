@@ -245,6 +245,7 @@ gatekeeper usecase
 - `gatekeeper usecase` 才是決定「先 guard，再進主流程」的入口編排點
 - 第二層 `builder + aiclient` orchestration 應由 `promptguard service` 自己負責，不回流給 `gatekeeper`
 - 第一版 text scoring 仍固定回 `needs_llm`
+- 一旦 promptguard 正式接管 text injection / override guard，main consult prompt 不應再重複執行這段檢查
 
 promptguard 第二層 builder 參與方式：
 

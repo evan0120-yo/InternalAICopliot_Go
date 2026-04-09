@@ -17,7 +17,6 @@ import (
 )
 
 var (
-	rawUserTextPattern = regexp.MustCompile(`(?s)## \[RAW_USER_TEXT\]\s*(.*?)\s*## \[`)
 	builderCodePattern = regexp.MustCompile(`builderCode=([A-Za-z0-9_-]+)`)
 )
 
@@ -159,16 +158,6 @@ func (s *AnalyzeService) previewPromptBodyAnalyze(request analyzeRequest) (infra
 }
 
 func (s *AnalyzeService) mockAnalyze(request analyzeRequest) infra.ConsultBusinessResponse {
-	rawUserText := extractRawUserText(request.Instructions)
-	if looksLikePromptInjection(rawUserText) {
-		return infra.ConsultBusinessResponse{
-			Status:         false,
-			StatusAns:      "prompts有違法注入內容",
-			Response:       "取消回應",
-			ResponseDetail: "mock analyze blocked suspected prompt injection",
-		}
-	}
-
 	builderCode := extractBuilderCode(request.Instructions)
 	switch builderCode {
 	case "qa-smoke-doc":
@@ -278,39 +267,12 @@ func isImageName(fileName string) bool {
 	return false
 }
 
-func extractRawUserText(instructions string) string {
-	match := rawUserTextPattern.FindStringSubmatch(instructions)
-	if len(match) < 2 {
-		return ""
-	}
-	return strings.TrimSpace(match[1])
-}
-
 func extractBuilderCode(instructions string) string {
 	match := builderCodePattern.FindStringSubmatch(instructions)
 	if len(match) < 2 {
 		return ""
 	}
 	return strings.TrimSpace(match[1])
-}
-
-func looksLikePromptInjection(text string) bool {
-	lower := strings.ToLower(text)
-	for _, keyword := range []string{
-		"ignore previous",
-		"ignore all previous",
-		"system prompt",
-		"override instruction",
-		"forget the rules",
-		"忽略前面",
-		"覆寫規則",
-		"越權",
-	} {
-		if strings.Contains(lower, keyword) {
-			return true
-		}
-	}
-	return false
 }
 
 func previewBody(body []byte) string {

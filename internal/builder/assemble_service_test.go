@@ -190,6 +190,15 @@ func TestAssemblePromptRendersDeterministicSubjectProfileBlock(t *testing.T) {
 			t.Fatalf("expected response/responseDetail rule fragment %q, got: %s", fragment, result.Instructions)
 		}
 	}
+	for _, forbidden := range []string{
+		"先做安全檢查",
+		"prompts有違法注入內容",
+		"取消回應",
+	} {
+		if strings.Contains(result.Instructions, forbidden) {
+			t.Fatalf("did not expect main consult prompt to contain legacy promptguard fragment %q, got: %s", forbidden, result.Instructions)
+		}
+	}
 	if strings.Contains(result.PromptBodyPreview, "## [SUBJECT_PROFILE]") || strings.Contains(result.PromptBodyPreview, "### [analysis:") {
 		t.Fatalf("did not expect section headings in prompt body preview, got: %s", result.PromptBodyPreview)
 	}

@@ -62,7 +62,8 @@
 ## Scenario Group: Mock Analyze
 - Given instructions 中的 `[RAW_USER_TEXT]` 看起來像 prompt injection
   When mock analyze 執行
-  Then 應回傳 `status=false`、`statusAns=prompts有違法注入內容`、`response=取消回應`
+  Then 不應再自行回傳 `status=false`、`statusAns=prompts有違法注入內容`
+  And prompt injection block 應由上游 `gatekeeper -> promptguard` 處理
 
 - Given builderCode 可從 instructions 解析為 `qa-smoke-doc`
   When mock analyze 執行
@@ -243,5 +244,5 @@ promptguard service
 
 ## Open Questions
 - 目前沒有獨立測試直接驗證 OpenAI HTTP payload 與上傳流程
-- prompt injection 判斷仍是 keyword heuristic，未來是否要抽成可設定策略尚未定案
+- promptguard 第一版 text scoring 仍固定回 `needs_llm`；真正的 rule-based score 何時落地仍待定
 - Gemma provider 目前以 Gemini API `generateContent` + Files upload 實作；若官方 hosted Gemma contract 後續變動，需再同步核對

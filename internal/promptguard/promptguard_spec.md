@@ -362,6 +362,7 @@ OPENAI_API_KEY
 - 不看 builder 組裝後的完整 instructions
 - 不負責業務內容分析
 - 不回頭介入 main consult prompt assembly
+- 一旦 promptguard 正式承接 text injection / override guard，main consult prompt 不應再重複這段判定規則
 - 第二層 builder 只組 dedicated guard prompt
 - 第一版不載 source / rag
 

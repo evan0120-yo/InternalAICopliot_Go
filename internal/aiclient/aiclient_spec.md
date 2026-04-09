@@ -95,6 +95,7 @@ Repository 在第一版通常不是必要的；若未來需要持久化 audit/ca
 - 將 module-specific profile data 視為 opaque prompt content，而不是在 aiclient 內重做業務判讀
 - 對 promptguard 提供 dedicated guard analyze path
 - 依 promptguard 獨立 env 在 cloud Gemma 與 local Gemma 間切換
+- 主 analyze path 不再承擔 `raw user text` 的 prompt injection / override 判定；guarded flows 應假設這件事已由 `gatekeeper -> promptguard` 先完成
 
 - 若預覽策略為 `preview_prompt_body_only`，aiclient 應只輸出 builder 已組裝好的 prompt body
 - aiclient 不應在這個 mode 內合成假的 AI 結果

@@ -306,7 +306,7 @@ Gatekeeper -> ConsultUseCase
   - full main consult instructions
   - `[SUBJECT_PROFILE]` 主分析內容
 - promptguard path 應只搬移 prompt injection / override 判定所需的 guard policy，不應把 main consult 的回覆風格、附件失敗說明、輸出格式要求整段搬進來。
-- main consult prompt 內現有的 prompt-injection clauses 在新路徑穩定前仍可保留，作為第二道保險；dedicated guard prompt 才是未來主要承接者。
+- promptguard 成為唯一的 `raw user text` injection / override 判定承接者後，main consult prompt 不應再重複這些 guard clauses。
 
 ## Prompt Assembly
 第一版目標與 Java 一致，並加上 app-aware structured profile/context block：

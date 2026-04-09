@@ -608,7 +608,7 @@ user message
 ```
 
 這代表：
-- 安全檢查看的是 instructions 中的 `[RAW_USER_TEXT]`。
+- instructions 中仍保留 `[RAW_USER_TEXT]`，但 text 的 prompt injection / override guard 已改由上游 `gatekeeper -> promptguard -> Gemma/local` 先處理。
 - live provider 看到的使用者 message 並不是前端原文。
 
 ## D. Profile Consult
@@ -761,10 +761,10 @@ preview / mock / live 都沿用這個 shape。
 
 ### mock path 目前的技術現況
 
-`mockAnalyze` 會先：
-1. 從 instructions 抓 `[RAW_USER_TEXT]`
-2. 用 keyword heuristic 判斷 prompt injection
-3. 再嘗試抓 `builderCode=...`
+`mockAnalyze` 目前只會：
+1. 嘗試從 instructions 抓 `builderCode=...`
+2. 若命中 `qa-smoke-doc` 才走專用表格模板
+3. 否則走 general mock fallback
 
 但目前正式 assemble path 不會把 `builderCode=` 放進 instructions。
 所以 `qa-smoke-doc` 專用 mock 表格模板，現在通常不會靠正式 runtime 命中。
