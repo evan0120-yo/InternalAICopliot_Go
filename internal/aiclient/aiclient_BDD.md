@@ -147,6 +147,14 @@ promptguard service
   And `status=true` 應代表 allow
   And `status=false` 應代表 block
 
+- Given promptguard analyze 收到 markdown code fence 包住的 guard JSON
+  When aiclient 完成 parse
+  Then 仍應成功解析 dedicated guard result
+
+- Given promptguard analyze 收到前後夾雜說明文字、但中間含有第一段合法 JSON object
+  When aiclient 完成 parse
+  Then 仍應以該 JSON object 作為 guard result
+
 - Given promptguard analyze 收到 `status=false`
   When aiclient 完成 parse
   Then 不應把這類結果視為 provider error

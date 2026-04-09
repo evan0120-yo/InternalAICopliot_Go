@@ -205,6 +205,8 @@ promptguard service
 - promptguard path 不回 `infra.ConsultBusinessResponse` 給前端；它回的是 promptguard 可消化的 guard result。
 - `status=false` 是正常 guard decision，不是 transport error。
 - HTTP/provider failure、JSON parse failure、contract mismatch 應被視為系統錯誤，由上游 promptguard / gatekeeper 決定如何處理。
+- guard JSON parse 應先嘗試直接解析；若模型回了 markdown code fence 或前後包裝文字，應先做最小容錯清理與第一段 JSON object 擷取，再決定是否視為 parse failure。
+- 若最終仍 parse 失敗，應記錄 raw/normalized response preview，方便追查 Gemma 偶發格式漂移。
 - `cloud` route 需要 API key；缺值時應回 `PROMPTGUARD_GEMMA_API_KEY_MISSING`。
 - `local` route 不要求 API key，但必須提供 local `BaseURL`；缺值時應回 `PROMPTGUARD_LOCAL_BASE_URL_MISSING`。
 

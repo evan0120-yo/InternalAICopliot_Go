@@ -838,6 +838,7 @@ gatekeeper.UseCase.PublicProfileConsult / ProfileConsult
 - gatekeeper block 時不丟 validation 4xx，而是直接回正常 business response：`status=false`、`statusAns=prompts有違法注入內容`、`response=取消回應`。
 - `AI_PROFILE` 合法時，promptguard 直接依 profile 決定 cloud/local、model 與 base URL；只有 profile 缺失或非法時才回退讀舊版 `PROMPTGUARD_*` env。
 - 這條路現在真的可能因為外部 Gemma/local guard 失敗而把 request 當成 system error 擋下。
+- `AnalyzeGuard` 現在對 promptguard JSON 做了最小容錯：若 Gemma 回 markdown code fence 或前後夾雜說明文字，會先嘗試清理並抽出第一段 JSON object；只有真的抽不出合法 JSON 時才回 502。
 
 ## F. Output 與 transport 回應
 

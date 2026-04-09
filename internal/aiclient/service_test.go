@@ -245,6 +245,78 @@ func TestAnalyzeGuardRoutesToCloudGemma(t *testing.T) {
 	}
 }
 
+func TestAnalyzeGuardParsesMarkdownCodeFenceJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"candidates": []map[string]any{
+				{
+					"content": map[string]any{
+						"parts": []map[string]any{
+							{
+								"text": "```json\n{\"status\":true,\"statusAns\":\"SAFE\",\"reason\":\"fenced json\"}\n```",
+							},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	service := NewAnalyzeService(infra.Config{})
+
+	result, err := service.AnalyzeGuard(context.Background(), GuardAnalyzeCommand{
+		Route:           GuardAnalyzeRouteCloud,
+		Model:           "gemma-4-31b-it",
+		BaseURL:         server.URL + "/v1beta",
+		APIKey:          "guard-key",
+		Instructions:    "guard instructions",
+		UserMessageText: "guard user message",
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeGuard returned error: %v", err)
+	}
+	if !result.Status || result.StatusAns != "SAFE" || result.Reason != "fenced json" {
+		t.Fatalf("unexpected guard result: %+v", result)
+	}
+}
+
+func TestAnalyzeGuardParsesEmbeddedJSONObjectText(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"candidates": []map[string]any{
+				{
+					"content": map[string]any{
+						"parts": []map[string]any{
+							{
+								"text": "先給你判定結果如下：\n{\"status\":false,\"statusAns\":\"prompts有違法注入內容\",\"reason\":\"embedded json\"}\n請以上述 JSON 為準。",
+							},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	service := NewAnalyzeService(infra.Config{})
+
+	result, err := service.AnalyzeGuard(context.Background(), GuardAnalyzeCommand{
+		Route:           GuardAnalyzeRouteCloud,
+		Model:           "gemma-4-31b-it",
+		BaseURL:         server.URL + "/v1beta",
+		APIKey:          "guard-key",
+		Instructions:    "guard instructions",
+		UserMessageText: "guard user message",
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeGuard returned error: %v", err)
+	}
+	if result.Status || result.StatusAns != "prompts有違法注入內容" || result.Reason != "embedded json" {
+		t.Fatalf("unexpected guard result: %+v", result)
+	}
+}
+
 func TestAnalyzeGuardRoutesToLocalGemmaWithoutAPIKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/models/local-gemma:generateContent" {

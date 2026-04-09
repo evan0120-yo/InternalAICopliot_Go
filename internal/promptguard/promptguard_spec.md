@@ -321,6 +321,7 @@ block example：
   - aiclient provider 失敗
   - guard json parse 失敗
   - config 缺失或 provider 不支援
+- 對於模型偶發回的 markdown code fence 或 wrapper text，aiclient 應先做最小容錯清理；只有仍無法抽出第一段合法 JSON object 時，才視為真正的 guard json parse failure
 
 ## Startup Configuration Contract
 `promptguard` 的主要啟動方式應改為跟主分析共用同一個 numeric profile。
