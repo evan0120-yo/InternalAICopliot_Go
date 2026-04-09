@@ -143,7 +143,7 @@ consult request 進入
 
 ### Scenario group: AI execution mode and provider selection
 
-目前已確認的方向是把 execution mode、mock mode、provider selection 分開，而不是混成單一條件。
+目前已確認的方向是把複雜的 execution/provider 細節收進 numeric profile，而不是要求操作者手設一整串 env。
 
 execution mode 維持 3 種：
 
@@ -185,28 +185,28 @@ live
 目標決策樹：
 
 ```text
-AI_DEFAULT_MODE
-├─ preview_full
-├─ preview_prompt_body_only
-└─ live
-   ├─ AI_MOCK_MODE=true
-   │  └─ mock analyze
-   └─ AI_MOCK_MODE=false
-      └─ AI_PROVIDER
-         ├─ openai
-         └─ gemma
+INTERNAL_AI_COPILOT_AI_PROFILE
+├─ 1 -> preview_full + promptguard cloud + main openai
+├─ 2 -> preview_prompt_body_only + promptguard cloud + main openai
+├─ 3 -> live + mock + promptguard cloud
+├─ 4 -> live + openai + promptguard cloud
+├─ 5 -> live + gemma + promptguard cloud
+├─ 6 -> live + openai + promptguard local
+└─ 7 -> live + gemma + promptguard local
 ```
 
 startup env：
-- `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE`
-- `INTERNAL_AI_COPILOT_AI_MOCK_MODE`
-- `INTERNAL_AI_COPILOT_AI_PROVIDER`
+- `INTERNAL_AI_COPILOT_AI_PROFILE`
+- `GEMINI_API_KEY`
+- `OPENAI_API_KEY`
 
 設計意圖：
-- 操作者可保留多組啟動指令，依用途切換 preview / mock / openai / gemma
+- 操作者只需要記 profile 數字與兩把 key
+- preview / mock / openai / gemma / promptguard cloud/local 由 profile 映射
 - backend 啟動設定維持 internal 測試頁的 single source of truth
 - request-level `mode` 仍可保留給 manual debug / Postman 的覆蓋路徑
 - provider-specific HTTP payload、附件契約與錯誤 mapping 應封裝在 aiclient provider 內部，不外漏到 builder / gatekeeper
+- 舊的 `AI_DEFAULT_MODE / AI_PROVIDER / PROMPTGUARD_*` 僅保留相容 fallback，不作為日常啟動方式
 
 current follow-up：
 - internal React 測試頁不再傳 `mode`

@@ -245,6 +245,54 @@ func TestLoadConfigFromEnvFallsBackToMainGemmaCompatibleKeys(t *testing.T) {
 	}
 }
 
+func TestLoadConfigFromEnvUsesAIProfileCloudMapping(t *testing.T) {
+	t.Setenv(infra.EnvAIProfile, "4")
+	t.Setenv(envPromptGuardMode, string(ModeLocal))
+	t.Setenv(envPromptGuardModel, "legacy-local-guard")
+	t.Setenv(envPromptGuardBaseURL, "http://localhost:9999")
+	t.Setenv(envPromptGuardAPIKey, "legacy-guard-key")
+	t.Setenv("GEMINI_API_KEY", "shared-gemini-key")
+
+	config := LoadConfigFromEnv()
+	if config.Mode != ModeCloud {
+		t.Fatalf("expected profile 4 to force cloud promptguard, got %+v", config)
+	}
+	if config.Model != infra.DefaultGemmaModel || config.BaseURL != infra.DefaultGemmaBaseURL {
+		t.Fatalf("expected profile 4 cloud defaults, got %+v", config)
+	}
+	if config.APIKey != "shared-gemini-key" {
+		t.Fatalf("expected gemini api key to be used, got %+v", config)
+	}
+}
+
+func TestLoadConfigFromEnvUsesAIProfileLocalMapping(t *testing.T) {
+	t.Setenv(infra.EnvAIProfile, "6")
+	t.Setenv("GEMINI_API_KEY", "shared-gemini-key")
+
+	config := LoadConfigFromEnv()
+	if config.Mode != ModeLocal {
+		t.Fatalf("expected profile 6 to use local promptguard, got %+v", config)
+	}
+	if config.Model != infra.DefaultGemmaModel || config.BaseURL != infra.DefaultLocalGemmaBaseURL {
+		t.Fatalf("expected profile 6 local defaults, got %+v", config)
+	}
+	if config.APIKey != "shared-gemini-key" {
+		t.Fatalf("expected gemini api key fallback, got %+v", config)
+	}
+}
+
+func TestLoadConfigFromEnvPrefersGeminiAPIKeyOverLegacyPromptGuardKeys(t *testing.T) {
+	t.Setenv(infra.EnvAIProfile, "4")
+	t.Setenv("GEMINI_API_KEY", "gemini-primary")
+	t.Setenv(envPromptGuardAPIKey, "legacy-promptguard")
+	t.Setenv("INTERNAL_AI_COPILOT_GEMMA_API_KEY", "legacy-gemma")
+
+	config := LoadConfigFromEnv()
+	if config.APIKey != "gemini-primary" {
+		t.Fatalf("expected GEMINI_API_KEY to win, got %+v", config)
+	}
+}
+
 func TestEvaluateUseCaseDelegatesToService(t *testing.T) {
 	useCase := NewEvaluateUseCase(NewService(Config{Mode: ModeLocal}))
 

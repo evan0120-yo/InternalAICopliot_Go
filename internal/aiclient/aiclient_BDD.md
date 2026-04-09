@@ -26,31 +26,26 @@
   And 後續應依 `mock mode + provider` 決定 live path
 
 ## Scenario Group: Execution Mode And Provider Selection
-- Given `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=preview_full`
+- Given `INTERNAL_AI_COPILOT_AI_PROFILE=1`
   When `AnalyzeService.Analyze` 執行
   Then 不應呼叫外部 AI provider
   And 應直接回傳完整 prompt preview
 
-- Given `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=preview_prompt_body_only`
+- Given `INTERNAL_AI_COPILOT_AI_PROFILE=2`
   When `AnalyzeService.Analyze` 執行
   Then 不應呼叫外部 AI provider
   And 應只回 builder 已組裝好的 prompt body
 
-- Given `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live`
-  And `INTERNAL_AI_COPILOT_AI_MOCK_MODE=true`
+- Given `INTERNAL_AI_COPILOT_AI_PROFILE=3`
   When `AnalyzeService.Analyze` 執行
   Then 應走 mock analyze
   And 不應呼叫外部 AI provider
 
-- Given `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live`
-  And `INTERNAL_AI_COPILOT_AI_MOCK_MODE=false`
-  And `INTERNAL_AI_COPILOT_AI_PROVIDER=openai`
+- Given `INTERNAL_AI_COPILOT_AI_PROFILE=4`
   When `AnalyzeService.Analyze` 執行
   Then 應走 OpenAI provider live path
 
-- Given `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live`
-  And `INTERNAL_AI_COPILOT_AI_MOCK_MODE=false`
-  And `INTERNAL_AI_COPILOT_AI_PROVIDER=gemma`
+- Given `INTERNAL_AI_COPILOT_AI_PROFILE=5`
   When `AnalyzeService.Analyze` 執行
   Then 應走 Gemma provider live path
 
@@ -103,8 +98,7 @@ analyze
 
 ## Scenario Group: Gemma Provider Analyze
 - Given analyze mode 為 `live`
-  And `INTERNAL_AI_COPILOT_AI_MOCK_MODE=false`
-  And provider 為 `gemma`
+  And `INTERNAL_AI_COPILOT_AI_PROFILE=5`
   When analyze 執行
   Then aiclient 應走 Gemma provider live path
   And builder / gatekeeper 不需要知道 Gemma request shape
@@ -125,13 +119,13 @@ promptguard service
 ```
 
 - Given promptguard service 發起第二層 LLM guard
-  And `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE=cloud`
+  And `INTERNAL_AI_COPILOT_AI_PROFILE=4`
   When aiclient 執行 promptguard analyze
   Then 應使用 promptguard 專用 cloud config
   And 應將 request 送到 hosted Gemma
 
 - Given promptguard service 發起第二層 LLM guard
-  And `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE=local`
+  And `INTERNAL_AI_COPILOT_AI_PROFILE=6`
   When aiclient 執行 promptguard analyze
   Then 應使用 promptguard 專用 local config
   And 應將 request 送到 local Gemma endpoint

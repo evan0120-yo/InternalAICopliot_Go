@@ -21,6 +21,7 @@ type Config struct {
 	ServerReadTimeout     time.Duration
 	ServerWriteTimeout    time.Duration
 	OpenAITimeout         time.Duration
+	AIProfile             AIRuntimeProfile
 	AIPreviewMode         bool
 	AIDefaultMode         AIExecutionMode
 	AIMockMode            bool
@@ -35,6 +36,31 @@ type Config struct {
 
 // LoadConfigFromEnv reads runtime config with dev-safe defaults.
 func LoadConfigFromEnv() Config {
+	profile, hasProfile := LoadAIRuntimeProfileFromEnv()
+
+	aiDefaultMode := getenvAIExecutionModeCompat("INTERNAL_AI_COPILOT_AI_DEFAULT_MODE", "REWARDBRIDGE_AI_DEFAULT_MODE", "")
+	aiMockMode := getenvBoolCompat("INTERNAL_AI_COPILOT_AI_MOCK_MODE", "REWARDBRIDGE_AI_MOCK_MODE", false)
+	aiProvider := getenvAIProviderCompat("INTERNAL_AI_COPILOT_AI_PROVIDER", "REWARDBRIDGE_AI_PROVIDER", AIProviderOpenAI)
+	openAIBaseURL := getenv("OPENAI_BASE_URL", DefaultOpenAIBaseURL)
+	openAIModel := getenvCompat("INTERNAL_AI_COPILOT_AI_MODEL", "REWARDBRIDGE_AI_MODEL", DefaultOpenAIModel)
+	gemmaAPIKey := firstNonEmptyEnv("GEMINI_API_KEY", "GOOGLE_API_KEY", "INTERNAL_AI_COPILOT_GEMMA_API_KEY", "REWARDBRIDGE_GEMMA_API_KEY")
+	gemmaBaseURL := getenvCompat("INTERNAL_AI_COPILOT_GEMMA_BASE_URL", "REWARDBRIDGE_GEMMA_BASE_URL", DefaultGemmaBaseURL)
+	gemmaModel := getenvCompat("INTERNAL_AI_COPILOT_GEMMA_MODEL", "REWARDBRIDGE_GEMMA_MODEL", DefaultGemmaModel)
+
+	if hasProfile {
+		aiDefaultMode = profile.MainMode
+		aiMockMode = profile.MainMock
+		aiProvider = profile.MainProvider
+		switch profile.MainProvider {
+		case AIProviderGemma:
+			gemmaBaseURL = profile.MainBaseURL
+			gemmaModel = profile.MainModel
+		default:
+			openAIBaseURL = profile.MainBaseURL
+			openAIModel = profile.MainModel
+		}
+	}
+
 	return Config{
 		Addr:                  getenvCompat("INTERNAL_AI_COPILOT_ADDR", "REWARDBRIDGE_ADDR", ":8082"),
 		GRPCAddr:              getenvCompat("INTERNAL_AI_COPILOT_GRPC_ADDR", "REWARDBRIDGE_GRPC_ADDR", ":9091"),
@@ -48,16 +74,17 @@ func LoadConfigFromEnv() Config {
 		ServerReadTimeout:     getenvDurationCompat("INTERNAL_AI_COPILOT_SERVER_READ_TIMEOUT", "REWARDBRIDGE_SERVER_READ_TIMEOUT", 10*time.Second),
 		ServerWriteTimeout:    5 * time.Minute,
 		OpenAITimeout:         5 * time.Minute,
+		AIProfile:             profile,
 		AIPreviewMode:         getenvBoolCompat("INTERNAL_AI_COPILOT_AI_PREVIEW_MODE", "REWARDBRIDGE_AI_PREVIEW_MODE", false),
-		AIDefaultMode:         getenvAIExecutionModeCompat("INTERNAL_AI_COPILOT_AI_DEFAULT_MODE", "REWARDBRIDGE_AI_DEFAULT_MODE", ""),
-		AIMockMode:            getenvBoolCompat("INTERNAL_AI_COPILOT_AI_MOCK_MODE", "REWARDBRIDGE_AI_MOCK_MODE", false),
-		AIProvider:            getenvAIProviderCompat("INTERNAL_AI_COPILOT_AI_PROVIDER", "REWARDBRIDGE_AI_PROVIDER", AIProviderOpenAI),
+		AIDefaultMode:         aiDefaultMode,
+		AIMockMode:            aiMockMode,
+		AIProvider:            aiProvider,
 		OpenAIAPIKey:          os.Getenv("OPENAI_API_KEY"),
-		OpenAIBaseURL:         getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-		OpenAIModel:           getenvCompat("INTERNAL_AI_COPILOT_AI_MODEL", "REWARDBRIDGE_AI_MODEL", "gpt-4o"),
-		GemmaAPIKey:           getenvCompat("INTERNAL_AI_COPILOT_GEMMA_API_KEY", "REWARDBRIDGE_GEMMA_API_KEY", getenv("GEMINI_API_KEY", os.Getenv("GOOGLE_API_KEY"))),
-		GemmaBaseURL:          getenvCompat("INTERNAL_AI_COPILOT_GEMMA_BASE_URL", "REWARDBRIDGE_GEMMA_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
-		GemmaModel:            getenvCompat("INTERNAL_AI_COPILOT_GEMMA_MODEL", "REWARDBRIDGE_GEMMA_MODEL", "gemma-4-31b-it"),
+		OpenAIBaseURL:         openAIBaseURL,
+		OpenAIModel:           openAIModel,
+		GemmaAPIKey:           gemmaAPIKey,
+		GemmaBaseURL:          gemmaBaseURL,
+		GemmaModel:            gemmaModel,
 	}
 }
 
@@ -76,12 +103,12 @@ func (c Config) ResolvedAIModel() string {
 		if value := strings.TrimSpace(c.GemmaModel); value != "" {
 			return value
 		}
-		return "gemma-4-31b-it"
+		return DefaultGemmaModel
 	default:
 		if value := strings.TrimSpace(c.OpenAIModel); value != "" {
 			return value
 		}
-		return "gpt-4o"
+		return DefaultOpenAIModel
 	}
 }
 
@@ -97,6 +124,15 @@ func getenv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func firstNonEmptyEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func getenvInt(key string, fallback int) int {

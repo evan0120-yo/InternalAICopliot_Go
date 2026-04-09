@@ -19,9 +19,6 @@ const (
 	GuardAnalyzeRouteLocal GuardAnalyzeRoute = "local"
 )
 
-const defaultPromptGuardCloudBaseURL = "https://generativelanguage.googleapis.com/v1beta"
-const defaultPromptGuardModel = "gemma-4-31b-it"
-
 // GuardAnalyzeCommand is the dedicated promptguard analyze contract.
 type GuardAnalyzeCommand struct {
 	Route           GuardAnalyzeRoute
@@ -133,7 +130,7 @@ func (c GuardAnalyzeCommand) resolvedModel() string {
 	if value := strings.TrimSpace(c.Model); value != "" {
 		return value
 	}
-	return defaultPromptGuardModel
+	return infra.DefaultGemmaModel
 }
 
 func (c GuardAnalyzeCommand) resolvedBaseURL() string {
@@ -141,7 +138,7 @@ func (c GuardAnalyzeCommand) resolvedBaseURL() string {
 		return value
 	}
 	if c.resolvedRoute() == GuardAnalyzeRouteCloud {
-		return defaultPromptGuardCloudBaseURL
+		return infra.DefaultGemmaBaseURL
 	}
 	return ""
 }

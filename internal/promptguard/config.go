@@ -3,6 +3,8 @@ package promptguard
 import (
 	"os"
 	"strings"
+
+	"com.citrus.internalaicopilot/internal/infra"
 )
 
 const (
@@ -10,9 +12,6 @@ const (
 	envPromptGuardModel   = "INTERNAL_AI_COPILOT_PROMPTGUARD_MODEL"
 	envPromptGuardBaseURL = "INTERNAL_AI_COPILOT_PROMPTGUARD_BASE_URL"
 	envPromptGuardAPIKey  = "INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY"
-
-	defaultPromptGuardCloudBaseURL = "https://generativelanguage.googleapis.com/v1beta"
-	defaultPromptGuardModel        = "gemma-4-31b-it"
 )
 
 // Config keeps promptguard runtime settings isolated from the main AI client.
@@ -23,10 +22,26 @@ type Config struct {
 	APIKey  string
 }
 
-// LoadConfigFromEnv reads promptguard runtime config from its dedicated env keys.
+// LoadConfigFromEnv reads promptguard runtime config from AI_PROFILE first, then legacy env fallback.
 func LoadConfigFromEnv() Config {
+	if profile, ok := infra.LoadAIRuntimeProfileFromEnv(); ok {
+		mode, _ := ParseMode(profile.PromptGuardMode)
+		return Config{
+			Mode:    mode,
+			Model:   profile.PromptGuardModel,
+			BaseURL: profile.PromptGuardBaseURL,
+			APIKey: firstNonEmptyEnv(
+				"GEMINI_API_KEY",
+				"GOOGLE_API_KEY",
+				envPromptGuardAPIKey,
+				"INTERNAL_AI_COPILOT_GEMMA_API_KEY",
+				"REWARDBRIDGE_GEMMA_API_KEY",
+			),
+		}
+	}
+
 	return Config{
-		Mode:    getenvMode(envPromptGuardMode, ModeCloud),
+		Mode: getenvMode(envPromptGuardMode, ModeCloud),
 		Model: firstNonEmptyEnv(
 			envPromptGuardModel,
 			"INTERNAL_AI_COPILOT_GEMMA_MODEL",
@@ -38,11 +53,11 @@ func LoadConfigFromEnv() Config {
 			"REWARDBRIDGE_GEMMA_BASE_URL",
 		),
 		APIKey: firstNonEmptyEnv(
+			"GEMINI_API_KEY",
+			"GOOGLE_API_KEY",
 			envPromptGuardAPIKey,
 			"INTERNAL_AI_COPILOT_GEMMA_API_KEY",
 			"REWARDBRIDGE_GEMMA_API_KEY",
-			"GEMINI_API_KEY",
-			"GOOGLE_API_KEY",
 		),
 	}
 }
@@ -58,7 +73,7 @@ func (c Config) resolvedModel() string {
 	if value := strings.TrimSpace(c.Model); value != "" {
 		return value
 	}
-	return defaultPromptGuardModel
+	return infra.DefaultGemmaModel
 }
 
 func (c Config) resolvedBaseURL() string {
@@ -66,7 +81,7 @@ func (c Config) resolvedBaseURL() string {
 		return value
 	}
 	if c.resolvedMode() == ModeCloud {
-		return defaultPromptGuardCloudBaseURL
+		return infra.DefaultGemmaBaseURL
 	}
 	return ""
 }

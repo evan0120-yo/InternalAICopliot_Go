@@ -127,53 +127,33 @@ Repository 在第一版通常不是必要的；若未來需要持久化 audit/ca
 
 ## Startup Configuration Contract
 
-這條線的啟動配置應明確分離 execution mode、mock mode 與 provider：
+現在的主要啟動配置應收斂成：
 
 ```text
-INTERNAL_AI_COPILOT_AI_DEFAULT_MODE
-  -> preview_full
-  -> preview_prompt_body_only
-  -> live
+INTERNAL_AI_COPILOT_AI_PROFILE
+GEMINI_API_KEY
+OPENAI_API_KEY
+```
 
-INTERNAL_AI_COPILOT_AI_MOCK_MODE
-  -> true / false
+`AI_PROFILE` 應直接映射整組 runtime 行為：
 
-INTERNAL_AI_COPILOT_AI_PROVIDER
-  -> openai / gemma
+```text
+1 -> preview_full + promptguard cloud + main openai
+2 -> preview_prompt_body_only + promptguard cloud + main openai
+3 -> live + mock + promptguard cloud
+4 -> live + openai + promptguard cloud
+5 -> live + gemma + promptguard cloud
+6 -> live + openai + promptguard local
+7 -> live + gemma + promptguard local
 ```
 
 規則：
-- `AI_DEFAULT_MODE` 決定 preview family 與 live path
-- `AI_MOCK_MODE` 只在 `live` 路徑下生效
-- `AI_PROVIDER` 只在 `live + mock=false` 路徑下生效
-- request-level `mode` 若明確指定，仍可覆蓋 backend 全域 preview 設定
-- mock 啟動條件不應綁定 provider credential 是否存在
-- 操作者可以透過不同啟動指令組合環境變數，快速切換 preview / mock / openai / gemma
-
-provider 相關設定應維持各自獨立，例如：
-- OpenAI: base URL、API key、default model
-- Gemma: provider endpoint、credential、default model
-
-## PromptGuard Startup Configuration Contract
-
-promptguard path 應使用獨立 startup config，不與主 consult analyze 的 preview/mock/provider 設定混用：
-
-```text
-INTERNAL_AI_COPILOT_PROMPTGUARD_MODE
-  -> cloud
-  -> local
-
-INTERNAL_AI_COPILOT_PROMPTGUARD_MODEL
-INTERNAL_AI_COPILOT_PROMPTGUARD_BASE_URL
-INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY
-```
-
-規則：
-- 這組設定只影響 promptguard 的第二層 LLM guard call，不改主 consult analyze 的 execution mode。
-- 第一版 promptguard path 以 Gemma family 為目標：
-  - `cloud` -> hosted Gemma
-  - `local` -> local Gemma endpoint
-- promptguard path 是否走 cloud/local，應由 promptguard 環境變數決定，而不是沿用主分析模型的 provider 選擇。
+- `AI_PROFILE` 直接決定 preview/live/mock/provider 與 promptguard cloud/local。
+- request-level `mode` 若明確指定，仍可覆蓋 backend 全域 preview 設定。
+- `GEMINI_API_KEY` 現在是 hosted Gemma 與 promptguard cloud 的共用 key。
+- 若同時存在 `GEMINI_API_KEY` 與舊的 `INTERNAL_AI_COPILOT_GEMMA_API_KEY` / `INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY`，runtime 會優先採用 `GEMINI_API_KEY`。
+- `OPENAI_API_KEY` 只在主 AI profile 最終走 OpenAI 時需要。
+- 舊的 `AI_DEFAULT_MODE / AI_MOCK_MODE / AI_PROVIDER / PROMPTGUARD_*` 仍保留相容 fallback，但不作為日常啟動方式。
 
 ## Analyze Flow
 

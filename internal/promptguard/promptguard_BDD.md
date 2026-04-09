@@ -116,19 +116,19 @@
 
 ## Scenario Group: LLM Guard Routing
 - Given `EvaluateWithLLM(command)` 被呼叫
-  And `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE=cloud`
+  And `INTERNAL_AI_COPILOT_AI_PROFILE=4`
   When promptguard 執行第二層判定
   Then 應走 cloud gemma 路徑
 
 - Given `EvaluateWithLLM(command)` 被呼叫
-  And `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE=local`
+  And `INTERNAL_AI_COPILOT_AI_PROFILE=6`
   When promptguard 執行第二層判定
   Then 應走 local gemma 路徑
 
 - Given 第二層 LLM guard 被觸發
   When promptguard 執行這段 path
   Then 應先由 `builder` 組 dedicated guard prompt
-  And 再由 `aiclient` 依 env 切 cloud/local model
+  And 再由 `aiclient` 依 `AI_PROFILE` 切 cloud/local model
 
 - Given promptguard service 沒有 wiring builder assembler 或對應 llm route
   When `EvaluateWithLLM(command)` 被呼叫
@@ -179,25 +179,25 @@
 ## Scenario Group: Startup Configuration
 - Given `promptguard` 需要與主分析模型設定解耦
   When backend 啟動
-  Then `promptguard` 應使用自己的環境變數
-  And 不應直接重用主分析 provider 的 mode 設定
+  Then `promptguard` 的主要啟動方式應跟主分析共用 `AI_PROFILE`
+  And 不應要求操作者日常手設一整組 `PROMPTGUARD_*` env
 
-- Given `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE=cloud`
+- Given `INTERNAL_AI_COPILOT_AI_PROFILE=4`
   When 啟動 promptguard
   Then 應視為 hosted gemma guard path
 
-- Given `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE=local`
+- Given `INTERNAL_AI_COPILOT_AI_PROFILE=6`
   When 啟動 promptguard
   Then 應視為 local gemma guard path
 
-- Given `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE` 缺失或非法
+- Given `INTERNAL_AI_COPILOT_AI_PROFILE` 缺失或非法
   When 啟動 promptguard
-  Then 第一版應 fallback 到 `cloud`
+  Then 應回退讀舊的 `PROMPTGUARD_*` 與主 Gemma 相容 env
 
-- Given dedicated promptguard env 缺少 model / baseURL / apiKey
+- Given `AI_PROFILE` 已合法設定
   When 啟動 promptguard
-  Then 應優先讀取 dedicated promptguard env
-  And 缺值時可回退讀主 Gemma 相容 env
+  Then `AI_PROFILE` 應優先決定 cloud/local、model 與 base URL
+  And `GEMINI_API_KEY` 應作為 cloud gemma 的主要 credential
 
 ## Scenario Group: Boundary Rule
 - Given `promptguard` 第一版

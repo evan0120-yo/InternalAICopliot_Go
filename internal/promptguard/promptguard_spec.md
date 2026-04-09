@@ -323,38 +323,38 @@ block example：
   - config 缺失或 provider 不支援
 
 ## Startup Configuration Contract
-`promptguard` 應使用獨立環境變數，不與主分析模型設定混用。
+`promptguard` 的主要啟動方式應改為跟主分析共用同一個 numeric profile。
 
-建議環境變數：
+主要環境變數：
 
 ```text
-INTERNAL_AI_COPILOT_PROMPTGUARD_MODE
-  -> cloud
-  -> local
+INTERNAL_AI_COPILOT_AI_PROFILE
+GEMINI_API_KEY
+OPENAI_API_KEY
+```
 
-INTERNAL_AI_COPILOT_PROMPTGUARD_MODEL
-  -> guard model name
+`AI_PROFILE` 對 promptguard 的映射：
 
-INTERNAL_AI_COPILOT_PROMPTGUARD_BASE_URL
-  -> provider endpoint
-
-INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY
-  -> provider credential
+```text
+1 -> cloud
+2 -> cloud
+3 -> cloud
+4 -> cloud
+5 -> cloud
+6 -> local
+7 -> local
 ```
 
 規則：
-- `PROMPTGUARD_MODE=cloud`
+- profile `1~5`
   - 代表打 hosted Gemma
-  - 通常需要 API key
-- `PROMPTGUARD_MODE=local`
+  - 讀 `GEMINI_API_KEY`
+- profile `6~7`
   - 代表打 local Gemma / local LLM endpoint
-  - API key 可選
-- 若 mode 缺失或非法
-  - 第一版先 fallback 到 `cloud`
-- dedicated promptguard env 仍是第一優先
-- 若 `PROMPTGUARD_MODEL` / `PROMPTGUARD_BASE_URL` / `PROMPTGUARD_API_KEY` 缺值
-  - 可回退讀主 Gemma 相容 env
-  - 目的是避免 local/dev 重複維護兩套完全相同的 model / endpoint / key
+  - 預設 base URL 為 `http://localhost:11434`
+- `GEMINI_API_KEY` 是 promptguard cloud 的主要 credential
+- 若同時存在 `GEMINI_API_KEY` 與舊的 `INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY` / `INTERNAL_AI_COPILOT_GEMMA_API_KEY`，runtime 會優先採用 `GEMINI_API_KEY`
+- 舊的 `INTERNAL_AI_COPILOT_PROMPTGUARD_*` 與主 Gemma 相容 env 仍保留 fallback，但只作相容用途，不建議日常手設
 
 ## Boundary Rule
 - `promptguard` 只看 `raw user text`

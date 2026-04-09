@@ -470,21 +470,24 @@ main
 | Firestore project | `INTERNAL_AI_COPILOT_FIRESTORE_PROJECT_ID` | `dailo-467502` |
 | Firestore emulator | `INTERNAL_AI_COPILOT_FIRESTORE_EMULATOR_HOST` | `localhost:8090` |
 | reset on start | `INTERNAL_AI_COPILOT_STORE_RESET_ON_START` | `false` |
-| AI default mode | `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE` | 空 |
-| AI mock mode | `INTERNAL_AI_COPILOT_AI_MOCK_MODE` | `false` |
-| AI provider | `INTERNAL_AI_COPILOT_AI_PROVIDER` | `openai` |
-| OpenAI model | `INTERNAL_AI_COPILOT_AI_MODEL` | `gpt-4o` |
-| Gemma model | `INTERNAL_AI_COPILOT_GEMMA_MODEL` | `gemma-4-31b-it` |
-| promptguard mode | `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE` | `cloud` |
-| promptguard model | `INTERNAL_AI_COPILOT_PROMPTGUARD_MODEL` | fallback `gemma-4-31b-it` |
-| promptguard base URL | `INTERNAL_AI_COPILOT_PROMPTGUARD_BASE_URL` | fallback hosted Gemma URL |
-| promptguard API key | `INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY` | fallback 主 Gemma 相容 env |
+| AI profile | `INTERNAL_AI_COPILOT_AI_PROFILE` | 缺值時回退讀舊版 env |
+| Gemini API key | `GEMINI_API_KEY` | 空 |
+| OpenAI API key | `OPENAI_API_KEY` | 空 |
 
 補充：
 - `REWARDBRIDGE_*` legacy 前綴仍可 fallback。
-- `AIPreviewMode` 舊 bool 仍存在，只在 `AIDefaultMode` 空時做 fallback。
-- `ResolvedAIModel()` 會依 provider 回 `OpenAIModel` 或 `GemmaModel`。
-- promptguard config 會先讀自己的 env，再回退讀主 Gemma 相容 env，例如 `INTERNAL_AI_COPILOT_GEMMA_API_KEY` / `GEMINI_API_KEY` / `GOOGLE_API_KEY`。
+- `AIPreviewMode` 舊 bool 仍存在，只在 `AI_PROFILE` 缺失且 `AIDefaultMode` 空時做 fallback。
+- `AI_PROFILE` 現在是主 AI 與 promptguard 的主要共同開關：
+  - `1 -> preview_full + promptguard cloud + main openai`
+  - `2 -> preview_prompt_body_only + promptguard cloud + main openai`
+  - `3 -> live + mock + promptguard cloud`
+  - `4 -> live + openai + promptguard cloud`
+  - `5 -> live + gemma + promptguard cloud`
+  - `6 -> live + openai + promptguard local`
+  - `7 -> live + gemma + promptguard local`
+- `ResolvedAIModel()` 會依 provider 回 `OpenAIModel` 或 `GemmaModel`，而這兩個值現在可由 `AI_PROFILE` 直接灌入預設組合。
+- 舊的 `AI_DEFAULT_MODE / AI_PROVIDER / PROMPTGUARD_*` 仍保留相容 fallback，但 README 與日常啟動方式已改為 `AI_PROFILE + API keys`。
+- `GEMINI_API_KEY` 現在是主 Gemma 與 promptguard cloud 的共同主 key；若同時存在舊的 `INTERNAL_AI_COPILOT_GEMMA_API_KEY` / `INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY`，runtime 會優先採用 `GEMINI_API_KEY`。
 
 ## B. 查 Builder 列表
 
@@ -820,20 +823,20 @@ gatekeeper.UseCase.PublicProfileConsult / ProfileConsult
 | `AnalyzeGuard status=false` | 映射成 `decision=block` |
 | `mode` 缺失或非法 | fallback 到 `cloud` |
 
-目前專用 env：
+目前主要啟動方式：
 
 | 設定 | env |
 | --- | --- |
-| promptguard mode | `INTERNAL_AI_COPILOT_PROMPTGUARD_MODE` |
-| promptguard model | `INTERNAL_AI_COPILOT_PROMPTGUARD_MODEL` |
-| promptguard base URL | `INTERNAL_AI_COPILOT_PROMPTGUARD_BASE_URL` |
-| promptguard API key | `INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY` |
+| promptguard mode/profile | `INTERNAL_AI_COPILOT_AI_PROFILE` |
+| promptguard cloud credential | `GEMINI_API_KEY` |
+| promptguard local base URL | profile `6/7` 內建 `http://localhost:11434` |
 
 目前最重要的 current truth：
 - 它已經是獨立 module，不再只是規格文件。
 - 它已經在 `app.New()` 被建起來，並注入 gatekeeper、builder、aiclient。
 - 第一版只影響 `linkchat-astrology` 的 profile consult，generic consult 不受影響。
 - gatekeeper block 時不丟 validation 4xx，而是直接回正常 business response：`status=false`、`statusAns=prompts有違法注入內容`、`response=取消回應`。
+- `AI_PROFILE` 合法時，promptguard 直接依 profile 決定 cloud/local、model 與 base URL；只有 profile 缺失或非法時才回退讀舊版 `PROMPTGUARD_*` env。
 - 這條路現在真的可能因為外部 Gemma/local guard 失敗而把 request 當成 system error 擋下。
 
 ## F. Output 與 transport 回應

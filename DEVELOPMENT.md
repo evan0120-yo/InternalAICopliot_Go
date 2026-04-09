@@ -109,102 +109,95 @@ Go 版 local 開發必須支援一種與 Java `create-drop + initData` 等價的
 - `INTERNAL_AI_COPILOT_FIRESTORE_PROJECT_ID`
 - `INTERNAL_AI_COPILOT_FIRESTORE_EMULATOR_HOST`
 - `INTERNAL_AI_COPILOT_STORE_RESET_ON_START`
-- `INTERNAL_AI_COPILOT_AI_PREVIEW_MODE`
-- `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE`
-- `INTERNAL_AI_COPILOT_AI_MOCK_MODE`
-- `INTERNAL_AI_COPILOT_AI_PROVIDER`
+- `INTERNAL_AI_COPILOT_AI_PROFILE`
+- `GEMINI_API_KEY`
+- `OPENAI_API_KEY`
 
 AI preview mode 使用原則：
 - 開啟時，aiclient 不呼叫任何 live AI provider
 - 直接回傳原本準備送給 AI 的完整 preview 內容
 - 用途是 local/dev 檢查 prompt、user message 與附件摘要
 - 不應在未受保護的 production 環境長期啟用
+- 這個舊 bool 仍在 code 裡保留 fallback，但日常啟動應優先用 `AI_PROFILE`
 
 ### AI startup switching rule
 以下規則已落地到 code 與測試。
 
 目標：
-- 用 backend 啟動環境變數顯式決定 preview / mock / live
-- 用 backend 啟動環境變數顯式決定 live provider
-- 不再以 provider credential 缺值隱式觸發 mock
-- 讓操作者可以保留多組啟動指令，按用途切換 OpenAI 或 Gemma
+- 用一個數字型 profile 決定主 AI 與 promptguard 的整組行為
+- 讓操作者只需要記 `AI_PROFILE + API keys`
+- 不再要求日常手設 `AI_DEFAULT_MODE / AI_PROVIDER / PROMPTGUARD_*`
+- 仍保留舊 env 做相容 fallback，但不作為主要操作方式
 
 目標環境變數：
-- `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE`
-- `INTERNAL_AI_COPILOT_AI_MOCK_MODE`
-- `INTERNAL_AI_COPILOT_AI_PROVIDER`
-
-目標值：
-
-```text
-INTERNAL_AI_COPILOT_AI_DEFAULT_MODE
-├─ preview_full
-├─ preview_prompt_body_only
-└─ live
-
-INTERNAL_AI_COPILOT_AI_MOCK_MODE
-├─ true
-└─ false
-
-INTERNAL_AI_COPILOT_AI_PROVIDER
-├─ openai
-└─ gemma
-```
+- `INTERNAL_AI_COPILOT_AI_PROFILE`
+- `GEMINI_API_KEY`
+- `OPENAI_API_KEY`
 
 判斷規則：
 
 ```text
-先看 AI_DEFAULT_MODE
-├─ preview_full
-├─ preview_prompt_body_only
-└─ live
-   ├─ AI_MOCK_MODE=true  -> mock analyze
-   └─ AI_MOCK_MODE=false -> 依 AI_PROVIDER 選 live provider
-      ├─ openai
-      └─ gemma
+INTERNAL_AI_COPILOT_AI_PROFILE
+├─ 1 -> preview_full + promptguard cloud + main openai
+├─ 2 -> preview_prompt_body_only + promptguard cloud + main openai
+├─ 3 -> live + mock + promptguard cloud
+├─ 4 -> live + openai + promptguard cloud
+├─ 5 -> live + gemma + promptguard cloud
+├─ 6 -> live + openai + promptguard local
+└─ 7 -> live + gemma + promptguard local
 ```
 
-啟動指令應維持 PowerShell 環境變數方式，方便在 IDE / 筆記中保留多組命令。例如：
+補充：
+- `linkchat-astrology` 的 profile request 若 `text` 不為空，現在會先跑 promptguard。
+- profile `1~5` 的 promptguard 都走 hosted Gemma。
+- profile `6~7` 的 promptguard 走 local Gemma，預設 local base URL 為 `http://localhost:11434`。
+- `GEMINI_API_KEY` 現在是主 Gemma 與 promptguard cloud 的共用 key。
+- 若同時存在 `GEMINI_API_KEY` 與舊的 `INTERNAL_AI_COPILOT_GEMMA_API_KEY` / `INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY`，目前 runtime 會優先採用 `GEMINI_API_KEY`。
+- `OPENAI_API_KEY` 只在主 AI profile 最後走 OpenAI 時需要。
+- 若 `AI_PROFILE` 缺失或非法，runtime 仍會回退讀舊的 `AI_DEFAULT_MODE / AI_PROVIDER / PROMPTGUARD_*` 相容 env。
+
+啟動指令現在應優先用 `AI_PROFILE`，方便在 IDE / 筆記中保留多組短命令。例如：
 
 ```powershell
 cd D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="preview_full"
+$env:GEMINI_API_KEY="your-gemini-key"
+$env:INTERNAL_AI_COPILOT_AI_PROFILE="1"
 go run .\cmd\api
 ```
 
 ```powershell
 cd D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="preview_prompt_body_only"
+$env:GEMINI_API_KEY="your-gemini-key"
+$env:OPENAI_API_KEY="your-openai-key"
+$env:INTERNAL_AI_COPILOT_AI_PROFILE="4"
 go run .\cmd\api
 ```
 
 ```powershell
 cd D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
-$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="true"
+$env:GEMINI_API_KEY="your-gemini-key"
+$env:INTERNAL_AI_COPILOT_AI_PROFILE="3"
 go run .\cmd\api
 ```
 
 ```powershell
 cd D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
-$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="false"
-$env:INTERNAL_AI_COPILOT_AI_PROVIDER="openai"
+$env:OPENAI_API_KEY="your-openai-key"
+$env:INTERNAL_AI_COPILOT_AI_PROFILE="6"
 go run .\cmd\api
 ```
 
 ```powershell
 cd D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go
-$env:INTERNAL_AI_COPILOT_AI_DEFAULT_MODE="live"
-$env:INTERNAL_AI_COPILOT_AI_MOCK_MODE="false"
-$env:INTERNAL_AI_COPILOT_AI_PROVIDER="gemma"
+$env:GEMINI_API_KEY="your-gemini-key"
+$env:INTERNAL_AI_COPILOT_AI_PROFILE="5"
 go run .\cmd\api
 ```
 
 補充：
 - request-level `mode` 仍可保留給 Postman / manual debug 做 override
 - backend 啟動設定仍是 internal 測試頁與日常開發的 single source of truth
-- PowerShell `$env:` 會留在同一個 shell session，切換命令時應把相關 env 設完整
+- PowerShell `$env:` 會留在同一個 shell session，切換 profile 時應把 API key 和 profile 一起設完整
 
 舊前綴相容：
 - `REWARDBRIDGE_*` 目前仍保留 fallback，相容既有本機與部署設定

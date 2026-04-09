@@ -3,126 +3,103 @@
 ## 啟動前先知道
 
 - Go 專案路徑：`D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go`
-- 目前 AI 執行邏輯：
+- 現在日常啟動只需要記 3 個環境變數：
+  - `GEMINI_API_KEY`
+  - `OPENAI_API_KEY`
+  - `INTERNAL_AI_COPILOT_AI_PROFILE`
+- `linkchat-astrology` 的 profile request 若 `text` 不為空，會先跑 `promptguard -> Gemma`。
+- 所以即使主 AI 最後是 `preview`、`mock`、`openai`，只要要測 `linkchat-astrology + text`，通常都建議先把 `GEMINI_API_KEY` 設好。
+- `INTERNAL_AI_COPILOT_AI_PROFILE` 是主要開關；舊的 `AI_DEFAULT_MODE / AI_PROVIDER / PROMPTGUARD_*` 仍保留相容 fallback，但不建議再當成日常啟動方式。
 
-```text
-analyze
-│
-├─ preview_full
-├─ preview_prompt_body_only
-└─ live
-   ├─ mock
-   └─ provider
-      ├─ openai
-      └─ gemma
-```
+## AI Profile 對照表
 
-- 不設 env 時，預設會走：
+| Profile | 主 AI | PromptGuard | 用途 |
+| --- | --- | --- | --- |
+| `1` | `preview_full` | cloud gemma | 看完整 preview，profile astrology 仍先過 guard |
+| `2` | `preview_prompt_body_only` | cloud gemma | 看 prompt body，profile astrology 仍先過 guard |
+| `3` | `live + mock` | cloud gemma | 主回答走 mock，但 astrology guard 還是走 cloud Gemma |
+| `4` | `live + openai` | cloud gemma | 最常用，guard 走 Gemma、主回答走 OpenAI |
+| `5` | `live + gemma` | cloud gemma | guard 和主回答都走 hosted Gemma |
+| `6` | `live + openai` | local gemma | guard 走本地 Gemma，主回答走 OpenAI |
+| `7` | `live + gemma` | local gemma | guard 走本地 Gemma，主回答走 hosted Gemma |
 
-```text
-AI_DEFAULT_MODE = live
-AI_MOCK_MODE    = false
-AI_PROVIDER     = openai
-```
+補充：
+- profile `1~5` 的 promptguard 都是 cloud Gemma。
+- profile `6~7` 的 promptguard 都是 local Gemma，預設 base URL 為 `http://localhost:11434`。
+- 主 AI 預設 model：
+  - OpenAI: `gpt-4o`
+  - Gemma: `gemma-4-31b-it`
 
-- 下方啟動指令預設是給 `cmd.exe` 用的。
-- 如果沿用同一個 `cmd.exe` 視窗，`set` 過的環境變數會保留。切模式時，建議整段重貼，不要只改一行。
+## 需要哪些 API key
 
-## 常用環境變數
+### 一定建議先設
 
-- `INTERNAL_AI_COPILOT_AI_DEFAULT_MODE`
-  - `preview_full`
-  - `preview_prompt_body_only`
-  - `live`
-- `INTERNAL_AI_COPILOT_AI_MOCK_MODE`
-  - `true`
-  - `false`
-- `INTERNAL_AI_COPILOT_AI_PROVIDER`
-  - `openai`
-  - `gemma`
+- `GEMINI_API_KEY`
+  - promptguard cloud 會用到
+  - 主 AI 若走 hosted Gemma 也會用到
+  - 若同時設了舊的 `INTERNAL_AI_COPILOT_GEMMA_API_KEY` / `INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY`，現在會優先吃 `GEMINI_API_KEY`
+
+### 主 AI 走 OpenAI 時才需要
+
 - `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`
-- `INTERNAL_AI_COPILOT_AI_MODEL`
-- `INTERNAL_AI_COPILOT_GEMMA_API_KEY`
-- `INTERNAL_AI_COPILOT_GEMMA_BASE_URL`
-- `INTERNAL_AI_COPILOT_GEMMA_MODEL`
 
 ## cmd.exe 啟動指令
 
-以下指令可直接貼到 Windows 命令提示字元 `cmd.exe`。
-全部都是單行版本。
+以下全部都是 `cmd.exe` 單行版，可直接貼。
 
-### 1. 預設啟動
-
-```bat
-cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=" && set "INTERNAL_AI_COPILOT_AI_MODEL=" && set "INTERNAL_AI_COPILOT_GEMMA_MODEL=" && set "OPENAI_BASE_URL=" && set "INTERNAL_AI_COPILOT_GEMMA_BASE_URL=" && go run .\cmd\api
-```
-
-### 2. preview_full
+### 1. `AI_PROFILE=1`
 
 ```bat
-cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=preview_full" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=openai" && go run .\cmd\api
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "GEMINI_API_KEY=你的-gemini-api-key" && set "INTERNAL_AI_COPILOT_AI_PROFILE=1" && go run .\cmd\api
 ```
 
-### 3. preview_prompt_body_only
+### 2. `AI_PROFILE=2`
 
 ```bat
-cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=preview_prompt_body_only" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=openai" && go run .\cmd\api
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "GEMINI_API_KEY=你的-gemini-api-key" && set "INTERNAL_AI_COPILOT_AI_PROFILE=2" && go run .\cmd\api
 ```
 
-### 4. live + mock
+### 3. `AI_PROFILE=3`
 
 ```bat
-cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=true" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=openai" && go run .\cmd\api
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "GEMINI_API_KEY=你的-gemini-api-key" && set "INTERNAL_AI_COPILOT_AI_PROFILE=3" && go run .\cmd\api
 ```
 
-### 5. live + openai，使用預設 model
+### 4. `AI_PROFILE=4`
 
 ```bat
-cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=openai" && set "INTERNAL_AI_COPILOT_AI_MODEL=" && set "OPENAI_BASE_URL=" && set "OPENAI_API_KEY=sk-你的-openai-key" && go run .\cmd\api
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "GEMINI_API_KEY=你的-gemini-api-key" && set "OPENAI_API_KEY=sk-你的-openai-key" && set "INTERNAL_AI_COPILOT_AI_PROFILE=4" && go run .\cmd\api
 ```
 
-### 6. live + openai，指定 model
+### 5. `AI_PROFILE=5`
 
 ```bat
-cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=openai" && set "INTERNAL_AI_COPILOT_AI_MODEL=gpt-4.1-mini" && set "OPENAI_BASE_URL=" && set "OPENAI_API_KEY=sk-你的-openai-key" && go run .\cmd\api
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "GEMINI_API_KEY=你的-gemini-api-key" && set "INTERNAL_AI_COPILOT_AI_PROFILE=5" && go run .\cmd\api
 ```
 
-### 7. live + gemma，使用預設 model
+### 6. `AI_PROFILE=6`
 
 ```bat
-cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=gemma" && set "INTERNAL_AI_COPILOT_GEMMA_MODEL=" && set "INTERNAL_AI_COPILOT_GEMMA_BASE_URL=" && set "INTERNAL_AI_COPILOT_GEMMA_API_KEY=你的-gemma-api-key" && go run .\cmd\api
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "OPENAI_API_KEY=sk-你的-openai-key" && set "INTERNAL_AI_COPILOT_AI_PROFILE=6" && go run .\cmd\api
 ```
 
-### 8. live + gemma，指定 model
+### 7. `AI_PROFILE=7`
 
 ```bat
-cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=gemma" && set "INTERNAL_AI_COPILOT_GEMMA_MODEL=gemma-4-31b-it" && set "INTERNAL_AI_COPILOT_GEMMA_BASE_URL=" && set "INTERNAL_AI_COPILOT_GEMMA_API_KEY=你的-gemma-api-key" && go run .\cmd\api
+cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "GEMINI_API_KEY=你的-gemini-api-key" && set "INTERNAL_AI_COPILOT_AI_PROFILE=7" && go run .\cmd\api
 ```
 
-### 9. live + openai，自訂 base URL
+## 最常用組合
 
-```bat
-cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=openai" && set "INTERNAL_AI_COPILOT_AI_MODEL=gpt-4o" && set "OPENAI_BASE_URL=https://你的-openai-compatible-endpoint/v1" && set "OPENAI_API_KEY=sk-你的-openai-key" && go run .\cmd\api
-```
-
-### 10. live + gemma，自訂 base URL
-
-```bat
-cd /d "D:\WorkSpace\ProjectAI\InternalAICopliot\Backend\Go" && set "INTERNAL_AI_COPILOT_AI_DEFAULT_MODE=live" && set "INTERNAL_AI_COPILOT_AI_MOCK_MODE=false" && set "INTERNAL_AI_COPILOT_AI_PROVIDER=gemma" && set "INTERNAL_AI_COPILOT_GEMMA_MODEL=gemma-4-31b-it" && set "INTERNAL_AI_COPILOT_GEMMA_BASE_URL=https://generativelanguage.googleapis.com/v1beta" && set "INTERNAL_AI_COPILOT_GEMMA_API_KEY=你的-gemma-api-key" && go run .\cmd\api
-```
+- 看完整 prompt：`AI_PROFILE=1`
+- 只看 prompt body：`AI_PROFILE=2`
+- 主回答走 mock、但 promptguard 仍驗：`AI_PROFILE=3`
+- promptguard 走 Gemma、主回答走 OpenAI：`AI_PROFILE=4`
+- 全部都走 Gemma family：`AI_PROFILE=5`
 
 ## 補充
 
-- Gemma API Key 讀取順序：
-
-```text
-INTERNAL_AI_COPILOT_GEMMA_API_KEY
--> REWARDBRIDGE_GEMMA_API_KEY
--> GEMINI_API_KEY
--> GOOGLE_API_KEY
-```
-
-- OpenAI model 預設值：`gpt-4o`
-- Gemma model 預設值：`gemma-4-31b-it`
+- 如果沿用同一個 `cmd.exe` 視窗，`set` 過的值會保留。切 profile 時建議整段重貼。
+- profile `6` / `7` 的 local promptguard 會直接打 `http://localhost:11434`；本地 endpoint 若不是這個位址，才需要回退使用舊版 env 做兼容調整。
+- 若 `INTERNAL_AI_COPILOT_AI_PROFILE` 缺失或非法，runtime 仍會回退讀舊版 env，相容既有設定。
 - Firestore emulator 預設：`localhost:8090`
