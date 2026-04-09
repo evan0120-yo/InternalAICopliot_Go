@@ -116,6 +116,11 @@
   Then 應回傳 `decision=block`
   And 不應先進入第二層 llm guard
 
+- Given 第一版 `ScoreText(rawUserText)`
+  When input 包含 `提示詞`、`prompts` 或 `promots`
+  Then 應直接回傳 `decision=block`
+  And 不應把這些詞當成灰區 meta 詞
+
 ## Scenario Group: First-Layer Text Classifier Domain
 - Given `promptguard` 的第一層已落地為第一版規則引擎
   When 定義它的技術邊界

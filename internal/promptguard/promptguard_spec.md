@@ -352,6 +352,14 @@ ScoreText(rawUserText)
 
 第一版已能直接攔截明顯 prompt injection / override / exfiltration 類型文字，不再把所有輸入都升級到 LLM。
 
+產品決策補充：
+- `提示詞`
+- `prompts`
+- `promots`
+
+這三個詞在目前專案上下文中，被視為極高風險詞彙。
+第一版 rule catalog 會把它們直接視為高風險 `keyword`，命中後應直接進入 `block`，不再當成灰區 meta 詞處理。
+
 rule 管理原則：
 - rule 應盡量以資料結構集中管理，不要散成很多 `if strings.Contains(...)`
 - rule 應自帶：

@@ -852,6 +852,7 @@ gatekeeper.UseCase.PublicProfileConsult / ProfileConsult
 - 它已經在 `app.New()` 被建起來，並注入 gatekeeper、builder、aiclient。
 - 第一版只影響 `linkchat-astrology` 的 profile consult，generic consult 不受影響。
 - 第一層 text scoring 已能直接攔截明顯 override / prompt leakage / role spoofing / safety bypass 類文字。
+- 產品目前另外把 `提示詞`、`prompts`、`promots` 視為專案特化高風險詞；命中時第一層就直接 block，不再當成灰區 meta 詞送 Gemma。
 - 若 catalog 內某條 regex rule 非法，現在會在初始化時直接停用該 rule，而不是在 request hot path 觸發 panic。
 - `keyword` 與 `phrase` 在第一版 matcher 目前都走 substring matching；兩者差異暫時只在 rule weight 與 catalog 命名意圖。
 - gatekeeper block 時不丟 validation 4xx，而是直接回正常 business response：`status=false`、`statusAns=prompts有違法注入內容`、`response=取消回應`。

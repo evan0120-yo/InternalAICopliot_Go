@@ -317,6 +317,11 @@ raw user text
 - `keyword` 與 `phrase` 在第一版可先共用 substring matching；差異先只保留在權重與 catalog 命名意圖
 - score engine 第一版先直接累加 `RuleMatch.Weight`
 - decision router 第一版先採 threshold-based routing
+- 產品特化規則目前另外加了一條硬判策略：
+  - `提示詞`
+  - `prompts`
+  - `promots`
+  在這個專案上下文中直接視為高風險詞，命中就 block，不再視為灰區 meta 詞
 - 內部應保留一層 analysis model，承接 normalized text / matched rules / categories / score / decision
 - 第一版 service 對外仍收斂成：
   - `ScoreText`
