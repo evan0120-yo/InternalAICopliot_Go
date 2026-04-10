@@ -10,7 +10,7 @@ import (
 type ServiceOption func(*Service)
 
 // WithScoreTextFunc overrides the first-layer text scoring function.
-func WithScoreTextFunc(fn func(rawUserText string) (Evaluation, error)) ServiceOption {
+func WithScoreTextFunc(fn func(userText string) (Evaluation, error)) ServiceOption {
 	return func(service *Service) {
 		if fn != nil {
 			service.scoreTextFn = fn
@@ -43,7 +43,7 @@ func WithLocalLLMFunc(fn func(context.Context, GuardLLMRequest) (GuardLLMRespons
 type Service struct {
 	config Config
 
-	scoreTextFn   func(rawUserText string) (Evaluation, error)
+	scoreTextFn   func(userText string) (Evaluation, error)
 	guardPromptFn func(context.Context, Command) (GuardPrompt, error)
 	cloudLLMFn    func(context.Context, GuardLLMRequest) (GuardLLMResponse, error)
 	localLLMFn    func(context.Context, GuardLLMRequest) (GuardLLMResponse, error)
@@ -63,7 +63,7 @@ func NewService(config Config, options ...ServiceOption) *Service {
 
 // Evaluate runs text scoring first, then falls back to LLM guard when needed.
 func (s *Service) Evaluate(ctx context.Context, command Command) (Evaluation, error) {
-	evaluation, err := s.ScoreText(command.RawUserText)
+	evaluation, err := s.ScoreText(command.UserText)
 	if err != nil {
 		return Evaluation{}, err
 	}
@@ -79,8 +79,8 @@ func (s *Service) Evaluate(ctx context.Context, command Command) (Evaluation, er
 }
 
 // ScoreText is the first-layer text scoring entrypoint.
-func (s *Service) ScoreText(rawUserText string) (Evaluation, error) {
-	return s.scoreTextFn(rawUserText)
+func (s *Service) ScoreText(userText string) (Evaluation, error) {
+	return s.scoreTextFn(userText)
 }
 
 // EvaluateWithLLM routes second-layer guard evaluation to cloud or local mode.
@@ -122,10 +122,10 @@ func (s *Service) EvaluateWithLLM(ctx context.Context, command Command) (Evaluat
 	return mapGuardLLMResponse(llmResponse), nil
 }
 
-func (s *Service) scoreTextDefault(rawUserText string) (Evaluation, error) {
+func (s *Service) scoreTextDefault(userText string) (Evaluation, error) {
 	analysis := TextAnalysis{
-		RawText:        rawUserText,
-		NormalizedText: normalizeText(rawUserText),
+		RawText:        userText,
+		NormalizedText: normalizeText(userText),
 	}
 	analysis.Matches = matchFeatures(analysis.NormalizedText, defaultRuleCatalog)
 	analysis.Score, analysis.MatchedCategories = scoreAnalysis(analysis.Matches)

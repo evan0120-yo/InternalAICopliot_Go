@@ -30,6 +30,7 @@ func TestAssemblePromptUsesOverrideAndSkipsUserInputBlock(t *testing.T) {
 		},
 		"",
 		"新的需求",
+		"",
 		nil,
 	)
 	if err != nil {
@@ -76,6 +77,7 @@ func TestAssemblePromptReplacesPlaceholderBeforeFallingBackToSimpleOverride(t *t
 		},
 		"",
 		"會員註冊流程",
+		"",
 		nil,
 	)
 	if err != nil {
@@ -90,6 +92,49 @@ func TestAssemblePromptReplacesPlaceholderBeforeFallingBackToSimpleOverride(t *t
 	}
 }
 
+func TestAssemblePromptSeparatesRequestIntentFromRawUserText(t *testing.T) {
+	service := NewAssembleService(nil)
+
+	result, err := service.AssemblePrompt(
+		context.Background(),
+		infra.BuilderConfig{
+			BuilderID:   1,
+			BuilderCode: "pm-estimate",
+			GroupLabel:  "產品經理",
+			Name:        "PM 工時估算與建議",
+			Description: "desc",
+		},
+		[]infra.Source{
+			{SourceID: 10, OrderNo: 1, Prompts: "主要 prompt"},
+		},
+		map[int64][]infra.RagSupplement{},
+		"",
+		"我特別想知道他在人群中的表現",
+		"請分析這個人的核心性格與外在社交表現。",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("AssemblePrompt returned error: %v", err)
+	}
+
+	requestIntentIndex := strings.Index(result.Instructions, "## [REQUEST_INTENT]")
+	rawUserTextIndex := strings.Index(result.Instructions, "## [RAW_USER_TEXT]")
+	if requestIntentIndex < 0 || rawUserTextIndex < 0 || requestIntentIndex > rawUserTextIndex {
+		t.Fatalf("expected REQUEST_INTENT block before RAW_USER_TEXT, got: %s", result.Instructions)
+	}
+	for _, fragment := range []string{
+		"## [REQUEST_INTENT]\n請分析這個人的核心性格與外在社交表現。",
+		"## [RAW_USER_TEXT]\n我特別想知道他在人群中的表現",
+	} {
+		if !strings.Contains(result.Instructions, fragment) {
+			t.Fatalf("expected prompt to contain %q, got: %s", fragment, result.Instructions)
+		}
+	}
+	if !strings.Contains(result.PromptBodyPreview, "請分析這個人的核心性格與外在社交表現。") || !strings.Contains(result.PromptBodyPreview, "我特別想知道他在人群中的表現") {
+		t.Fatalf("expected prompt body preview to contain both intent and user text, got: %s", result.PromptBodyPreview)
+	}
+}
+
 func TestAssemblePromptReturnsErrorWhenRagMissing(t *testing.T) {
 	service := NewAssembleService(nil)
 
@@ -100,6 +145,7 @@ func TestAssemblePromptReturnsErrorWhenRagMissing(t *testing.T) {
 			{SourceID: 10, OrderNo: 1, Prompts: "主要 prompt", NeedsRagSupplement: true},
 		},
 		map[int64][]infra.RagSupplement{},
+		"",
 		"",
 		"",
 		nil,
@@ -127,6 +173,7 @@ func TestAssemblePromptRendersDeterministicSubjectProfileBlock(t *testing.T) {
 		map[int64][]infra.RagSupplement{},
 		"",
 		"請分析這個人",
+		"",
 		&SubjectProfile{
 			SubjectID: "user-123",
 			AnalysisPayloads: []SubjectAnalysisPayload{
@@ -266,6 +313,7 @@ func TestAssemblePromptUsesLinkChatStrategyForTheoryMappedModules(t *testing.T) 
 		map[int64][]infra.RagSupplement{},
 		"linkchat",
 		"請分析這個人",
+		"",
 		subjectProfile,
 	)
 	if err != nil {
@@ -362,6 +410,7 @@ func TestAssemblePromptRendersWeightedCanonicalEntriesForLinkChatAstrology(t *te
 		map[int64][]infra.RagSupplement{},
 		"linkchat",
 		"請分析這個人",
+		"",
 		subjectProfile,
 	)
 	if err != nil {

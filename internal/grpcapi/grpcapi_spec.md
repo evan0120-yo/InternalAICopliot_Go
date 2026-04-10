@@ -53,7 +53,10 @@ generic `Consult` 對應 `ConsultModeGeneric`。
 - `app_id`
 - `builder_id`
 - `subject_profile` optional
+- `user_text` optional
+- `intent_text` optional
 - `text` optional
+  - legacy alias
 - `client_ip` optional
 
 `subject_profile` 應至少包含：
@@ -80,8 +83,9 @@ generic `Consult` 對應 `ConsultModeGeneric`。
 
 ## ProfileConsult Mode Notes
 - `ConsultModeProfile` 必須由 RPC path 決定，不可由 `subject_profile` 或其 analysis payloads 是否為空推斷。
-- `subject_profile` 缺值且 `text!=""` 是合法的 text-only profile request。
-- text-only profile request 仍必須維持 `ConsultModeProfile`，讓 builder 只跑 common sources。
+- `subject_profile` 缺值且 `user_text!=""` 或 `intent_text!=""` 都是合法的 profile request。
+- `text` 在相容期內可暫時視為 `user_text` alias。
+- `user_text`-only / `intent_text`-only profile request 仍必須維持 `ConsultModeProfile`，讓 builder 只跑 common sources。
 
 ## Discovery Rule
 `ListBuilders` 仍保留為 integration discovery surface，但 LinkChat profile-analysis hot path 不應每次 consult 前都先叫一次 `ListBuilders`。

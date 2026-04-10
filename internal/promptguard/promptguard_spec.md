@@ -18,7 +18,7 @@
 ## Overview
 
 ```text
-raw user text
+userText
 │
 ├─ text scoring
 │  ├─ allow
@@ -46,12 +46,12 @@ raw user text
 第二層 LLM guard 仍只在 `needs_llm` 時才觸發。
 
 ## First-Layer Text Risk Classifier Domain
-第一層 `text scoring` 的本質不是生成答案，而是對 `raw user text` 做風險分類。
+第一層 `text scoring` 的本質不是生成答案，而是對 `userText` 做風險分類。
 
 應先把它理解成：
 
 ```text
-raw user text
+userText
   -> normalization
   -> feature matching
   -> rule categories
@@ -108,7 +108,7 @@ gatekeeper usecase
 - `gatekeeper usecase` 才是決定「先做 guard，再進主流程」的入口編排點
 
 ## Responsibilities
-- 接收 `raw user text`
+- 接收單一 candidate text
 - 執行第一層文本分數判定
 - 將文本判定結果正規化成統一 decision 結構
 - 若第一層判定為高風險，直接擋下
@@ -137,7 +137,7 @@ UseCase
 
 Service
 ├─ Evaluate(command)
-├─ ScoreText(rawUserText)
+├─ ScoreText(userText)
 └─ EvaluateWithLLM(command)
 ```
 
@@ -147,12 +147,13 @@ Service
 - 不因為有 text scoring 與 llm guard 兩條路，就拆成兩個 usecase
 - 第二層 builder / aiclient orchestration 應封裝在 `promptguard service` 內，不回流到 `gatekeeper`
 - 不另外拆新 module；第一層規則引擎仍屬於 `promptguard` 內部責任
+- `promptguard command` 仍只帶一段 candidate text；current runtime 由 gatekeeper 依序把 `userText` 與 transport 直接帶入的 `intentText` 分別送入
 
 `ScoreText` 的內部細部架構建議再拆成 pipeline：
 
 ```text
-ScoreText(rawUserText)
-  -> normalize(rawUserText)
+ScoreText(userText)
+  -> normalize(userText)
   -> match(normalizedText)
   -> categorize(matches)
   -> score(matches, categories)
@@ -193,7 +194,7 @@ internal/promptguard/
   - 把 score 映射成 `allow / block / needs_llm`
 
 建議 command 至少包含：
-- `rawUserText`
+- `userText`
 - `appId`
 - `builderConfig`
   - 供 builder dedicated guard prompt assembly 使用
@@ -300,7 +301,7 @@ Rule
 ```text
 promptguard evaluate
 │
-├─ Step 1: ScoreText(rawUserText)
+├─ Step 1: ScoreText(userText)
 │
 ├─ score decision = block
 │  └─ 直接回 block
@@ -321,8 +322,8 @@ promptguard evaluate
 第一版 text scoring 已採 rule-based pipeline：
 
 ```text
-ScoreText(rawUserText)
-  -> normalize(rawUserText)
+ScoreText(userText)
+  -> normalize(userText)
   -> match features
   -> map categories
   -> accumulate score
@@ -469,7 +470,7 @@ decision router 第一版責任：
 - 先採 threshold-based routing，不在第一版加入過多特例判斷
 
 第一版 service 對外責任應收斂為：
-- `ScoreText(rawUserText)`
+- `ScoreText(userText)`
   - 僅負責第一層 text classifier
 - `EvaluateWithLLM(command)`
   - 僅負責第二層 Gemma/local guard
@@ -579,7 +580,7 @@ promptguard service
 
 ```text
 builder guard prompt
-├─ raw user text
+├─ candidateText
 ├─ builder identity
 ├─ app identity
 ├─ consult mode
@@ -587,6 +588,7 @@ builder guard prompt
 ```
 
 第一版不應帶入：
+- 另一段 profile text
 - source prompts
 - rag contents
 - attachments
@@ -594,7 +596,8 @@ builder guard prompt
 - astrology / mbti 業務分析內容
 
 理由：
-- prompt injection 的判斷目標是 `raw user text`
+- prompt injection 的判斷目標是單一 candidate text
+- current runtime 尚未在 transport 層建立 `intentText` 的可信來源邊界，所以 gatekeeper 會把 transport 直接帶入的 `intentText` 也當成 candidate text 送進 promptguard
 - `source / rag` 屬於業務語意材料，不是安全判斷材料
 - 把完整 source / rag 帶進 guard path，會把安全判斷和業務分析混在一起
 
@@ -674,7 +677,8 @@ OPENAI_API_KEY
 - 舊的 `INTERNAL_AI_COPILOT_PROMPTGUARD_*` 與主 Gemma 相容 env 仍保留 fallback，但只作相容用途，不建議日常手設
 
 ## Boundary Rule
-- `promptguard` 只看 `raw user text`
+- `promptguard` 一次只看單一 candidate text
+- current runtime 中 gatekeeper 會分別把 `userText` 與 transport 直接帶入的 `intentText` 各自送入 promptguard
 - 不看附件內容
 - 不看 builder 組裝後的完整 instructions
 - 不負責業務內容分析

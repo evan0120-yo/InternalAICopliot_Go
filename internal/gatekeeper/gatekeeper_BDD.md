@@ -9,7 +9,7 @@
 - grpcapi transport：將 gRPC request 轉成 gatekeeper 可驗的 command
 - gatekeeper handler：解析 HTTP request 並將合法請求交給 usecase
 - guard service：驗證 consult request 與解析 client IP
-- promptguard usecase：針對 raw user text 做 prompt injection guard 決策
+- promptguard usecase：針對 userText 做 prompt injection guard 決策
 
 ## Scenario Group: List Builders
 - Given public user 呼叫 `GET /api/builders`
@@ -79,7 +79,7 @@ ProfileConsult request
        │
        ├─ builderId 驗證
        ├─ subjectProfile 缺值？
-       │   └─ 是 -> 合法 text-only profile
+       │   └─ 是 -> 合法 userText-only / intentText-only profile
        └─ subjectProfile 有值
            ├─ subjectId 必填
            ├─ analysisPayloads[] 不可重複
@@ -91,7 +91,11 @@ ProfileConsult request
   When gatekeeper 驗證 structured profile consult
   Then 應保留 `builderId` 與 `subjectProfile` envelope，並以 `ConsultModeProfile` 轉交 builder usecase
 
-- Given `ProfileConsult` 未帶 `subjectProfile` 但 `text` 有值
+- Given `ProfileConsult` 未帶 `subjectProfile` 但 `userText` 有值
+  When gatekeeper 驗證 structured profile consult
+  Then 不應拒絕該 request，且仍應以 `ConsultModeProfile` 轉交 builder usecase
+
+- Given `ProfileConsult` 未帶 `subjectProfile` 但 `intentText` 有值
   When gatekeeper 驗證 structured profile consult
   Then 不應拒絕該 request，且仍應以 `ConsultModeProfile` 轉交 builder usecase
 
@@ -242,7 +246,7 @@ Consult 驗證主鏈
 
 - Given external app structured profile consult request 合法
   When usecase 執行 consult
-  Then 應將 appId、builderId、optional `subjectProfile`、text、client IP 與 `ConsultModeProfile` 轉交給 builder consult usecase
+  Then 應將 appId、builderId、optional `subjectProfile`、optional `userText`、optional `intentText`、client IP 與 `ConsultModeProfile` 轉交給 builder consult usecase
 
 - Given public generic consult request 未帶 `appId`
   When usecase 執行 consult
@@ -254,19 +258,27 @@ ProfileConsult / PublicProfileConsult
         │
         ├─ gatekeeper validation
         ├─ builderCode != linkchat-astrology？ -> 直接 builder consult
-        ├─ text 為空？ -> 直接 builder consult
-        └─ text 有值
+        ├─ userText / intentText 都為空？ -> 直接 builder consult
+        └─ 任一有值
             └─ promptguard usecase
+                ├─ 依序檢查 userText / intentText
                 ├─ allow -> builder consult
                 ├─ block -> 正常 business response
                 └─ internal failure -> 系統錯誤
 ```
 
 - Given `ProfileConsult` 或 `PublicProfileConsult` request 已通過 gatekeeper 驗證
-  And `text` 有值
+  And `userText` 有值
   When gatekeeper usecase 執行 profile consult orchestration
   Then 應先呼叫 promptguard usecase
   And 不應直接把 request 送進 builder consult 主流程
+
+- Given `ProfileConsult` 或 `PublicProfileConsult` request 已通過 gatekeeper 驗證
+  And `intentText` 有值
+  And `userText` 為空
+  When gatekeeper usecase 執行 profile consult orchestration
+  Then 應先呼叫 promptguard usecase
+  And 不應直接繼續 builder consult 主流程
 
 - Given profile consult request 的 builder 不是 `linkchat-astrology`
   When gatekeeper usecase 處理 profile consult
@@ -288,7 +300,8 @@ ProfileConsult / PublicProfileConsult
   Then 應將其視為系統錯誤
   And 不應把這類 failure 誤當成 `status=false` 的正常 block
 
-- Given profile consult request 沒有 `text`
+- Given profile consult request 沒有 `userText`
+  And 沒有 `intentText`
   When gatekeeper usecase 處理 profile consult
   Then 應跳過 promptguard
   And 應直接繼續 builder consult 主流程
@@ -307,6 +320,7 @@ ProfileConsult / PublicProfileConsult
 - LinkChat analysis-specific payload parsing 應落在 builder 內第二層 factory，而不是 gatekeeper
 - promptguard orchestration 應放在 gatekeeper usecase，不應塞進 guard service
 - 第一版 promptguard integration 只先套用在 profile astrology 主流程，不擴到 generic consult
+- `promptguard` command 仍只帶一段 candidate text；current runtime 中 gatekeeper 會把 `userText` 與 transport 直接帶入的 `intentText` 分別送入 promptguard
 
 ## Code-Backed Tests
 - `service_test.go`

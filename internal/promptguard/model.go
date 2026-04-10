@@ -68,7 +68,7 @@ const (
 type Command struct {
 	AppID         string
 	BuilderConfig infra.BuilderConfig
-	RawUserText   string
+	UserText      string
 }
 
 // GuardPrompt is the builder-owned dedicated guard prompt payload.

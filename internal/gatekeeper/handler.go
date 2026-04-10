@@ -75,7 +75,8 @@ func (h *Handler) profileConsult(w http.ResponseWriter, r *http.Request) {
 		strings.TrimSpace(request.AppID),
 		request.BuilderID,
 		request.toSubjectProfile(),
-		request.Text,
+		request.effectiveUserText(),
+		request.effectiveIntentText(),
 		request.executionMode(),
 		clientIP,
 	)
@@ -158,6 +159,8 @@ type profileConsultRequest struct {
 	AppID          string                        `json:"appId"`
 	BuilderID      int                           `json:"builderId"`
 	SubjectProfile *subjectProfileRequestPayload `json:"subjectProfile"`
+	UserText       string                        `json:"userText"`
+	IntentText     string                        `json:"intentText"`
 	Text           string                        `json:"text"`
 	Mode           string                        `json:"mode,omitempty"`
 }
@@ -165,6 +168,17 @@ type profileConsultRequest struct {
 func (r profileConsultRequest) executionMode() infra.AIExecutionMode {
 	mode, _ := infra.ParseAIExecutionMode(r.Mode)
 	return mode
+}
+
+func (r profileConsultRequest) effectiveUserText() string {
+	if strings.TrimSpace(r.UserText) != "" {
+		return strings.TrimSpace(r.UserText)
+	}
+	return strings.TrimSpace(r.Text)
+}
+
+func (r profileConsultRequest) effectiveIntentText() string {
+	return strings.TrimSpace(r.IntentText)
 }
 
 type subjectProfileRequestPayload struct {

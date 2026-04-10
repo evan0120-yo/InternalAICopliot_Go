@@ -429,6 +429,8 @@ type ProfileConsultRequest struct {
 	SubjectProfile *SubjectProfile        `protobuf:"bytes,4,opt,name=subject_profile,json=subjectProfile,proto3" json:"subject_profile,omitempty"`
 	Text           string                 `protobuf:"bytes,5,opt,name=text,proto3" json:"text,omitempty"`
 	ClientIp       string                 `protobuf:"bytes,6,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
+	UserText       string                 `protobuf:"bytes,7,opt,name=user_text,json=userText,proto3" json:"user_text,omitempty"`
+	IntentText     string                 `protobuf:"bytes,8,opt,name=intent_text,json=intentText,proto3" json:"intent_text,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -494,6 +496,20 @@ func (x *ProfileConsultRequest) GetText() string {
 func (x *ProfileConsultRequest) GetClientIp() string {
 	if x != nil {
 		return x.ClientIp
+	}
+	return ""
+}
+
+func (x *ProfileConsultRequest) GetUserText() string {
+	if x != nil {
+		return x.UserText
+	}
+	return ""
+}
+
+func (x *ProfileConsultRequest) GetIntentText() string {
+	if x != nil {
+		return x.IntentText
 	}
 	return ""
 }
@@ -771,14 +787,17 @@ const file_api_grpc_internal_ai_proto_rawDesc = "" +
 	"\n" +
 	"status_ans\x18\x02 \x01(\tR\tstatusAns\x12\x1a\n" +
 	"\bresponse\x18\x03 \x01(\tR\bresponse\x12A\n" +
-	"\x04file\x18\x04 \x01(\v2-.internalaicopilot.integration.v1.FilePayloadR\x04file\"\xd9\x01\n" +
+	"\x04file\x18\x04 \x01(\v2-.internalaicopilot.integration.v1.FilePayloadR\x04file\"\x97\x02\n" +
 	"\x15ProfileConsultRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1d\n" +
 	"\n" +
 	"builder_id\x18\x02 \x01(\x05R\tbuilderId\x12Y\n" +
 	"\x0fsubject_profile\x18\x04 \x01(\v20.internalaicopilot.integration.v1.SubjectProfileR\x0esubjectProfile\x12\x12\n" +
 	"\x04text\x18\x05 \x01(\tR\x04text\x12\x1b\n" +
-	"\tclient_ip\x18\x06 \x01(\tR\bclientIp\"\x96\x01\n" +
+	"\tclient_ip\x18\x06 \x01(\tR\bclientIp\x12\x1b\n" +
+	"\tuser_text\x18\a \x01(\tR\buserText\x12\x1f\n" +
+	"\vintent_text\x18\b \x01(\tR\n" +
+	"intentText\"\x96\x01\n" +
 	"\x0eSubjectProfile\x12\x1d\n" +
 	"\n" +
 	"subject_id\x18\x01 \x01(\tR\tsubjectId\x12e\n" +

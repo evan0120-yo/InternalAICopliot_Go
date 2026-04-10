@@ -120,7 +120,7 @@ func TestValidateProfileConsultNormalizesProfileEnvelope(t *testing.T) {
 				Payload:       map[string]any{"type": " INTJ "},
 			},
 		},
-	}, "", "127.0.0.1")
+	}, "", "", "127.0.0.1")
 	if validationErr != nil {
 		t.Fatalf("expected profile consult validation success, got %v", validationErr)
 	}
@@ -151,7 +151,7 @@ func TestValidateProfileConsultRejectsInvalidAnalysisType(t *testing.T) {
 		AnalysisPayloads: []builder.SubjectAnalysisPayload{
 			{AnalysisType: " ", Payload: map[string]any{"type": "INTJ"}},
 		},
-	}, "", "127.0.0.1")
+	}, "", "", "127.0.0.1")
 	if validationErr == nil || !strings.Contains(validationErr.Error(), "analysisType") {
 		t.Fatalf("expected invalid analysis type error, got %v", validationErr)
 	}
@@ -171,7 +171,7 @@ func TestValidateProfileConsultRejectsDuplicateAnalysisType(t *testing.T) {
 			{AnalysisType: "mbti", Payload: map[string]any{"type": "INTJ"}},
 			{AnalysisType: "mbti", Payload: map[string]any{"type": "ENTJ"}},
 		},
-	}, "", "127.0.0.1")
+	}, "", "", "127.0.0.1")
 	if validationErr == nil || !strings.Contains(validationErr.Error(), "DUPLICATE_ANALYSIS_PAYLOAD") {
 		t.Fatalf("expected duplicate analysis payload error, got %v", validationErr)
 	}
@@ -193,7 +193,7 @@ func TestValidateProfileConsultRejectsBlankAnalysisTypeWithProfileContext(t *tes
 				Payload:      map[string]any{"type": "INTJ"},
 			},
 		},
-	}, "", "127.0.0.1")
+	}, "", "", "127.0.0.1")
 	if validationErr == nil || !strings.Contains(validationErr.Error(), "subjectProfile.analysisPayloads.analysisType") {
 		t.Fatalf("expected analysis type context in error, got %v", validationErr)
 	}
@@ -207,9 +207,26 @@ func TestValidateProfileConsultAllowsTextOnlyProfileRequests(t *testing.T) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	service := NewGuardService(infra.Config{}, store)
-	_, profile, validationErr := service.ValidateProfileConsult(context.Background(), "", 1, nil, "只看 common prompt", "127.0.0.1")
+	_, profile, validationErr := service.ValidateProfileConsult(context.Background(), "", 1, nil, "只看 common prompt", "", "127.0.0.1")
 	if validationErr != nil {
-		t.Fatalf("expected text-only profile request to pass, got %v", validationErr)
+		t.Fatalf("expected userText-only profile request to pass, got %v", validationErr)
+	}
+	if profile != nil {
+		t.Fatalf("expected nil profile, got profile=%+v", profile)
+	}
+}
+
+func TestValidateProfileConsultAllowsIntentTextOnlyProfileRequests(t *testing.T) {
+	store, err := infra.NewStore("")
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	service := NewGuardService(infra.Config{}, store)
+	_, profile, validationErr := service.ValidateProfileConsult(context.Background(), "", 1, nil, "", "請分析這個人的核心性格與外在社交表現", "127.0.0.1")
+	if validationErr != nil {
+		t.Fatalf("expected intentText-only profile request to pass, got %v", validationErr)
 	}
 	if profile != nil {
 		t.Fatalf("expected nil profile, got profile=%+v", profile)
@@ -233,7 +250,7 @@ func TestValidateProfileConsultRejectsBlankTheoryVersionWhenProvided(t *testing.
 				Payload:       map[string]any{"sun_sign": []any{"Scorpio"}},
 			},
 		},
-	}, "", "127.0.0.1")
+	}, "", "", "127.0.0.1")
 	if validationErr == nil || !strings.Contains(validationErr.Error(), "THEORY_VERSION_MISSING") {
 		t.Fatalf("expected blank theory version error, got %v", validationErr)
 	}
@@ -255,7 +272,7 @@ func TestValidateProfileConsultAllowsMissingTheoryVersionForLinkChatAstrology(t 
 				Payload:      map[string]any{"sun_sign": []any{"Scorpio"}},
 			},
 		},
-	}, "", "127.0.0.1")
+	}, "", "", "127.0.0.1")
 	if validationErr != nil {
 		t.Fatalf("expected missing theoryVersion to be allowed, got %v", validationErr)
 	}
@@ -281,7 +298,7 @@ func TestValidateProfileConsultAllowsSingleWeightedEntryWithoutWeightPercent(t *
 				},
 			},
 		},
-	}, "", "127.0.0.1")
+	}, "", "", "127.0.0.1")
 	if validationErr != nil {
 		t.Fatalf("expected single weighted entry without weightPercent to pass, got %v", validationErr)
 	}
@@ -308,7 +325,7 @@ func TestValidateProfileConsultRejectsMissingWeightPercentWhenMultipleEntriesPro
 				},
 			},
 		},
-	}, "", "127.0.0.1")
+	}, "", "", "127.0.0.1")
 	if validationErr == nil || !strings.Contains(validationErr.Error(), "weightPercent") {
 		t.Fatalf("expected missing weightPercent error, got %v", validationErr)
 	}
@@ -335,7 +352,7 @@ func TestValidateProfileConsultRejectsWeightPercentTotalNotEqualHundred(t *testi
 				},
 			},
 		},
-	}, "", "127.0.0.1")
+	}, "", "", "127.0.0.1")
 	if validationErr == nil || !strings.Contains(validationErr.Error(), "equal 100") {
 		t.Fatalf("expected weightPercent total error, got %v", validationErr)
 	}
@@ -361,7 +378,7 @@ func TestValidateProfileConsultRejectsWeightedEntryWithoutKey(t *testing.T) {
 				},
 			},
 		},
-	}, "", "127.0.0.1")
+	}, "", "", "127.0.0.1")
 	if validationErr == nil || !strings.Contains(validationErr.Error(), ".key") {
 		t.Fatalf("expected missing key error, got %v", validationErr)
 	}

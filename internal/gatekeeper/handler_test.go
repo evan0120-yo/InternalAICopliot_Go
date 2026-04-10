@@ -175,6 +175,47 @@ func TestProfileConsultHandlerAllowsPromptStrategyHintWithoutExternalAuth(t *tes
 	}
 }
 
+func TestProfileConsultHandlerAcceptsSplitUserAndIntentText(t *testing.T) {
+	handler := newTestHandler(t)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/profile-consult", strings.NewReader(`{
+		"appId":"linkchat",
+		"builderId":1,
+		"mode":"preview_prompt_body_only",
+		"intentText":"請分析這個人的核心性格與外在社交表現。",
+		"userText":"我特別想知道他在人群中的表現",
+		"subjectProfile":{
+			"subjectId":"user-123",
+			"analysisPayloads":[
+				{
+					"analysisType":"astrology",
+					"theoryVersion":"astro-v1",
+					"payload":{
+						"sun_sign":["Scorpio"]
+					}
+				}
+			]
+		}
+	}`))
+	request.RemoteAddr = "127.0.0.1:4567"
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var envelope infra.APIResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatalf("expected success envelope, got %+v", envelope)
+	}
+}
+
 func TestProfileConsultHandlerRejectsUnsupportedMode(t *testing.T) {
 	handler := newTestHandler(t)
 

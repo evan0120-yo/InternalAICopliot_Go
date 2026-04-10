@@ -59,6 +59,8 @@ message ProfileConsultRequest {
   SubjectProfile subject_profile = 4;
   string text = 5;
   string client_ip = 6;
+  string user_text = 7;
+  string intent_text = 8;
 }
 
 message SubjectProfile {

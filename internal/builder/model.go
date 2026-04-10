@@ -30,6 +30,8 @@ type ConsultCommand struct {
 	BuilderID        int
 	PreloadedBuilder *infra.BuilderConfig
 	Text             string
+	UserText         string
+	IntentText       string
 	OutputFormat     *infra.OutputFormat
 	Attachments      []infra.Attachment
 	ClientIP         string

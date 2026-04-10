@@ -2,6 +2,7 @@ package builder
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"com.citrus.internalaicopilot/internal/aiclient"
@@ -148,7 +149,14 @@ func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (i
 		return infra.ConsultBusinessResponse{}, infra.NewError("REQUEST_CANCELLED", "Request was cancelled.", 499)
 	}
 
-	promptResult, err := u.assembleService.AssemblePrompt(ctx, builderConfig, sources, ragsBySourceID, command.AppID, command.Text, command.SubjectProfile)
+	userText := command.Text
+	intentText := ""
+	if command.Mode == ConsultModeProfile {
+		userText = strings.TrimSpace(command.UserText)
+		intentText = strings.TrimSpace(command.IntentText)
+	}
+
+	promptResult, err := u.assembleService.AssemblePrompt(ctx, builderConfig, sources, ragsBySourceID, command.AppID, userText, intentText, command.SubjectProfile)
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}

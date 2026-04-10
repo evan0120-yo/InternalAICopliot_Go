@@ -63,7 +63,24 @@ builder consult command 必須帶明確 mode：
 - `ConsultModeGeneric` 代表 generic consult，走全量 source 選取規則。
 - `ConsultModeProfile` 代表 profile consult，走 app-aware structured profile 規則。
 - builder 不得靠 structured profile payload 是否為空推斷 mode。
-- `subjectProfile` 缺值且 `text!=""` 在 `ConsultModeProfile` 中仍是合法 request。
+- `subjectProfile` 缺值且 `userText!=""` 或 `intentText!=""` 在 `ConsultModeProfile` 中仍是合法 request。
+
+## Profile Input Split
+builder 在 profile-analysis path 應接收兩種自然語言輸入：
+- `userText`
+  - 使用者自由輸入
+  - untrusted
+  - 上游已先經過 promptguard
+- `intentText`
+  - 上游系統決定好的任務意圖
+  - 設計目標上應是 trusted
+  - 但 current runtime 若由 transport 直接帶入，gatekeeper 仍會先經過 promptguard
+
+規則：
+- builder 不應自行猜哪段文字是 trusted、哪段是 untrusted
+- gatekeeper 應把 `userText` 與 `intentText` 明確分欄傳進 builder consult command
+- 相容期內若 gatekeeper 仍傳舊 `text`，應把它視為 `userText`
+- builder 的責任是把 `userText` 與 `intentText` 有標記地合併進主 prompt，而不是在 builder 內再做安全分類
 
 ## App-Aware Prompt Assembly
 builder consult command 應帶 optional `appId`。
@@ -97,7 +114,7 @@ builder 的責任是：
 - 對 `appId=linkchat` 的 request，先進入 LinkChat strategy，再依 payload 內的 `analysisType` 分派到第二層 analysis factory
 - 不自行回 LinkChat 查 subject data
 - 不自行補齊被 LinkChat 省略的 analysis payload
-- 在 `ConsultModeProfile` 且 `subjectProfile` 為空時，允許 text-only profile request 繼續執行
+- 在 `ConsultModeProfile` 且 `subjectProfile` 為空時，允許 `userText`-only、`intentText`-only、或兩者並存的 profile request 繼續執行
 
 builder 不應做的事：
 - 不推測 external app 的 module entitlement
@@ -295,18 +312,19 @@ Gatekeeper -> ConsultUseCase
 - `builderName`
 - `ConsultModeProfile`
 - analysis summary（若此 builder 需要最小 analysis hint）
-- `rawUserText`
+- 單一 candidate text
 
 規則：
 - builder 在 promptguard path 只負責組出 deterministic guard prompt，不直接做 allow/block 決策。
 - 第一版 promptguard path 不應載入或展開：
+  - 另一段 profile text
   - source prompts
   - rag contents
   - attachments
   - full main consult instructions
   - `[SUBJECT_PROFILE]` 主分析內容
 - promptguard path 應只搬移 prompt injection / override 判定所需的 guard policy，不應把 main consult 的回覆風格、附件失敗說明、輸出格式要求整段搬進來。
-- promptguard 成為唯一的 `raw user text` injection / override 判定承接者後，main consult prompt 不應再重複這些 guard clauses。
+- promptguard 成為唯一的 `userText` injection / override 判定承接者後，main consult prompt 不應再重複這些 guard clauses。
 
 ## Prompt Assembly
 第一版目標與 Java 一致，並加上 app-aware structured profile/context block：
@@ -319,33 +337,37 @@ Prompt 組裝資料管線（由上至下依序輸出）
   └──────────────────────┬──────────────────────────┘
                          ↓
   ┌─────────────────────────────────────────────────┐
-  │ 2. [RAW_USER_TEXT]                              │
+  │ 2. [REQUEST_INTENT]（optional）                 │
   └──────────────────────┬──────────────────────────┘
                          ↓
   ┌─────────────────────────────────────────────────┐
-  │ 3. App-Aware Profile/Context Block              │
+  │ 3. [RAW_USER_TEXT]（optional）                  │
+  └──────────────────────┬──────────────────────────┘
+                         ↓
+  ┌─────────────────────────────────────────────────┐
+  │ 4. App-Aware Profile/Context Block              │
   │    （僅當 structured subjectProfile 存在時插入） │
   │    └── [SUBJECT_PROFILE]                        │
   │       （含 Internal 已翻譯好的語意片段）         │
   └──────────────────────┬──────────────────────────┘
                          ↓
   ┌─────────────────────────────────────────────────┐
-  │ 4. Selected Sources（依 orderNo ASC）           │
+  │ 5. Selected Sources（依 orderNo ASC）           │
   │    ├── source[0]                                │
-  │    │     └── 5. Resolved RAG[0]                 │
+  │    │     └── 6. Resolved RAG[0]                 │
   │    ├── source[1]                                │
-  │    │     └── 5. Resolved RAG[1]                 │
+  │    │     └── 6. Resolved RAG[1]                 │
   │    └── source[N]                                │
-  │          └── 5. Resolved RAG[N]                 │
+  │          └── 6. Resolved RAG[N]                 │
   └──────────────────────┬──────────────────────────┘
                          ↓
   ┌─────────────────────────────────────────────────┐
-  │ 6. [USER_INPUT]（optional）                     │
-  │    僅當沒有 override 消化 user text 時才附加    │
+  │ 7. [USER_INPUT]（optional）                     │
+  │    僅當沒有 override 消化 userText 時才附加     │
   └──────────────────────┬──────────────────────────┘
                          ↓
   ┌─────────────────────────────────────────────────┐
-  │ 7. [FRAMEWORK_TAIL]                             │
+  │ 8. [FRAMEWORK_TAIL]                             │
   │    安全與 JSON 回應契約保底                     │
   └─────────────────────────────────────────────────┘
 ```
@@ -353,7 +375,10 @@ Prompt 組裝資料管線（由上至下依序輸出）
 ### Important Behavior
 - `systemBlock=true` 是資料層區塊標記
 - 最後的安全與 JSON 回應契約仍由 `FRAMEWORK_TAIL` 保底
-- 若 overridable RAG 已經消化 user text，則不再附加 `[USER_INPUT]` 區塊
+- `intentText` 與 `userText` 應以不同區塊進 prompt，不應直接事先拼成一個無標記字串
+- 若 `intentText` 有值，builder 應輸出 `[REQUEST_INTENT]` 區塊
+- 若 `userText` 有值，builder 應輸出 `[RAW_USER_TEXT]` 區塊
+- 若 overridable RAG 已經消化 `userText`，則不再附加 `[USER_INPUT]` 區塊
 - default 與 app-specific strategy 都必須共用相同的 framework header / source / rag / tail 順序
 
 ## Ordering Rules
@@ -428,5 +453,5 @@ SaveGraph 輸入
 - source 若帶 `tags[]`，僅供 admin / 維護者搜尋與分群，不參與 runtime source lookup
 - 若 LinkChat 需要用自己的 key system 做欄位/value 級別的語意組裝，應在 LinkChat strategy 內完成；default strategy 與 shared consult skeleton 不受影響
 - rag 只處理已被選入的 source 補充資料
-- text-only profile request 仍屬於 profile mode，不屬於 generic consult
+- `userText`-only 或 `intentText`-only profile request 仍屬於 profile mode，不屬於 generic consult
 - promptguard 第一版只先掛在這條 profile astrology 主流程；builder 在這條線上只提供 dedicated guard prompt assembly，不擴成完整第二條 consult orchestration

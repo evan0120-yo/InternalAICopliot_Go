@@ -115,7 +115,7 @@ func (s *GuardService) ValidateConsult(ctx context.Context, builderID int, outpu
 }
 
 // ValidateProfileConsult validates structured profile consult input.
-func (s *GuardService) ValidateProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, text, clientIP string) (infra.BuilderConfig, *builder.SubjectProfile, error) {
+func (s *GuardService) ValidateProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, userText, intentText, clientIP string) (infra.BuilderConfig, *builder.SubjectProfile, error) {
 	if strings.TrimSpace(clientIP) == "" {
 		return infra.BuilderConfig{}, nil, infra.NewError("CLIENT_IP_MISSING", "Client IP could not be resolved.", http.StatusBadRequest)
 	}
@@ -128,8 +128,8 @@ func (s *GuardService) ValidateProfileConsult(ctx context.Context, appID string,
 	if err != nil {
 		return infra.BuilderConfig{}, nil, err
 	}
-	if strings.TrimSpace(text) == "" && normalizedProfile == nil {
-		return infra.BuilderConfig{}, nil, infra.NewError("PROFILE_INPUT_EMPTY", "subjectProfile or text is required.", http.StatusBadRequest)
+	if strings.TrimSpace(userText) == "" && strings.TrimSpace(intentText) == "" && normalizedProfile == nil {
+		return infra.BuilderConfig{}, nil, infra.NewError("PROFILE_INPUT_EMPTY", "subjectProfile, userText, or intentText is required.", http.StatusBadRequest)
 	}
 
 	return builderConfig, normalizedProfile, nil
@@ -174,13 +174,13 @@ func (s *GuardService) ValidateExternalConsult(ctx context.Context, appID string
 }
 
 // ValidateExternalProfileConsult validates an external app profile consult request.
-func (s *GuardService) ValidateExternalProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, text, clientIP string) (infra.AppAccess, infra.BuilderConfig, *builder.SubjectProfile, error) {
+func (s *GuardService) ValidateExternalProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, userText, intentText, clientIP string) (infra.AppAccess, infra.BuilderConfig, *builder.SubjectProfile, error) {
 	app, err := s.ValidateExternalApp(ctx, appID)
 	if err != nil {
 		return infra.AppAccess{}, infra.BuilderConfig{}, nil, err
 	}
 
-	builderConfig, normalizedProfile, err := s.ValidateProfileConsult(ctx, appID, builderID, subjectProfile, text, clientIP)
+	builderConfig, normalizedProfile, err := s.ValidateProfileConsult(ctx, appID, builderID, subjectProfile, userText, intentText, clientIP)
 	if err != nil {
 		return infra.AppAccess{}, infra.BuilderConfig{}, nil, err
 	}

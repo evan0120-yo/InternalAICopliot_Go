@@ -6,12 +6,12 @@
 這版重點是：
 - 先把 promptguard 主 decision flow 接好
 - 保留 text scoring 與 llm guard 兩層結構
-- text scoring 暫時固定回 `needs_llm`
+- text scoring 已落成第一版 rule-based classifier
 - llm guard 先切出 cloud / local 路由
 - 和星座主流程的串接點先定在 `gatekeeper usecase`
 
 ## Actors
-- caller：把 `raw user text` 交給 promptguard 做風險判定的上游 module
+- caller：把單一 candidate text 交給 promptguard 做風險判定的上游 module
 - promptguard usecase：對外暴露單一 `Evaluate` 入口
 - promptguard service：執行 text scoring 與 llm guard routing
 
@@ -29,13 +29,15 @@
 - Given `promptguard` module 第一版
   When 對外暴露 public entry
   Then usecase 應只保留單一 `Evaluate(command)` 入口
+  And `command` 不應承載獨立的 `intentText` 欄位
+  And current runtime 中 gatekeeper 會分別把 `userText` 與 transport 直接帶入的 `intentText` 包成單一 candidate text command
 
 ## Scenario Group: Service Method Split
 - Given `promptguard` service
   When 第一版設計內部方法
   Then service 應至少有：
   And `Evaluate(command)`
-  And `ScoreText(rawUserText)`
+  And `ScoreText(userText)`
   And `EvaluateWithLLM(command)`
 
 - Given 第二層 LLM guard 需要 builder 與 AI provider
@@ -48,7 +50,7 @@
   Then 不應另外拆成新的獨立 module
   And 應保留在 `promptguard` module 內部演進
 
-- Given `ScoreText(rawUserText)` 已開始承接第一層規則引擎
+- Given `ScoreText(userText)` 已開始承接第一層規則引擎
   When 設計 service 內部結構
   Then 不應把 normalize / match / score / route 全塞在一個大函式內
   And 應拆成可測試的內部 pipeline
@@ -99,24 +101,24 @@
   And `Rule -> RuleMatch -> TextAnalysis -> Evaluation`
 
 ## Scenario Group: First-Version Text Scoring Rule Engine
-- Given 第一版 `ScoreText(rawUserText)`
+- Given 第一版 `ScoreText(userText)`
   When input 沒命中任何風險規則
   Then 應回傳 `decision=allow`
   And `score` 應為 `0`
   And `source` 應為 `text_rule`
 
-- Given 第一版 `ScoreText(rawUserText)`
+- Given 第一版 `ScoreText(userText)`
   When input 只命中低風險或灰區規則
   Then 應回傳 `decision=needs_llm`
   And 不應直接 block
   And 應保留 matched rules 與 matched categories trace
 
-- Given 第一版 `ScoreText(rawUserText)`
+- Given 第一版 `ScoreText(userText)`
   When input 命中高風險規則
   Then 應回傳 `decision=block`
   And 不應先進入第二層 llm guard
 
-- Given 第一版 `ScoreText(rawUserText)`
+- Given 第一版 `ScoreText(userText)`
   When input 包含 `提示詞`、`prompts` 或 `promots`
   Then 應直接回傳 `decision=block`
   And 不應把這些詞當成灰區 meta 詞
@@ -138,7 +140,7 @@
   And `Explainability / Match Trace`
 
 - Given `Normalization`
-  When 第一層開始處理 `raw user text`
+  When 第一層開始處理 `userText`
   Then 應先做文字正規化
   And 後續 feature matching 應以 normalized text 為基礎
 
@@ -212,7 +214,7 @@
   And 不應只剩 rule catalog 的靜態定義
 
 - Given 第一版 normalizer
-  When 對 `raw user text` 做前處理
+  When 對 `userText` 做前處理
   Then 應先只做必要轉換
   And 包含 lowercase、trim、空白正規化、換行正規化、全半形統一、零寬字元過濾
 
@@ -246,19 +248,19 @@
 ## Scenario Group: Main Decision Flow
 - Given `Evaluate(command)` 被呼叫
   When promptguard 執行第一版主流程
-  Then 應先執行 `ScoreText(command.RawUserText)`
+  Then 應先執行 `ScoreText(command.UserText)`
 
-- Given `ScoreText(rawUserText)` 回傳 `decision=block`
+- Given `ScoreText(userText)` 回傳 `decision=block`
   When `Evaluate(command)` 繼續判定
   Then 應直接回 block
   And 不應呼叫 `EvaluateWithLLM(command)`
 
-- Given `ScoreText(rawUserText)` 回傳 `decision=allow`
+- Given `ScoreText(userText)` 回傳 `decision=allow`
   When `Evaluate(command)` 繼續判定
   Then 應直接回 allow
   And 不應呼叫 `EvaluateWithLLM(command)`
 
-- Given `ScoreText(rawUserText)` 回傳 `decision=needs_llm`
+- Given `ScoreText(userText)` 回傳 `decision=needs_llm`
   When `Evaluate(command)` 繼續判定
   Then 應呼叫 `EvaluateWithLLM(command)`
 
@@ -315,8 +317,9 @@
 - Given promptguard 第二層要向下組 prompt
   When builder 參與 guard path
   Then 應組 dedicated guard prompt
-  And 該 prompt 應以 `raw user text` 為核心
+  And 該 prompt 應以單一 candidate text 為核心
   And 可帶 minimal builder/app/context metadata
+  And 不應同時帶入另一段 profile text
 
 - Given promptguard 第二層 guard prompt
   When 決定是否要帶 source 與 rag
@@ -370,7 +373,8 @@
 ## Scenario Group: Boundary Rule
 - Given `promptguard` 第一版
   When 執行風險判定
-  Then 只應看 `raw user text`
+  Then 一次只應看單一 candidate text
+  And current runtime 中 gatekeeper 可分別把 `userText` 與 transport 直接帶入的 `intentText` 各自送入 promptguard
   And 不應解析附件內容
   And 不應解析 builder 組裝後的完整 instructions
   And 不應理解 astrology / mbti / profile payload 業務內容

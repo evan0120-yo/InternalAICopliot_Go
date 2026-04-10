@@ -66,8 +66,9 @@ func TestProfileConsultPassesTheoryMappedPayloadThroughService(t *testing.T) {
 
 	theoryVersion := "astro-v1"
 	response, err := service.ProfileConsult(context.Background(), &grpcpb.ProfileConsultRequest{
-		AppId:     "linkchat",
-		BuilderId: 1,
+		AppId:      "linkchat",
+		BuilderId:  1,
+		IntentText: "請分析這個人的核心性格與外在社交表現。",
 		SubjectProfile: &grpcpb.SubjectProfile{
 			SubjectId: "user-123",
 			AnalysisPayloads: []*grpcpb.SubjectAnalysisPayload{
@@ -78,7 +79,7 @@ func TestProfileConsultPassesTheoryMappedPayloadThroughService(t *testing.T) {
 				},
 			},
 		},
-		Text: "請分析這個人",
+		UserText: "請分析這個人",
 	})
 	if err != nil {
 		t.Fatalf("ProfileConsult returned error: %v", err)

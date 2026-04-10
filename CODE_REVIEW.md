@@ -121,6 +121,12 @@ HTTP public、HTTP external、gRPC generic consult，最後都會走到同一個
 Profile consult 是現在和 LinkChat 最相關的那條線。
 這條線跟一般 consult 最大的差別，不是 transport，而是 builder 會先把 structured profile 轉成 app-aware prompt block，再決定哪些 source 參與。
 
+目前 profile request 的自然語言輸入已經拆成兩段：
+- `userText`：使用者自由輸入，視為 untrusted，會進 `promptguard`
+- `intentText`：設計目標是上游系統指定的任務意圖；但目前 HTTP / gRPC transport 也可直接帶 raw text，所以 current runtime 也會進 `promptguard`
+
+相容期內舊 `text` 仍可傳，但 handler / gRPC service 會把它當成 `userText` alias。
+
 ### 你可以從哪裡進來
 
 ```text
@@ -129,10 +135,14 @@ Profile consult
    ├─ HTTP /api/profile-consult
    │  ├─ JSON body
    │  ├─ appId 只當 prompt-strategy hint
+   │  ├─ `userText` / `intentText` 都可帶
+   │  ├─ legacy `text` 仍可帶，會映射成 `userText`
    │  └─ 可用 request.mode 覆蓋 backend 預設 AI mode
    │
    └─ gRPC ProfileConsult
       ├─ appId 空 -> 走 public profile path
+      ├─ `user_text` / `intent_text` 都可帶
+      ├─ legacy `text` 仍可帶，會映射成 `user_text`
       └─ appId 有值 -> 走 external app auth path
 ```
 
@@ -149,10 +159,11 @@ profile request 通過 transport parse
    │  ├─ theoryVersion 若有傳不可空白
    │  └─ weighted payload envelope 先驗 shape
    │
-   ├─ text 和 normalized subjectProfile 不能同時為空
+   ├─ userText、intentText、normalized subjectProfile 不能同時為空
    │
    ├─ 第一版 promptguard 條件命中？
-   │  ├─ builderCode=linkchat-astrology 且 text 非空 -> 先做 guard
+   │  ├─ builderCode=linkchat-astrology 且 userText / intentText 任一非空
+   │  │  -> gatekeeper 依序對兩段 candidate text 跑 promptguard
    │  └─ 否 -> 直接進 builder profile mode
    │
    └─ 進 builder profile mode
@@ -193,7 +204,7 @@ linkchat
 
 > 注意：code 有 `mbti` renderer，但目前 seed builder 只放了 astrology source graph；如果沒有對應 `mbti` sources，profile source filtering 會直接變成空集合而失敗。
 
-> 注意：`promptguard` 第一版只掛在 `linkchat-astrology` 且 `text` 非空的 profile request。其他 builders、generic consult、純 structured profile request 目前都直接跳過這層。
+> 注意：`promptguard` 第一版只掛在 `linkchat-astrology` 的 profile request；只要 `userText` 或 transport 直接帶入的 `intentText` 任一非空，gatekeeper 都會各跑一次 guard。
 
 ## E. AI 執行層現在怎麼切
 
@@ -244,19 +255,20 @@ repo 裡現在已經有一個獨立的 `promptguard` module，而且第一版已
 ProfileConsult / PublicProfileConsult
    │
    ├─ gatekeeper validate
-   ├─ builderCode=linkchat-astrology 且 text 非空？
+   ├─ builderCode=linkchat-astrology 且 userText / intentText 任一非空？
    │  ├─ 否 -> 直接 builder consult
    │  └─ 是
-   │     └─ promptguard.Evaluate
-   │        ├─ ScoreText(rawUserText)
-   │        │  ├─ no match -> allow
-   │        │  ├─ high-risk -> block
-   │        │  └─ gray area -> needs_llm
-   │        └─ EvaluateWithLLM(command)
-   │           ├─ builder.AssemblePromptGuard
-   │           └─ aiclient.AnalyzeGuard
-   │              ├─ cloud -> hosted Gemma
-   │              └─ local -> local endpoint
+   │     └─ gatekeeper 依序檢查每段 candidate text
+   │        └─ promptguard.Evaluate
+   │           ├─ ScoreText(candidateText)
+   │           │  ├─ no match -> allow
+   │           │  ├─ high-risk -> block
+   │           │  └─ gray area -> needs_llm
+   │           └─ EvaluateWithLLM(command)
+   │              ├─ builder.AssemblePromptGuard
+   │              └─ aiclient.AnalyzeGuard
+   │                 ├─ cloud -> hosted Gemma
+   │                 └─ local -> local endpoint
    │
    ├─ guard allow -> builder consult
    ├─ guard block -> 正常 business response
@@ -600,7 +612,8 @@ ConsultUseCase.Consult
 instructions
 ├─ framework header
 │  └─ [EXECUTION_RULES] + JSON contract 說明
-├─ [RAW_USER_TEXT]
+├─ [REQUEST_INTENT]        // 若 profile request 有 intentText
+├─ [RAW_USER_TEXT]         // 若 profile request 有 userText；generic consult 仍沿用單一 text
 ├─ [SUBJECT_PROFILE]        // 只有 profile flow 才可能有
 ├─ [PROMPT_BLOCK-1..N]
 │  └─ [SUPPLEMENT] title
@@ -612,7 +625,8 @@ user message
 ```
 
 這代表：
-- instructions 中仍保留 `[RAW_USER_TEXT]`，但 text 的 prompt injection / override guard 已改由上游 `gatekeeper -> promptguard -> Gemma/local` 先處理。
+- profile flow 的 instructions 現在會把 `intentText` 與 `userText` 分區塊組進去，不再先粗暴拼成一段字串；`intentText` 的設計目標是 trusted 任務意圖，但 current runtime 若由 transport 直接帶入，仍會先經過 promptguard。
+- instructions 中仍保留 `[RAW_USER_TEXT]`，但 `userText` 的 prompt injection / override guard 已改由上游 `gatekeeper -> promptguard -> Gemma/local` 先處理。
 - live provider 看到的使用者 message 並不是前端原文。
 
 ## D. Profile Consult
@@ -633,11 +647,15 @@ user message
 HTTP /api/profile-consult
   -> 可帶 mode
   -> appId 只當 strategy hint
+  -> 可帶 userText / intentText
+  -> legacy text 仍可帶，會視為 userText
   -> 不做 external app auth
 
 gRPC ProfileConsult
   -> appId 空     -> ValidateProfileConsult
   -> appId 非空   -> ValidateExternalProfileConsult
+  -> 可帶 user_text / intent_text
+  -> legacy text 仍可帶，會視為 user_text
   -> response 只映射 status / statusAns / response
 ```
 
@@ -653,7 +671,7 @@ gRPC ProfileConsult
 | `analysisType` 重複 | `DUPLICATE_ANALYSIS_PAYLOAD` |
 | `theoryVersion` 有傳但 trim 後空白 | `THEORY_VERSION_MISSING` |
 | weighted entry envelope 非法 | `INVALID_ANALYSIS_PAYLOAD` |
-| text 與 normalized profile 都空 | `PROFILE_INPUT_EMPTY` |
+| `userText`、`intentText` 與 normalized profile 都空 | `PROFILE_INPUT_EMPTY` |
 
 ### source filtering 實際分支
 
@@ -805,17 +823,18 @@ gatekeeper.UseCase.PublicProfileConsult / ProfileConsult
   -> evaluatePromptGuard
      -> shouldRunPromptGuard
         -> builderCode == linkchat-astrology
-        -> text != ""
-     -> promptguard.EvaluateUseCase.Evaluate
-        -> promptguard.Service.Evaluate
-           -> ScoreText
-              ├─ allow -> 直接放行
-              ├─ block -> 直接攔截
-              └─ needs_llm
-                 -> EvaluateWithLLM
-                    -> builder.AssemblePromptGuard
-                    -> aiUseCase.AnalyzeGuard
-                       -> cloud or local Gemma
+        -> userText / intentText 任一非空
+     -> for each candidateText in [userText, intentText]
+        -> promptguard.EvaluateUseCase.Evaluate
+           -> promptguard.Service.Evaluate
+              -> ScoreText(candidateText)
+                 ├─ allow -> 檢查下一段 candidate text 或直接放行
+                 ├─ block -> 直接攔截
+                 └─ needs_llm
+                    -> EvaluateWithLLM
+                       -> builder.AssemblePromptGuard
+                       -> aiUseCase.AnalyzeGuard
+                          -> cloud or local Gemma
 ```
 
 目前第一版 text classifier 真相：

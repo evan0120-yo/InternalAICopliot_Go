@@ -53,7 +53,8 @@ gRPC ProfileConsult
       └─ set ConsultModeProfile
 ```
 
-- Given external app 傳入固定 `builderId`、optional `subjectProfile` 與 optional `text`
+- Given external app 傳入固定 `builderId`、optional `subjectProfile`、optional `user_text`、optional `intent_text`
+  And 相容期內 optional `text` 可作為 `user_text` alias
   When grpcapi `ProfileConsult` 執行
   Then 應將其轉成交由 gatekeeper / builder 使用的 structured profile consult command
 
@@ -70,7 +71,11 @@ gRPC ProfileConsult
   Then 應保留 `{key, weightPercent}` 物件陣列形狀
   And 不應在 grpcapi 內先 flatten 成純字串陣列
 
-- Given `ProfileConsult` request 未帶 `subjectProfile` 且 `text` 有值
+- Given `ProfileConsult` request 未帶 `subjectProfile` 且 `user_text` 有值
+  When grpcapi 建立 command
+  Then command `Mode` 仍應為 `ConsultModeProfile`
+
+- Given `ProfileConsult` request 未帶 `subjectProfile` 且 `intent_text` 有值
   When grpcapi 建立 command
   Then command `Mode` 仍應為 `ConsultModeProfile`
 

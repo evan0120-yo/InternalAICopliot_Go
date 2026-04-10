@@ -41,7 +41,7 @@ Gatekeeper -> ConsultUseCase
   When consult 開始執行
   Then builder 不應自行補回 `mbti` 或其他未送入的 analysis type
 
-- Given request mode 為 `ConsultModeProfile` 且 `subjectProfile` 缺值但 `text` 有值
+- Given request mode 為 `ConsultModeProfile` 且 `subjectProfile` 缺值但 `userText` 或 `intentText` 有值
   When consult 開始執行
   Then 系統不應回退成 generic consult
 
@@ -66,7 +66,8 @@ Gatekeeper -> ConsultUseCase
 AssemblePrompt
       │
       ├─ framework header
-      ├─ [RAW_USER_TEXT]
+      ├─ [REQUEST_INTENT]（optional）
+      ├─ [RAW_USER_TEXT]（optional）
       ├─ app-aware profile/context block
       │   ├─ default
       │   └─ linkchat
@@ -162,20 +163,25 @@ AssemblePrompt
   When `[SUBJECT_PROFILE]` 被 render
   Then 該 value 內的 `|` 應 escape 成 `\|`
 
-- Given user text 為空
+- Given `intentText` 有值
+  When prompt 組裝完成
+  Then prompt 應包含 `[REQUEST_INTENT]` 區塊
+  And 該區塊內容應為 trusted upstream intent
+
+- Given `userText` 為空
   When prompt 組裝完成
   Then `[RAW_USER_TEXT]` 區塊要以預設文字描述「用戶沒有額外需求」
 
 - Given某個 overridable rag 含有 `{{userText}}`
-  When user text 有值
-  Then 應先以 user text 替換 placeholder，且不再追加 `[USER_INPUT]` 區塊
+  When `userText` 有值
+  Then 應先以 `userText` 替換 placeholder，且不再追加 `[USER_INPUT]` 區塊
 
 - Given某個 overridable rag 不含 placeholder
-  When user text 有值
-  Then 該 rag 內容應直接被 user text 覆寫，且不再追加 `[USER_INPUT]` 區塊
+  When `userText` 有值
+  Then 該 rag 內容應直接被 `userText` 覆寫，且不再追加 `[USER_INPUT]` 區塊
 
-- Given沒有任何 override 消化 user text
-  When user text 有值
+- Given沒有任何 override 消化 `userText`
+  When `userText` 有值
   Then prompt 應追加 `[USER_INPUT]` 區塊
 
 ## Scenario Group: PromptGuard Prompt Assembly
@@ -192,6 +198,7 @@ Promptguard service
   When builder 執行 dedicated guard prompt assembly
   Then 應只使用最小必要 guard context 組出專用 prompt
   And 不應沿用 main consult 的全量 prompt assembly
+  And 不應把另一段 profile text 帶進 promptguard guard prompt
 
 - Given promptguard path 正在組 guard prompt
   When builder 執行 dedicated guard prompt assembly
@@ -200,6 +207,7 @@ Promptguard service
   And 不應插入附件摘要
   And 不應組出主分析用的 `[SUBJECT_PROFILE]` 內容
   And `UserMessageText` 應使用 promptguard 專用訊息，而不是主 consult 訊息
+  And `UserMessageText` 應只基於單一 candidate text，而不是同時混入 `userText` 與 `intentText`
 
 - Given promptguard dedicated guard 已成為唯一的 text injection / override 判定承接者
   When builder 組 dedicated guard prompt

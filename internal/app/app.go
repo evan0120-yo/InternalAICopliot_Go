@@ -62,7 +62,7 @@ func New(cfg infra.Config) (*App, error) {
 	promptGuardService := promptguard.NewService(
 		promptGuardConfig,
 		promptguard.WithGuardPromptAssembler(func(ctx context.Context, command promptguard.Command) (promptguard.GuardPrompt, error) {
-			result, err := builderAssembleService.AssemblePromptGuard(ctx, command.BuilderConfig, command.AppID, command.RawUserText)
+			result, err := builderAssembleService.AssemblePromptGuard(ctx, command.BuilderConfig, command.AppID, command.UserText)
 			if err != nil {
 				return promptguard.GuardPrompt{}, err
 			}

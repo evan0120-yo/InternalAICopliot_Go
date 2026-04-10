@@ -78,12 +78,15 @@ func (u *UseCase) Consult(ctx context.Context, appID string, builderID int, text
 
 // PublicProfileConsult validates and forwards a public structured profile consult request.
 // appID is treated as an optional prompt-strategy hint and does not trigger external app authorization.
-func (u *UseCase) PublicProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, text string, mode infra.AIExecutionMode, clientIP string) (infra.ConsultBusinessResponse, error) {
-	builderConfig, normalizedProfile, err := u.guardService.ValidateProfileConsult(ctx, appID, builderID, subjectProfile, text, clientIP)
+func (u *UseCase) PublicProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, userText, intentText string, mode infra.AIExecutionMode, clientIP string) (infra.ConsultBusinessResponse, error) {
+	userText = strings.TrimSpace(userText)
+	intentText = strings.TrimSpace(intentText)
+
+	builderConfig, normalizedProfile, err := u.guardService.ValidateProfileConsult(ctx, appID, builderID, subjectProfile, userText, intentText, clientIP)
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
-	if blockedResponse, err := u.evaluatePromptGuard(ctx, appID, builderConfig, text); err != nil || blockedResponse != nil {
+	if blockedResponse, err := u.evaluatePromptGuard(ctx, appID, builderConfig, userText, intentText); err != nil || blockedResponse != nil {
 		if err != nil {
 			return infra.ConsultBusinessResponse{}, err
 		}
@@ -96,7 +99,8 @@ func (u *UseCase) PublicProfileConsult(ctx context.Context, appID string, builde
 		AppID:            appID,
 		BuilderID:        builderID,
 		PreloadedBuilder: &builderConfig,
-		Text:             text,
+		UserText:         userText,
+		IntentText:       intentText,
 		ClientIP:         clientIP,
 		SubjectProfile:   normalizedProfile,
 	})
@@ -121,21 +125,24 @@ func (u *UseCase) ExternalConsult(ctx context.Context, appID string, builderID i
 }
 
 // ProfileConsult validates and forwards a structured profile consult request.
-func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, text, clientIP string) (infra.ConsultBusinessResponse, error) {
+func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, userText, intentText, clientIP string) (infra.ConsultBusinessResponse, error) {
+	userText = strings.TrimSpace(userText)
+	intentText = strings.TrimSpace(intentText)
+
 	var (
 		builderConfig     infra.BuilderConfig
 		normalizedProfile *builder.SubjectProfile
 		err               error
 	)
 	if appID == "" {
-		builderConfig, normalizedProfile, err = u.guardService.ValidateProfileConsult(ctx, appID, builderID, subjectProfile, text, clientIP)
+		builderConfig, normalizedProfile, err = u.guardService.ValidateProfileConsult(ctx, appID, builderID, subjectProfile, userText, intentText, clientIP)
 	} else {
-		_, builderConfig, normalizedProfile, err = u.guardService.ValidateExternalProfileConsult(ctx, appID, builderID, subjectProfile, text, clientIP)
+		_, builderConfig, normalizedProfile, err = u.guardService.ValidateExternalProfileConsult(ctx, appID, builderID, subjectProfile, userText, intentText, clientIP)
 	}
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
-	if blockedResponse, err := u.evaluatePromptGuard(ctx, appID, builderConfig, text); err != nil || blockedResponse != nil {
+	if blockedResponse, err := u.evaluatePromptGuard(ctx, appID, builderConfig, userText, intentText); err != nil || blockedResponse != nil {
 		if err != nil {
 			return infra.ConsultBusinessResponse{}, err
 		}
@@ -147,48 +154,56 @@ func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID in
 		AppID:            appID,
 		BuilderID:        builderID,
 		PreloadedBuilder: &builderConfig,
-		Text:             text,
+		UserText:         userText,
+		IntentText:       intentText,
 		ClientIP:         clientIP,
 		SubjectProfile:   normalizedProfile,
 	})
 }
 
-func (u *UseCase) evaluatePromptGuard(ctx context.Context, appID string, builderConfig infra.BuilderConfig, text string) (*infra.ConsultBusinessResponse, error) {
-	if u.promptGuardUseCase == nil || !shouldRunPromptGuard(builderConfig, text) {
+func (u *UseCase) evaluatePromptGuard(ctx context.Context, appID string, builderConfig infra.BuilderConfig, userText, intentText string) (*infra.ConsultBusinessResponse, error) {
+	if u.promptGuardUseCase == nil || !shouldRunPromptGuard(builderConfig, userText, intentText) {
 		return nil, nil
 	}
 
-	evaluation, err := u.promptGuardUseCase.Evaluate(ctx, promptguard.Command{
-		AppID:         appID,
-		BuilderConfig: builderConfig,
-		RawUserText:   text,
-	})
-	if err != nil {
-		return nil, err
-	}
+	for _, candidate := range []string{strings.TrimSpace(userText), strings.TrimSpace(intentText)} {
+		if candidate == "" {
+			continue
+		}
 
-	switch evaluation.Decision {
-	case promptguard.DecisionAllow:
-		return nil, nil
-	case promptguard.DecisionBlock:
-		responseDetail := strings.TrimSpace(evaluation.Reason)
-		if responseDetail == "" {
-			responseDetail = "promptguard blocked request"
+		evaluation, err := u.promptGuardUseCase.Evaluate(ctx, promptguard.Command{
+			AppID:         appID,
+			BuilderConfig: builderConfig,
+			UserText:      candidate,
+		})
+		if err != nil {
+			return nil, err
 		}
-		response := infra.ConsultBusinessResponse{
-			Status:         false,
-			StatusAns:      "prompts有違法注入內容",
-			Response:       "取消回應",
-			ResponseDetail: responseDetail,
+
+		switch evaluation.Decision {
+		case promptguard.DecisionAllow:
+			continue
+		case promptguard.DecisionBlock:
+			responseDetail := strings.TrimSpace(evaluation.Reason)
+			if responseDetail == "" {
+				responseDetail = "promptguard blocked request"
+			}
+			response := infra.ConsultBusinessResponse{
+				Status:         false,
+				StatusAns:      "prompts有違法注入內容",
+				Response:       "取消回應",
+				ResponseDetail: responseDetail,
+			}
+			return &response, nil
+		default:
+			return nil, infra.NewError("PROMPTGUARD_DECISION_UNRESOLVED", "Promptguard did not return a final allow/block decision.", 500)
 		}
-		return &response, nil
-	default:
-		return nil, infra.NewError("PROMPTGUARD_DECISION_UNRESOLVED", "Promptguard did not return a final allow/block decision.", 500)
 	}
+	return nil, nil
 }
 
-func shouldRunPromptGuard(builderConfig infra.BuilderConfig, text string) bool {
-	if strings.TrimSpace(text) == "" {
+func shouldRunPromptGuard(builderConfig infra.BuilderConfig, userText, intentText string) bool {
+	if strings.TrimSpace(userText) == "" && strings.TrimSpace(intentText) == "" {
 		return false
 	}
 	return strings.TrimSpace(builderConfig.BuilderCode) == "linkchat-astrology"

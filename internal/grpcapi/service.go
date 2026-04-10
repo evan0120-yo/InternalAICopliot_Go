@@ -128,7 +128,8 @@ func (s *Service) ProfileConsult(ctx context.Context, request *grpcpb.ProfileCon
 		strings.TrimSpace(request.GetAppId()),
 		int(request.GetBuilderId()),
 		toSubjectProfile(request.GetSubjectProfile()),
-		request.GetText(),
+		effectiveProfileUserText(request),
+		strings.TrimSpace(request.GetIntentText()),
 		clientIP,
 	)
 	if err != nil {
@@ -140,6 +141,16 @@ func (s *Service) ProfileConsult(ctx context.Context, request *grpcpb.ProfileCon
 		StatusAns: result.StatusAns,
 		Response:  result.Response,
 	}, nil
+}
+
+func effectiveProfileUserText(request *grpcpb.ProfileConsultRequest) string {
+	if request == nil {
+		return ""
+	}
+	if strings.TrimSpace(request.GetUserText()) != "" {
+		return strings.TrimSpace(request.GetUserText())
+	}
+	return strings.TrimSpace(request.GetText())
 }
 
 func resolveClientIP(ctx context.Context, clientIP string) string {
