@@ -23,6 +23,11 @@ Gatekeeper -> ConsultUseCase
             └─ appId=linkchat  -> LinkChat strategy
                     └─ 第二層 analysis factory 決定
                        哪些 internal keys / source tags 參與
+        │
+        └─ choose AI route code
+            ├─ direct_gemma
+            ├─ direct_gpt54
+            └─ gemma_then_gpt54
 ```
 
 - Given builder 存在且 source 可載入
@@ -45,6 +50,11 @@ Gatekeeper -> ConsultUseCase
   When consult 開始執行
   Then 系統不應回退成 generic consult
 
+- Given builder 已完成素材準備
+  When consult 在送往 aiclient 前進入最後組裝階段
+  Then builder 應明確選出一個 AI route code
+  And 不應把 provider/model 決策留給 aiclient 自行猜測
+
 - Given builder 不存在
   When consult 開始執行
   Then 應回傳 `BUILDER_NOT_FOUND`
@@ -60,6 +70,20 @@ Gatekeeper -> ConsultUseCase
 - Given 某個 source 標記 `NeedsRagSupplement=true`
   When rag module 沒有回傳任何 supplements
   Then 應回傳 `RAG_SUPPLEMENTS_NOT_FOUND`
+
+## Scenario Group: AI Route Selection
+- Given builderCode 對應 LinkChat 的重分析任務
+  When builder 完成 consult assembly
+  Then builder 應可選擇 `direct_gpt54`
+
+- Given builderCode 對應 LineBot 備忘錄 / CRUD 抽取任務
+  When builder 完成 consult assembly
+  Then builder 應可選擇 `direct_gemma`
+
+- Given某個任務需要先 Gemma 輕分類，再 GPT-5.4 重處理
+  When builder 完成 consult assembly
+  Then builder 應可選擇 `gemma_then_gpt54`
+  And builder 不應自己承擔兩階段 AI 的 stage transition 邏輯
 
 ## Scenario Group: Prompt Assembly
 ```text

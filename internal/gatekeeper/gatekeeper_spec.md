@@ -12,6 +12,8 @@ Gatekeeper 是系統的 consult validation boundary。HTTP handler 直接承接 
 
 在第一版 promptguard integration 中，Gatekeeper 的 `ProfileConsult` / `PublicProfileConsult` orchestration 會在通過既有驗證後，先把可疑自由文字送進 promptguard usecase。current runtime 會先檢查 `userText`，若 transport 直接帶入 `intentText`，也會再對該段 `intentText` 做一次 guard；只有 promptguard 明確放行後，才會繼續進 builder 主 consult flow。
 
+未來若新增 LineBot extraction 這類任務，gatekeeper 仍維持同一個驗證邊界；是否要跑 promptguard，應由該任務自己的 route policy 決定，而不是在 gatekeeper 內硬寫成所有任務都跑或所有任務都不跑。
+
 對應 Java：`com.citrus.internalaicopilot.gatekeeper`
 
 ## Layering In This Module
@@ -330,3 +332,4 @@ Request 進入 Gatekeeper
 - public prompt-testing routes 的安全性預設由部署/環境隔離保護，不由 gatekeeper 在第一版內做 app auth
 - promptguard 是獨立 module；gatekeeper 只在 usecase 層調用它，不把 promptguard 寫進 gatekeeper service
 - Gatekeeper 不為 promptguard path 讀取 source / rag；那是下游 promptguard + builder 的邊界
+- Gatekeeper 若未來承接其他 gRPC contract，仍以「驗證欄位 + 決定是否呼叫 promptguard」為責任上限，不承擔 AI route factory 邏輯

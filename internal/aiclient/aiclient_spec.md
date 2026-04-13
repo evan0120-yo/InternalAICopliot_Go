@@ -6,7 +6,7 @@
 此文件用於模組層級的討論與設計對齊；具體 scenario、acceptance criteria、測試對應應維護在對應的 BDD 文件。
 
 ## Overview
-AIClient 負責 live AI provider 通訊，以及 local/dev 模式下的 preview 與 mock 輸出。接收 builder usecase 組裝好的 prompt 和附件，依 execution mode 與 provider 選擇正確路徑，最後回傳統一的 business response。
+AIClient 負責 live AI provider 通訊，以及 local/dev 模式下的 preview 與 mock 輸出。接收 builder usecase 組裝好的 prompt、附件與 AI route code，依 execution mode、route factory 與 provider executor 選擇正確路徑，最後回傳統一的 business response。
 
 對 LinkChat profile-analysis 這條線來說，AIClient 看到的已經是 builder 組裝完成的 instructions 與 user text，不直接解析 `analysisPayloads`、`subjectProfile` 或理論值本身。
 
@@ -24,10 +24,11 @@ AIClient 負責 live AI provider 通訊，以及 local/dev 模式下的 preview 
 
 ## Execution Mode And Provider Selection
 
-目標架構中，aiclient 的判斷分成兩層：
+目標架構中，aiclient 的判斷分成三層：
 
 - 第一層：execution mode
-- 第二層：live 模式下的 provider routing
+- 第二層：AI route factory
+- 第三層：live 模式下的 provider executor / stage orchestration
 
 ```text
 execution mode
@@ -35,9 +36,10 @@ execution mode
 ├─ preview_prompt_body_only
 └─ live
    ├─ mock mode
-   └─ ai provider
-      ├─ openai
-      └─ gemma
+   └─ ai route
+      ├─ direct_gemma
+      ├─ direct_gpt54
+      └─ gemma_then_gpt54
 ```
 
 其中 execution mode 維持三種：
@@ -54,7 +56,7 @@ preview_prompt_body_only
 live
   -> 進入 live path
   -> 若 mock mode 開啟，回 mock analyze
-  -> 若 mock mode 關閉，依 provider 呼叫 OpenAI 或 Gemma
+  -> 若 mock mode 關閉，依 route executor 執行單階段或多階段 AI 流程
 ```
 
 其中 `preview_prompt_body_only` 的定位要非常明確：
@@ -83,9 +85,10 @@ Repository 在第一版通常不是必要的；若未來需要持久化 audit/ca
 
 ## Responsibilities
 - 接收 instructions、user text、attachments
+- 接收 builder 已決定的 AI route code
 - 在 preview mode 下直接回傳完整 AI request preview
 - 在 mock mode 下直接回傳 mock analyze 結果
-- 在 live mode 下依 provider 路由到 OpenAI 或 Gemma
+- 在 live mode 下依 route executor 執行對應 AI 流程
 - 正規化 user text
 - 對 provider 需要的附件格式做適配
 - 分類附件為 image 或 file
@@ -100,6 +103,32 @@ Repository 在第一版通常不是必要的；若未來需要持久化 audit/ca
 - 若預覽策略為 `preview_prompt_body_only`，aiclient 應只輸出 builder 已組裝好的 prompt body
 - aiclient 不應在這個 mode 內合成假的 AI 結果
 - mock mode 是否啟用，應由顯式設定決定，而不是由 provider API key 是否存在決定
+
+## AI Route Factory
+aiclient 應是 AI 互動執行層，不是任務語意判斷層。
+
+```text
+builder
+├─ materials
+└─ AI route code
+   │
+   ▼
+aiclient
+├─ route factory
+│  ├─ direct_gemma
+│  ├─ direct_gpt54
+│  └─ gemma_then_gpt54
+└─ executor
+   ├─ 單階段 AI call
+   └─ 多階段 AI call
+```
+
+規則：
+- route code 應由 builder 先決定。
+- aiclient 收到 route code 後，應由 factory 選對應 executor。
+- aiclient 不應從 builderCode、subjectProfile 或 prompt 內容自行推測任務類型。
+- 多階段 route 的 stage transition 與 AI 回應判讀，屬於 aiclient executor 的責任。
+- route code 在 code 裡應使用 enum / constant，不應散落裸數字。
 
 ## Layer Responsibilities
 
@@ -125,6 +154,7 @@ Repository 在第一版通常不是必要的；若未來需要持久化 audit/ca
 - `preview_prompt_body_only` 仍遵守同一條邊界：aiclient 只輸出 builder 已組好的 body，不自己重新拼 profile 語意
 - provider selection 只處理 AI 通訊差異，不應回頭介入 builder prompt assembly
 - promptguard path 只負責執行 dedicated guard analyze，不應把 gatekeeper 的 allow/block 業務決策搬進 aiclient
+- aiclient 可以持有 AI 交互流程邏輯，但不應理解 LinkChat、LineBot、備忘錄、星座分析等 domain 業務
 
 ## Startup Configuration Contract
 
@@ -161,7 +191,12 @@ OPENAI_API_KEY
 ```text
 builder analyze request
       │
-      ├─ execution mode？
+      ├─ route factory
+      │   ├─ direct_gemma
+      │   ├─ direct_gpt54
+      │   └─ gemma_then_gpt54
+      │
+      └─ execution mode？
       │   ├─ preview_full
       │   │   └─ 直接回傳完整 preview response
       │   │      ├─ instructions
@@ -173,15 +208,16 @@ builder analyze request
       │       ├─ mock mode？
       │       │   ├─ 是 -> 直接回 mock analyze
       │       │   └─ 否
-      │       └─ provider？
-      │           ├─ openai
-      │           │   ├─ attachments 存在？ -> upload Files API
-      │           │   ├─ call Responses API
+      │       └─ executor 執行 route
+      │           ├─ direct_gpt54
+      │           │   ├─ OpenAI / GPT-5.4 provider path
       │           │   └─ parse structured JSON
-      │           └─ gemma
-      │               ├─ 依 provider contract 適配附件 / content
-      │               ├─ call live API
-      │               └─ parse structured JSON
+      │           ├─ direct_gemma
+      │           │   ├─ Gemma provider path
+      │           │   └─ parse structured JSON
+      │           └─ gemma_then_gpt54
+      │               ├─ stage 1: Gemma
+      │               └─ stage 2: GPT-5.4（由 executor 判定是否進入）
       └─ map provider error -> business error
 ```
 

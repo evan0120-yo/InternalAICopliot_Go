@@ -84,11 +84,47 @@ Step 6: 文件同步
 - public user 可以查詢可用 builders
 - public user 可以對指定 builder 發起 consult
 - LinkChat 這類 profile-analysis app 可以送出 structured gRPC profile consult request
+- 私人 LineBot 或其他外部系統可以透過不同的 gRPC contract 呼叫同一份 Internal codebase
 - external HTTP app 可以查詢自己被授權的 builders 並發起 consult
 - admin user 可以讀取與儲存 builder graph
 - admin user 可以查詢、建立、更新、刪除 template
 - system 會依 builder/source/rag/module 規則組裝 prompt
 - system 會依 output policy 決定是否產出純文字或檔案 payload
+
+## Shared Internal Architecture
+
+目前 agreed direction：
+
+```text
+多個 external system
+├─ LinkChat
+├─ LineBot
+└─ future apps
+   │
+   ▼
+同一份 Internal codebase
+│
+├─ grpcapi
+│  ├─ 不同 RPC contract
+│  └─ transport adapter 轉成 Internal command
+│
+├─ gatekeeper
+│  └─ 驗證與 request boundary
+│
+├─ builder
+│  ├─ 準備 source / rag / prompt materials
+│  └─ 決定 AI route code
+│
+└─ aiclient
+   ├─ AI route factory
+   └─ executor 執行單階段或多階段 AI 互動
+```
+
+規則：
+- 不優先拆成兩份幾乎相同的 Internal 專案。
+- 同一個 `IntegrationService` 可以暴露多個 RPC method，分別承接不同 external system 的 contract。
+- transport contract 可以不同，但 Internal 核心 orchestration 應盡量收斂。
+- 現階段 deployment 優先維持 GCP 技術棧；若需要隔離，優先考慮不同 deployment / project。
 
 ## Key Scenarios
 
@@ -207,6 +243,92 @@ startup env：
 - request-level `mode` 仍可保留給 manual debug / Postman 的覆蓋路徑
 - provider-specific HTTP payload、附件契約與錯誤 mapping 應封裝在 aiclient provider 內部，不外漏到 builder / gatekeeper
 - 舊的 `AI_DEFAULT_MODE / AI_PROVIDER / PROMPTGUARD_*` 僅保留相容 fallback，不作為日常啟動方式
+
+### Scenario group: task-level AI route selection
+
+主 consult flow 未來的 AI 選路不應只靠 deployment 全域 model；應能依任務類型走不同 route。
+
+```text
+request 進入
+   │
+   ▼
+grpcapi adapter
+   └─ 轉成 Internal command
+      │
+      ▼
+gatekeeper
+   └─ 驗證
+      │
+      ▼
+builder
+   ├─ 載入 source / rag / template
+   ├─ 組 prompt materials
+   └─ 選 AI route code
+      ├─ direct_gemma
+      ├─ direct_gpt54
+      └─ gemma_then_gpt54
+         │
+         ▼
+      aiclient
+      ├─ factory 選 executor
+      └─ executor 執行 AI 互動流程
+```
+
+規則：
+- AI route 的決定權在 `builder`。
+- `builder` 只決定 route 與準備素材，不承擔多階段 AI 交互細節。
+- `aiclient` 不自行從業務任務猜 provider/model；它只執行 `builder` 指定的 route。
+- 多階段 route（例如 `gemma_then_gpt54`）的 stage transition 邏輯應封裝在 `aiclient` executor。
+- route code 應使用明確 enum / constant，不應散落裸數字。
+
+例子：
+- LinkChat 資料分析
+  - builder 可選 `direct_gpt54`
+- LineBot 備忘錄 CRUD 抽取
+  - builder 可選 `direct_gemma`
+- 未來先 Gemma 輕分類，再 GPT-5.4 重處理
+  - builder 可選 `gemma_then_gpt54`
+
+### Scenario group: LineBot extraction path
+
+LineBot 這條線的已確認方向如下：
+
+```text
+LineBot server
+   │
+   └─ gRPC call
+      │
+      ▼
+grpcapi
+   └─ dedicated LineBot contract
+      │
+      ▼
+gatekeeper
+   ├─ 基本欄位驗證
+   └─ 這條線預設不跑 promptguard
+      │
+      ▼
+builder
+   ├─ 準備 extraction prompt materials
+   └─ route = direct_gemma
+      │
+      ▼
+aiclient
+   └─ Gemma executor
+      │
+      ▼
+回傳固定 JSON
+   │
+   ▼
+LineBot server
+   └─ Firestore CRUD / reply handling
+```
+
+規則：
+- Internal 只負責把口語句子轉成固定 JSON，不直接碰 LineBot server 的 Firestore CRUD。
+- 相對時間換算若由 LineBot server 自己處理，則 Internal 不需要扛 reference time / timezone 推理責任。
+- LineBot extraction contract 不應硬塞進現有 `ProfileConsult` 的 request shape。
+- 這條線可走同一個 `IntegrationService`，但應使用自己的 RPC contract。
 
 current follow-up：
 - internal React 測試頁不再傳 `mode`

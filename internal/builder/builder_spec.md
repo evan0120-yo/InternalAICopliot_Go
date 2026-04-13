@@ -49,6 +49,7 @@ UseCase -> Service -> Repository
 - module-aware source normalization
 - structured subject profile rendering
 - theory-translation-backed profile transformation
+- 依任務類型 / builderCode 決定 AI route code
 
 ### Repository responsibilities
 - builder/source/template persistence
@@ -64,6 +65,42 @@ builder consult command 必須帶明確 mode：
 - `ConsultModeProfile` 代表 profile consult，走 app-aware structured profile 規則。
 - builder 不得靠 structured profile payload 是否為空推斷 mode。
 - `subjectProfile` 缺值且 `userText!=""` 或 `intentText!=""` 在 `ConsultModeProfile` 中仍是合法 request。
+
+補充方向：
+- 若未來新增 LineBot extraction 或其他非 profile 任務，builder 應透過新的 task kind / consult mode / dedicated request contract 承接，而不是硬塞進現有 profile shape。
+
+## AI Route Selection Ownership
+builder 應擁有 AI route 選擇權；aiclient 只負責執行 builder 指定的 route。
+
+```text
+builder
+├─ 載入 source / rag / template
+├─ 準備 instructions / user message / schema
+└─ 選 AI route code
+   ├─ direct_gemma
+   ├─ direct_gpt54
+   └─ gemma_then_gpt54
+      │
+      ▼
+   aiclient
+   ├─ factory 選 executor
+   └─ executor 真正與 AI 溝通
+```
+
+規則：
+- builder 的責任是準備素材與決定 route code。
+- builder 不應承擔多階段 AI stage transition 的交互邏輯。
+- aiclient 不應自行從 builderCode、subjectProfile 或 prompt 內容猜測要打哪個 model。
+- route code 在 code 裡應使用明確 enum / constant，不應散落裸數字。
+- 若未來新增新的 AI 溝通方式，builder 的主要變更應收斂成新增 route selection，而不是重改整條 consult orchestration。
+
+route example：
+- `direct_gemma`
+  - 直接打 Gemma
+- `direct_gpt54`
+  - 直接打 GPT-5.4
+- `gemma_then_gpt54`
+  - 先打 Gemma，再由 aiclient executor 決定後續 GPT-5.4 互動流程
 
 ## Profile Input Split
 builder 在 profile-analysis path 應接收兩種自然語言輸入：
@@ -295,12 +332,17 @@ Gatekeeper -> ConsultUseCase
        which internal keys or source tags participate
   -> for each selected source with rag configs:
        rag resolver
+  -> choose AI route code
   -> run app-aware prompt strategy inside assemble prompt
   -> append app-specific profile/context block when present
   -> assemble prompt
-  -> ai client analyze
+  -> ai client analyze by selected route
   -> output render
 ```
+
+補充：
+- `choose AI route code` 應發生在 builder 內。
+- aiclient 接到的應是「素材 + route code」，不是再回頭看 builder 內容自行猜 provider。
 
 ## PromptGuard Prompt Assembly Boundary
 第一版 promptguard integration 不應重用整條 main consult prompt assembly。builder 應提供 dedicated guard prompt assembly path，讓 promptguard service 可在需要 LLM guard 時取得專用 prompt。

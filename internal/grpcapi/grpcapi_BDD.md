@@ -5,8 +5,20 @@
 
 ## Actors
 - external app：例如 LinkChat，透過 gRPC 呼叫 Internal
+- external app：例如私人 LineBot，透過不同 gRPC contract 呼叫同一份 Internal
 - grpcapi service：gRPC transport adapter
 - gatekeeper usecase：承接 transport 已轉換的 consult command
+
+## Scenario Group: Multiple External Contracts
+- Given LinkChat 與 LineBot 都要走 Internal 的 gRPC integration
+  When grpcapi 對外暴露 service
+  Then 可以在同一個 `IntegrationService` 內提供不同 RPC contract
+  And 不需要另外複製一份新的 Internal 專案
+
+- Given不同 external system 的 request 欄位語意不同
+  When grpcapi 接收到 request
+  Then grpcapi 應保留 transport 差異
+  And 在 adapter 層把它轉成 Internal command
 
 ## Scenario Group: List Builders
 - Given external app 呼叫 `ListBuilders`

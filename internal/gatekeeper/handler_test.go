@@ -351,7 +351,7 @@ func newTestHandlerWithSeed(t *testing.T, seed infra.StoreSeedData) http.Handler
 	ragUseCase := rag.NewResolveUseCase(rag.NewResolveService(store))
 	aiUseCase := aiclient.NewAnalyzeUseCase(aiclient.NewAnalyzeService(cfg))
 	outputUseCase := output.NewRenderUseCase(output.NewRenderService())
-	builderConsult := builder.NewConsultUseCase(store, ragUseCase, aiUseCase, outputUseCase, builder.NewAssembleService(store), "gpt-5.4")
+	builderConsult := builder.NewConsultUseCase(store, ragUseCase, aiUseCase, outputUseCase, builder.NewAssembleService(store), aiclient.AIRouteDirectGPT54)
 	useCase := NewUseCase(NewGuardService(cfg, store), nil, builderQuery, builderConsult)
 
 	handler := NewHandler(useCase)

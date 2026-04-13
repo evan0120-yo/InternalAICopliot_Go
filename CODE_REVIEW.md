@@ -19,7 +19,7 @@
 從 code 看得出的刻意選擇有幾個：
 - HTTP 和 gRPC 共用同一組 gatekeeper / builder / aiclient / output 邊界，不分兩套業務流程。
 - generic consult 和 profile consult 被明確拆成兩個 mode，不讓 builder 自己猜。
-- AI 執行邏輯已拆成 `preview / mock / live`，`live` 再切 `openai / gemma` provider。
+- AI 執行邏輯已拆成 `preview / mock / live`；`live` 不再直接看全域 provider，而是由 builder 先選 `direct_gpt54 / direct_gemma / gemma_then_gpt54` route，再交給 aiclient 的 route factory / executor 執行。
 - repo 內另外長出一個獨立的 `promptguard` module，而且現在已經接進 `linkchat-astrology` 的 profile 主流程；generic consult 仍不走這條 guard。
 - LinkChat 的 prompt 差異不塞在 transport，而是塞在 builder 的 app-aware strategy。
 - local 開發刻意保留 Firestore emulator + reset/seed on start。
@@ -228,9 +228,10 @@ Analyze
    │
    └─ live
       ├─ AIMockMode=true -> mock analyze
-      └─ AIMockMode=false -> provider
-         ├─ openai
-         └─ gemma
+      └─ AIMockMode=false -> route executor
+         ├─ direct_gpt54
+         ├─ direct_gemma
+         └─ gemma_then_gpt54
 ```
 
 ### 各 mode 的語意
@@ -238,8 +239,9 @@ Analyze
 - `preview_full`：回完整 instructions、固定 user message、附件摘要。
 - `preview_prompt_body_only`：回 builder 提供的 `PromptBodyPreview`。
 - `mock`：不打外部 AI，回內建假資料。
-- `live/openai`：OpenAI Files API + Responses API。
-- `live/gemma`：Google Generative Language API `generateContent` + resumable file upload。
+- `live/direct_gpt54`：OpenAI Files API + Responses API，model 固定 `gpt-5.4`。
+- `live/direct_gemma`：Google Generative Language API `generateContent` + resumable file upload。
+- `live/gemma_then_gpt54`：先打 Gemma；若 stage1 `status=true`，再把 stage1 結果附進 instructions，交給 `gpt-5.4`。
 
 > 注意：`preview_prompt_body_only` 現在實際上主要服務 profile prompt tuning。因為 builder 目前只會從 profile block 產生 `PromptBodyPreview`，一般 consult 多半會是空字串。
 
@@ -463,7 +465,7 @@ main
   -> builder.NewAssembleService
   -> builder.NewGraphService / UseCase
   -> builder.NewTemplateService / UseCase
-  -> builder.NewConsultUseCase(cfg.ResolvedAIModel())
+  -> builder.NewConsultUseCase(aiclient.DefaultAIRouteForConfig(cfg))
   -> gatekeeper.NewGuardService
   -> promptguard.LoadConfigFromEnv
   -> promptguard.NewService
@@ -501,7 +503,8 @@ main
   - `5 -> live + gemma + promptguard cloud`
   - `6 -> live + openai + promptguard local`
   - `7 -> live + gemma + promptguard local`
-- `ResolvedAIModel()` 會依 provider 回 `OpenAIModel` 或 `GemmaModel`，而這兩個值現在可由 `AI_PROFILE` 直接灌入預設組合。
+- 主 consult flow 現在不再把 `ResolvedAIModel()` 直接注入 builder；`AI_PROFILE` 先決定 default AI route，真正要打哪個 model 由 route executor 決定。
+- `direct_gpt54` route 目前固定打 `gpt-5.4`；`direct_gemma` route 走 `GemmaModel`；`gemma_then_gpt54` 會先用 Gemma，再由 executor 決定是否進 GPT-5.4。
 - 舊的 `AI_DEFAULT_MODE / AI_PROVIDER / PROMPTGUARD_*` 仍保留相容 fallback，但 README 與日常啟動方式已改為 `AI_PROFILE + API keys`。
 - `GEMINI_API_KEY` 現在是主 Gemma 與 promptguard cloud 的共同主 key；若同時存在舊的 `INTERNAL_AI_COPILOT_GEMMA_API_KEY` / `INTERNAL_AI_COPILOT_PROMPTGUARD_API_KEY`，runtime 會優先採用 `GEMINI_API_KEY`。
 
@@ -740,6 +743,8 @@ foreach source
 
 關鍵檔案：
 - internal/aiclient/service.go (line 35)
+- internal/aiclient/route.go (line 10)
+- internal/aiclient/route_executor.go (line 59)
 - internal/aiclient/provider_openai.go (line 28)
 - internal/aiclient/provider_gemma.go (line 33)
 - internal/infra/config.go (line 64)
@@ -755,13 +760,48 @@ AnalyzeService.Analyze
      -> else AIPreviewMode=true ? preview_full
      -> else live
 
-  -> preview_full               -> buildPreviewText
-  -> preview_prompt_body_only   -> request.PromptBodyPreview
-  -> live + AIMockMode=true     -> mockAnalyze
-  -> live + AIMockMode=false    -> liveProvider().Analyze
+  -> preview_full
+     -> buildPreviewText
+
+  -> preview_prompt_body_only
+     -> request.PromptBodyPreview
+
+  -> live + AIMockMode=true
+     -> mockAnalyze
+
+  -> live + AIMockMode=false
+     -> liveRouteExecutor(request.Route)
+        ├─ direct_gpt54
+        ├─ direct_gemma
+        └─ gemma_then_gpt54
 ```
 
-### provider 細節
+### route 與 provider 細節
+
+目前主 consult flow 是：
+
+```text
+builder
+  -> chooseAIRouteCode(...)
+     ├─ profile consult -> direct_gpt54
+     ├─ line-memo / line-event 類 builderCode -> direct_gemma
+     └─ 其他 builder -> default route fallback
+
+aiclient
+  -> liveRouteExecutor(route)
+     ├─ direct_gpt54
+     │  -> OpenAI provider
+     │  -> model 固定 gpt-5.4
+     ├─ direct_gemma
+     │  -> Gemma provider
+     └─ gemma_then_gpt54
+        -> stage1 Gemma
+        -> stage1 status=false ? 直接回
+        -> 否 -> 把 stage1 結果附進 instructions
+              -> stage2 GPT-5.4
+```
+
+> 注意：`aiclient` 現在不再從全域 provider 或 builderCode 猜主分析模型；route code 已由 builder 先決定。
 
 | provider | live API | 附件處理 | 結構化輸出 |
 | --- | --- | --- | --- |
@@ -804,6 +844,7 @@ preview / mock / live 都沿用這個 shape。
 | Gemma 空 output | `GEMMA_EMPTY_OUTPUT` |
 | Gemma upload 失敗 / 被拒 | `GEMMA_ATTACHMENT_UPLOAD_FAILED` / `GEMMA_ATTACHMENT_UPLOAD_REJECTED` |
 | provider 未註冊 | `AI_PROVIDER_UNSUPPORTED` |
+| route executor 缺 provider | `AI_ROUTE_EXECUTOR_UNSUPPORTED` |
 
 ### PromptGuard module 現況
 

@@ -24,7 +24,7 @@ func TestConsultReturnsBuilderNotFound(t *testing.T) {
 		aiclient.NewAnalyzeUseCase(aiclient.NewAnalyzeService(infra.Config{})),
 		output.NewRenderUseCase(output.NewRenderService()),
 		NewAssembleService(store),
-		"gpt-5.4",
+		aiclient.AIRouteDirectGPT54,
 	)
 
 	_, consultErr := useCase.Consult(context.Background(), ConsultCommand{BuilderID: 999})
@@ -46,7 +46,7 @@ func TestConsultReturnsCancelledWhenContextIsDone(t *testing.T) {
 		aiclient.NewAnalyzeUseCase(aiclient.NewAnalyzeService(infra.Config{})),
 		output.NewRenderUseCase(output.NewRenderService()),
 		NewAssembleService(store),
-		"gpt-5.4",
+		aiclient.AIRouteDirectGPT54,
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())

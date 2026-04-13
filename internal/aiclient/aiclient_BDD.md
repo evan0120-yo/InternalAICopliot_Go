@@ -8,6 +8,26 @@
 - aiclient usecase：對 builder 暴露單一 analyze 入口
 - promptguard service：在 text scoring 需要第二層 LLM 判定時，呼叫 aiclient 的 dedicated guard analyze
 
+## Scenario Group: AI Route Factory
+- Given builder 已明確選出一個 AI route code
+  When aiclient 收到 analyze request
+  Then 應先透過 route factory 選出對應 executor
+  And 不應從 prompt 內容自行猜 provider/model
+
+- Given route code 為 `direct_gemma`
+  When analyze 執行
+  Then aiclient 應走單階段 Gemma executor
+
+- Given route code 為 `direct_gpt54`
+  When analyze 執行
+  Then aiclient 應走單階段 GPT-5.4 executor
+
+- Given route code 為 `gemma_then_gpt54`
+  When analyze 執行
+  Then aiclient 應走多階段 executor
+  And stage transition 邏輯應封裝在 aiclient executor 內
+  And builder 不應承擔這條 route 的 AI 交互流程細節
+
 ## Scenario Group: Analyze Mode Selection
 - Given preview mode 開關為 true
   When `AnalyzeService.Analyze` 執行

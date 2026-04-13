@@ -321,6 +321,7 @@ ProfileConsult / PublicProfileConsult
 - promptguard orchestration 應放在 gatekeeper usecase，不應塞進 guard service
 - 第一版 promptguard integration 只先套用在 profile astrology 主流程，不擴到 generic consult
 - `promptguard` command 仍只帶一段 candidate text；current runtime 中 gatekeeper 會把 `userText` 與 transport 直接帶入的 `intentText` 分別送入 promptguard
+- 若未來新增 LineBot extraction 等任務，gatekeeper 仍只做驗證與是否呼叫 promptguard 的編排；AI route 與多階段 AI 交互不屬於 gatekeeper 責任
 
 ## Code-Backed Tests
 - `service_test.go`

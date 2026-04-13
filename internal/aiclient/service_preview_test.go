@@ -25,18 +25,19 @@ func TestAnalyzeReturnsPromptPreviewWhenPreviewModeEnabled(t *testing.T) {
 
 	response, err := service.Analyze(
 		context.Background(),
-		"gpt-5.4",
-		"user message",
-		"assembled instructions",
-		"",
-		[]infra.Attachment{
-			{
-				FileName:    "birth-chart.png",
-				ContentType: "image/png",
-				Data:        []byte("12345"),
+		AnalyzeCommand{
+			Route:             AIRouteDirectGPT54,
+			UserText:          "user message",
+			Instructions:      "assembled instructions",
+			PromptBodyPreview: "",
+			Attachments: []infra.Attachment{
+				{
+					FileName:    "birth-chart.png",
+					ContentType: "image/png",
+					Data:        []byte("12345"),
+				},
 			},
 		},
-		"",
 	)
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
@@ -71,18 +72,19 @@ func TestAnalyzePreviewModeTakesPriorityWhenOpenAIKeyExists(t *testing.T) {
 
 	response, err := service.Analyze(
 		context.Background(),
-		"gpt-5.4",
-		"user message",
-		"assembled instructions",
-		"",
-		[]infra.Attachment{
-			{
-				FileName:    "attachment.pdf",
-				ContentType: "application/pdf",
-				Data:        []byte("abc"),
+		AnalyzeCommand{
+			Route:             AIRouteDirectGPT54,
+			UserText:          "user message",
+			Instructions:      "assembled instructions",
+			PromptBodyPreview: "",
+			Attachments: []infra.Attachment{
+				{
+					FileName:    "attachment.pdf",
+					ContentType: "application/pdf",
+					Data:        []byte("abc"),
+				},
 			},
 		},
-		"",
 	)
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
@@ -108,7 +110,11 @@ theory_version: astro-v1
 人生主軸: 深層洞察
 情緒本能: 敏感共感`
 
-	response, err := service.Analyze(context.Background(), "gpt-5.4", "profile text", instructions, "", nil, "")
+	response, err := service.Analyze(context.Background(), AnalyzeCommand{
+		Route:        AIRouteDirectGPT54,
+		UserText:     "profile text",
+		Instructions: instructions,
+	})
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
 	}
@@ -138,12 +144,13 @@ func TestAnalyzeReturnsPromptBodyOnlyWhenRequested(t *testing.T) {
 
 	response, err := service.Analyze(
 		context.Background(),
-		"gpt-5.4",
-		"user message",
-		"assembled instructions",
-		"OS 內核: 內在敏感\n主執行緒: 50% 魔羯 / 50% 水瓶",
-		nil,
-		infra.AIExecutionModePreviewPromptBodyOnly,
+		AnalyzeCommand{
+			Route:             AIRouteDirectGPT54,
+			UserText:          "user message",
+			Instructions:      "assembled instructions",
+			PromptBodyPreview: "OS 內核: 內在敏感\n主執行緒: 50% 魔羯 / 50% 水瓶",
+			Mode:              infra.AIExecutionModePreviewPromptBodyOnly,
+		},
 	)
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
@@ -169,12 +176,12 @@ func TestAnalyzeLiveModeOverridesGlobalPreviewSwitch(t *testing.T) {
 
 	response, err := service.Analyze(
 		context.Background(),
-		"gpt-5.4",
-		"請依 instructions 執行",
-		"## [RAW_USER_TEXT]\n請幫我整理需求\n## [FRAMEWORK_TAIL]",
-		"",
-		nil,
-		infra.AIExecutionModeLive,
+		AnalyzeCommand{
+			Route:        AIRouteDirectGPT54,
+			UserText:     "請依 instructions 執行",
+			Instructions: "## [RAW_USER_TEXT]\n請幫我整理需求\n## [FRAMEWORK_TAIL]",
+			Mode:         infra.AIExecutionModeLive,
+		},
 	)
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
@@ -192,12 +199,12 @@ func TestAnalyzeUsesConfiguredDefaultModeWhenRequestModeMissing(t *testing.T) {
 
 	response, err := service.Analyze(
 		context.Background(),
-		"gpt-5.4",
-		"user message",
-		"assembled instructions",
-		"OS 內核: 內在敏感\n主執行緒: 50% 魔羯 / 50% 水瓶",
-		nil,
-		"",
+		AnalyzeCommand{
+			Route:             AIRouteDirectGPT54,
+			UserText:          "user message",
+			Instructions:      "assembled instructions",
+			PromptBodyPreview: "OS 內核: 內在敏感\n主執行緒: 50% 魔羯 / 50% 水瓶",
+		},
 	)
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)
@@ -218,12 +225,12 @@ func TestAnalyzeConfiguredDefaultModeWinsOverLegacyPreviewFlag(t *testing.T) {
 
 	response, err := service.Analyze(
 		context.Background(),
-		"gpt-5.4",
-		"user message",
-		"assembled instructions",
-		"主執行緒: prompt body",
-		nil,
-		"",
+		AnalyzeCommand{
+			Route:             AIRouteDirectGPT54,
+			UserText:          "user message",
+			Instructions:      "assembled instructions",
+			PromptBodyPreview: "主執行緒: prompt body",
+		},
 	)
 	if err != nil {
 		t.Fatalf("Analyze returned error: %v", err)

@@ -18,18 +18,18 @@ type ConsultUseCase struct {
 	aiUseCase       *aiclient.AnalyzeUseCase
 	outputUseCase   *output.RenderUseCase
 	assembleService *AssembleService
-	model           string
+	defaultAIRoute  aiclient.AIRouteCode
 }
 
 // NewConsultUseCase builds the consult entrypoint.
-func NewConsultUseCase(store *infra.Store, ragUseCase *rag.ResolveUseCase, aiUseCase *aiclient.AnalyzeUseCase, outputUseCase *output.RenderUseCase, assembleService *AssembleService, model string) *ConsultUseCase {
+func NewConsultUseCase(store *infra.Store, ragUseCase *rag.ResolveUseCase, aiUseCase *aiclient.AnalyzeUseCase, outputUseCase *output.RenderUseCase, assembleService *AssembleService, defaultAIRoute aiclient.AIRouteCode) *ConsultUseCase {
 	return &ConsultUseCase{
 		store:           store,
 		ragUseCase:      ragUseCase,
 		aiUseCase:       aiUseCase,
 		outputUseCase:   outputUseCase,
 		assembleService: assembleService,
-		model:           model,
+		defaultAIRoute:  defaultAIRoute,
 	}
 }
 
@@ -164,15 +164,15 @@ func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (i
 		return infra.ConsultBusinessResponse{}, infra.NewError("REQUEST_CANCELLED", "Request was cancelled.", 499)
 	}
 
-	businessResponse, err := u.aiUseCase.Analyze(
-		ctx,
-		u.model,
-		promptResult.UserMessageText,
-		promptResult.Instructions,
-		promptResult.PromptBodyPreview,
-		command.Attachments,
-		command.AIExecutionMode,
-	)
+	aiRoute := chooseAIRouteCode(command, builderConfig, u.defaultAIRoute)
+	businessResponse, err := u.aiUseCase.Analyze(ctx, aiclient.AnalyzeCommand{
+		Route:             aiRoute,
+		UserText:          promptResult.UserMessageText,
+		Instructions:      promptResult.Instructions,
+		PromptBodyPreview: promptResult.PromptBodyPreview,
+		Attachments:       command.Attachments,
+		Mode:              command.AIExecutionMode,
+	})
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}

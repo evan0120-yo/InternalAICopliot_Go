@@ -21,6 +21,7 @@ var (
 )
 
 type analyzeRequest struct {
+	Route             AIRouteCode
 	Model             string
 	UserText          string
 	Instructions      string
@@ -58,28 +59,29 @@ func newAnalyzeServiceWithProviders(config infra.Config, providers map[infra.AIP
 }
 
 // Analyze runs the configured AI strategy.
-func (s *AnalyzeService) Analyze(ctx context.Context, model, text, instructions, promptBodyPreview string, attachments []infra.Attachment, mode infra.AIExecutionMode) (response infra.ConsultBusinessResponse, err error) {
+func (s *AnalyzeService) Analyze(ctx context.Context, command AnalyzeCommand) (response infra.ConsultBusinessResponse, err error) {
 	request := analyzeRequest{
-		Model:             model,
-		UserText:          text,
-		Instructions:      instructions,
-		PromptBodyPreview: promptBodyPreview,
-		Attachments:       attachments,
-		Mode:              mode,
+		Route:             normalizeAIRouteCode(command.Route, DefaultAIRouteForConfig(s.config)),
+		UserText:          command.UserText,
+		Instructions:      command.Instructions,
+		PromptBodyPreview: command.PromptBodyPreview,
+		Attachments:       command.Attachments,
+		Mode:              command.Mode,
 	}
 	resolvedMode := s.resolveAnalyzeMode(request.Mode)
-	executionRoute := s.describeExecutionRoute(resolvedMode)
+	executionRoute := s.describeExecutionRoute(resolvedMode, request.Route)
 	builderCode := extractBuilderCode(request.Instructions)
+	modelDescription := s.describeRouteModel(request.Route)
 	startedAt := time.Now()
 
-	log.Printf("ai analyze started mode=%s route=%s model=%s attachments=%d builderCode=%s", resolvedMode, executionRoute, strings.TrimSpace(request.Model), len(request.Attachments), builderCode)
+	log.Printf("ai analyze started mode=%s route=%s model=%s attachments=%d builderCode=%s", resolvedMode, executionRoute, strings.TrimSpace(modelDescription), len(request.Attachments), builderCode)
 	defer func() {
 		durationMs := time.Since(startedAt).Milliseconds()
 		if err != nil {
-			log.Printf("ai analyze failed mode=%s route=%s model=%s attachments=%d builderCode=%s duration_ms=%d err=%v", resolvedMode, executionRoute, strings.TrimSpace(request.Model), len(request.Attachments), builderCode, durationMs, err)
+			log.Printf("ai analyze failed mode=%s route=%s model=%s attachments=%d builderCode=%s duration_ms=%d err=%v", resolvedMode, executionRoute, strings.TrimSpace(modelDescription), len(request.Attachments), builderCode, durationMs, err)
 			return
 		}
-		log.Printf("ai analyze completed mode=%s route=%s model=%s attachments=%d builderCode=%s status=%t preview=%t duration_ms=%d", resolvedMode, executionRoute, strings.TrimSpace(request.Model), len(request.Attachments), builderCode, response.Status, response.Preview, durationMs)
+		log.Printf("ai analyze completed mode=%s route=%s model=%s attachments=%d builderCode=%s status=%t preview=%t duration_ms=%d", resolvedMode, executionRoute, strings.TrimSpace(modelDescription), len(request.Attachments), builderCode, response.Status, response.Preview, durationMs)
 	}()
 
 	switch resolvedMode {
@@ -92,14 +94,14 @@ func (s *AnalyzeService) Analyze(ctx context.Context, model, text, instructions,
 		return s.mockAnalyze(request), nil
 	}
 
-	provider, err := s.liveProvider()
+	executor, err := s.liveRouteExecutor(request.Route)
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
-	return provider.Analyze(ctx, request)
+	return executor.Execute(ctx, request)
 }
 
-func (s *AnalyzeService) describeExecutionRoute(mode infra.AIExecutionMode) string {
+func (s *AnalyzeService) describeExecutionRoute(mode infra.AIExecutionMode, route AIRouteCode) string {
 	switch mode {
 	case infra.AIExecutionModePreviewFull, infra.AIExecutionModePreviewPromptBodyOnly:
 		return "preview"
@@ -107,19 +109,10 @@ func (s *AnalyzeService) describeExecutionRoute(mode infra.AIExecutionMode) stri
 		if s.config.AIMockMode {
 			return "mock"
 		}
-		return string(s.config.ResolvedAIProvider())
+		return string(normalizeAIRouteCode(route, DefaultAIRouteForConfig(s.config)))
 	default:
 		return "unknown"
 	}
-}
-
-func (s *AnalyzeService) liveProvider() (liveAnalyzeProvider, error) {
-	providerKey := s.config.ResolvedAIProvider()
-	provider, ok := s.providers[providerKey]
-	if ok && provider != nil {
-		return provider, nil
-	}
-	return nil, infra.NewError("AI_PROVIDER_UNSUPPORTED", "Configured AI provider is not supported.", http.StatusInternalServerError)
 }
 
 func (s *AnalyzeService) resolveAnalyzeMode(requestMode infra.AIExecutionMode) infra.AIExecutionMode {

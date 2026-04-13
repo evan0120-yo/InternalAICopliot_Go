@@ -33,6 +33,77 @@
 
 這份文件是 Go 版開發時的主要規範。若文件與程式碼不一致，應優先修文件或修程式碼，不要靠口頭記憶補齊。
 
+## Shared Internal Rule
+Internal 專案應優先維持單一 codebase，承接多種外部整合，而不是為 LinkChat、私人 LineBot 或其他 app 複製出多份幾乎相同的 Internal 專案。
+
+規則：
+- external integration 可以有多套 contract。
+- 同一個 `grpcapi` service 可同時暴露多個 RPC method。
+- 不同 external system 的 request shape 可以不同，只要 transport adapter 最後能轉成 Internal 可理解的 command。
+- 現階段優先維持同一份 GCP 技術棧與同一份 Internal codebase；若未來要隔離，優先考慮不同 deployment / 不同 GCP project，而不是先拆成兩份 repo。
+- architecture 應遵守：外面分開、裡面收斂。
+
+對應 package：
+
+```text
+external systems
+├─ LinkChat
+├─ LineBot
+└─ future apps
+   │
+   ▼
+internal/grpcapi
+   ├─ 各自的 RPC contract / adapter
+   └─ 轉成 Internal command
+      │
+      ▼
+internal/gatekeeper
+   │
+   ▼
+internal/builder
+   │
+   ▼
+internal/aiclient
+```
+
+## AI Route Ownership Rule
+AI model/provider/staged-flow 的決定權應放在 `builder`，不是 `aiclient`。
+
+規則：
+- `builder` 的責任是：
+  - 依 builderCode / task kind / request contract 決定這次任務的 AI route
+  - 載入 source / rag / template 等素材
+  - 組好要送進 AI 的材料
+- `aiclient` 的責任是：
+  - 收到 route code 與 builder 已準備好的材料
+  - 用 factory / executor 決定如何與 AI 互動
+  - 執行單階段或多階段 AI 流程
+- `aiclient` 不應自行從業務語意猜測要打哪個 model。
+- `builder` 不應承擔多階段 AI stage transition 的交互細節。
+
+建議決策樹：
+
+```text
+builder
+├─ 準備素材
+├─ 選 route code
+│  ├─ direct_gemma
+│  ├─ direct_gpt54
+│  └─ gemma_then_gpt54
+└─ 交給 aiclient
+
+aiclient
+├─ route factory
+│  ├─ GemmaExecutor
+│  ├─ GPT54Executor
+│  └─ GemmaThenGPT54Executor
+└─ 真正與 AI 溝通
+```
+
+補充：
+- route code 在 code 中應使用明確 enum / constant，不應散落裸數字。
+- 若未來新增新的 AI 溝通方式，主要變動點應集中在 `aiclient` 的 executor factory，而不是每次重改整個 `builder` 主幹。
+
 ## Primary Development Flow
 
 ```text
