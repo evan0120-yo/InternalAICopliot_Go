@@ -94,7 +94,7 @@ LineTaskConsult
 - `messageText` 應視為 LineBot server 已完成前綴清理後的純任務文字。
 - gatekeeper 不負責相對時間換算；它只驗證 `referenceTime` 與 `timeZone` 是否存在。
 - gatekeeper 不負責 Firestore CRUD、Calendar sync 或 AI JSON parse。
-- 正式整合入口應是 gRPC `LineTaskConsult`；但 local/dev 可另外補一條 HTTP `POST /api/line-task-consult` 測試入口，兩者都應收斂到同一個 `UseCase.LineTaskConsult`。
+- 正式整合入口應是 gRPC `LineTaskConsult`；但 local/dev 可另外補一條 HTTP `POST /api/line-task-consult` 測試入口，兩者都應收斂到同一條 extraction 主流程；HTTP 測試入口應映射到 `UseCase.PublicLineTaskConsult`。
 
 ## Profile PromptGuard Integration
 
@@ -236,7 +236,7 @@ Header：
 - `timeZone` required
 
 限制：
-- 此 route 應直接映射到 `UseCase.LineTaskConsult`
+- 此 route 應直接映射到 `UseCase.PublicLineTaskConsult`
 - gatekeeper 只做基本欄位驗證，不跑 promptguard
 - request / response shape 應盡量對齊 gRPC `LineTaskConsult`
 - transport 雖然是 HTTP，但應回 `APIResponse` JSON envelope；其中 `data` 內的欄位應對齊 `LineTaskConsultResponse`

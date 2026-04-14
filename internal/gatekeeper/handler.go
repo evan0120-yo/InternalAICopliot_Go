@@ -3,6 +3,7 @@ package gatekeeper
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,6 +27,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/builders", h.listBuilders)
 	mux.HandleFunc("POST /api/consult", h.consult)
 	mux.HandleFunc("POST /api/profile-consult", h.profileConsult)
+	mux.HandleFunc("POST /api/line-task-consult", h.lineTaskConsult)
 	mux.HandleFunc("GET /api/external/builders", h.listExternalBuilders)
 	mux.HandleFunc("POST /api/external/consult", h.externalConsult)
 }
@@ -85,6 +87,41 @@ func (h *Handler) profileConsult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	infra.WriteJSON(w, http.StatusOK, response)
+}
+
+func (h *Handler) lineTaskConsult(w http.ResponseWriter, r *http.Request) {
+	var request lineTaskConsultRequest
+	if err := infra.DecodeJSONStrict(w, r, &request, 0); err != nil {
+		infra.WriteError(w, err)
+		return
+	}
+
+	clientIP := h.useCase.GuardService().ResolveClientIP(r)
+	response, err := h.useCase.PublicLineTaskConsult(
+		r.Context(),
+		request.AppID,
+		request.BuilderID,
+		request.MessageText,
+		request.ReferenceTime,
+		request.TimeZone,
+		clientIP,
+	)
+	if err != nil {
+		infra.WriteError(w, err)
+		return
+	}
+
+	var parsed lineTaskConsultResponse
+	if err := json.Unmarshal([]byte(strings.TrimSpace(response.Response)), &parsed); err != nil {
+		log.Printf(
+			"line task response parse failed err=%v raw=%q",
+			err,
+			previewLineTaskResponse(response.Response, 240),
+		)
+		infra.WriteError(w, infra.NewError("LINE_TASK_RESPONSE_INVALID", "Line task response did not match the expected JSON contract.", http.StatusBadGateway))
+		return
+	}
+	infra.WriteJSON(w, http.StatusOK, parsed)
 }
 
 func (h *Handler) listExternalBuilders(w http.ResponseWriter, r *http.Request) {
@@ -179,6 +216,31 @@ func (r profileConsultRequest) effectiveUserText() string {
 
 func (r profileConsultRequest) effectiveIntentText() string {
 	return strings.TrimSpace(r.IntentText)
+}
+
+type lineTaskConsultRequest struct {
+	AppID         string `json:"appId"`
+	BuilderID     int    `json:"builderId"`
+	MessageText   string `json:"messageText"`
+	ReferenceTime string `json:"referenceTime"`
+	TimeZone      string `json:"timeZone"`
+}
+
+type lineTaskConsultResponse struct {
+	Operation     string   `json:"operation"`
+	Summary       string   `json:"summary"`
+	StartAt       string   `json:"startAt"`
+	EndAt         string   `json:"endAt"`
+	Location      string   `json:"location"`
+	MissingFields []string `json:"missingFields"`
+}
+
+func previewLineTaskResponse(raw string, max int) string {
+	trimmed := strings.TrimSpace(raw)
+	if max <= 0 || len(trimmed) <= max {
+		return trimmed
+	}
+	return trimmed[:max] + "..."
 }
 
 type subjectProfileRequestPayload struct {

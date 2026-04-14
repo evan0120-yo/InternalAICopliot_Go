@@ -181,13 +181,13 @@ POST /api/line-task-consult
       ├─ optional appId
       ├─ builderId / messageText / referenceTime / timeZone
       ├─ local/dev only
-      └─ 走同一條 UseCase.LineTaskConsult
+      └─ 走 `UseCase.PublicLineTaskConsult`
 ```
 
 - Given local/dev tester 呼叫 `POST /api/line-task-consult`
   And body 同時帶 `builderId`、`messageText`、`referenceTime`、`timeZone`
   When gatekeeper handler 解析該 request
-  Then 應將 request 映射到 `UseCase.LineTaskConsult`
+  Then 應將 request 映射到 `UseCase.PublicLineTaskConsult`
   And HTTP 回應的 `data` 欄位應對齊 `LineTaskConsultResponse`
 
 - Given `POST /api/line-task-consult` 缺少 `messageText`

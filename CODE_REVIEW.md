@@ -11,7 +11,7 @@
 - 內部前台使用者：查 builders、送出一般 consult、拿文字或檔案結果。
 - 外部整合系統：透過 `X-App-Id` 或 gRPC `appId` 走 app 授權。
 - LinkChat：走 `ProfileConsult`，把結構化 profile 交給 Internal 組 prompt。
-- LineBot server：走 `LineTaskConsult`，把口語句子交給 Internal 轉成結構化事件資料。
+- LineBot server：正式整合走 `LineTaskConsult` gRPC；local/dev 測試可走 `POST /api/line-task-consult`，把口語句子交給 Internal 轉成結構化事件資料。
 - 管理員：維護 builder graph 與 template library。
 
 它目前比較像公司內部的小型 AI 平台，不是高流量 SaaS。
@@ -23,7 +23,7 @@
 - AI 執行邏輯已拆成 `preview / mock / live`；`live` 不再直接看全域 provider，而是由 builder 先選 `direct_gpt54 / direct_gemma / gemma_then_gpt54` route，再交給 aiclient 的 route factory / executor 執行。
 - repo 內另外長出一個獨立的 `promptguard` module，而且現在已經接進 `linkchat-astrology` 的 profile 主流程；generic consult 仍不走這條 guard。
 - LinkChat 的 prompt 差異不塞在 transport，而是塞在 builder 的 app-aware strategy。
-- LineBot extraction 也沒有硬塞進 `ProfileConsult`；它有自己的 gRPC contract，但進 Internal 後仍走同一套 gatekeeper / builder / aiclient 骨架。
+- LineBot extraction 也沒有硬塞進 `ProfileConsult`；它有自己的 gRPC contract，另外也有 local/dev 專用 HTTP 測試入口，但進 Internal 後仍走同一套 gatekeeper / builder / aiclient 骨架。
 - local 開發刻意保留 Firestore emulator + reset/seed on start。
 
 它目前不是：
@@ -763,6 +763,7 @@ foreach source
 ## E. LineTask Extraction
 
 關鍵檔案：
+- internal/gatekeeper/handler.go (line 78)
 - internal/grpcapi/service.go (line 144)
 - internal/gatekeeper/usecase.go (line 140)
 - internal/gatekeeper/service.go (line 167)
@@ -774,10 +775,11 @@ foreach source
 這條線是給 LineBot server 走的 extraction contract，不共用 `ProfileConsult`。
 
 ```text
-gRPC LineTaskConsult
+formal external path
+  -> gRPC LineTaskConsult
   -> grpcapi.Service.LineTaskConsult
   -> gatekeeper.UseCase.LineTaskConsult
-  -> guard.ValidateLineTaskConsult / ValidateExternalLineTaskConsult
+  -> guard.ValidateExternalLineTaskConsult
   -> builder.ConsultUseCase.Consult
      -> ExtractTaskBuilder
      -> AssembleExtractPrompt
@@ -787,6 +789,21 @@ gRPC LineTaskConsult
      -> extraction response contract
   -> grpcapi.parseLineTaskResponse
   -> pb.LineTaskConsultResponse
+
+local/dev test path
+  -> POST /api/line-task-consult
+  -> gatekeeper.Handler.lineTaskConsult
+  -> gatekeeper.UseCase.PublicLineTaskConsult
+  -> guard.ValidateLineTaskConsult
+  -> builder.ConsultUseCase.Consult
+     -> ExtractTaskBuilder
+     -> AssembleExtractPrompt
+     -> chooseAIRouteCode(...)=direct_gemma
+  -> aiclient.Analyze
+     -> direct_gemma executor
+     -> extraction response contract
+  -> handler json.Unmarshal(business response.Response)
+  -> HTTP APIResponse.data
 ```
 
 ### gatekeeper 驗證規則
@@ -805,6 +822,8 @@ gRPC LineTaskConsult
 補充：
 - 這條線第一版不跑 `promptguard`。
 - `referenceTime` 與 `timeZone` 是必要欄位，因為 extraction prompt 會要求 Gemma 把相對時間換成絕對時間。
+- gRPC `LineTaskConsult` 會做 external app 驗證；HTTP `POST /api/line-task-consult` 只做 local/dev 基本驗證，不承擔 external app auth。
+- HTTP `POST /api/line-task-consult` 的 `appId` 只是 optional builder context hint，不會觸發 external app authorization。
 
 ### extraction prompt 與 response contract
 
@@ -834,7 +853,7 @@ response schema
 
 補充：
 - `taskCode / builderCode / appId / requestId / rawText` 不要求 AI 回，這些由程式自己持有。
-- `grpcapi` 會在回 gRPC 前再次 parse / normalize extraction JSON，因此對外 contract 是 typed protobuf，不是 raw JSON string。
+- `grpcapi` 會在回 gRPC 前把 extraction JSON 轉成 typed protobuf；HTTP local route 會把同一份 extraction JSON 轉成 typed `APIResponse.data`，兩邊都不是 raw JSON string 直出。
 
 ## F. AI 執行層與 provider
 
@@ -1046,6 +1065,16 @@ HTTP
   -> infra.WriteJSON
   -> APIResponse{success,data,error}
 
+HTTP LineTaskConsult
+  -> business response 的 Response 視為 extraction JSON
+  -> 轉成 typed APIResponse.data
+     ├─ operation
+     ├─ summary
+     ├─ startAt
+     ├─ endAt
+     ├─ location
+     └─ missingFields
+
 gRPC Consult
   -> ConsultBusinessResponse.File.Base64
   -> decode -> pb.FilePayload.Data
@@ -1062,6 +1091,7 @@ gRPC LineTaskConsult
 
 這代表 `responseDetail` 雖然是 business response contract 的一部分，但：
 - HTTP 會照原樣回。
+- HTTP line task consult 不直接暴露 business response，而是把 extraction JSON 轉成 typed `data`。
 - gRPC generic consult 只回 status/statusAns/response/file。
 - gRPC profile consult 更精簡，只回 status/statusAns/response。
 - gRPC line task consult 則不直接暴露 business response，而是把 extraction JSON 轉成 typed response。
@@ -1285,7 +1315,7 @@ gRPC：
 
 # BLOCK 3: LineTask Extraction + Builder Factory 變更 Code Review
 
-Review 範圍：commit `8c04fa0` 的 internal Go 變更 + 未 commit 的 `gatekeeper/usecase.go`（PublicLineTaskConsult）。
+Review 範圍：LineTask extraction、BuilderFactory，以及 local/dev HTTP `POST /api/line-task-consult` 這批 current runtime code。
 
 ## 變更總覽
 
@@ -1302,9 +1332,9 @@ Review 範圍：commit `8c04fa0` 的 internal Go 變更 + 未 commit 的 `gateke
    ├─ proto + pb generated
    ├─ grpcapi LineTaskConsult adapter
    ├─ gatekeeper validation + external validation
+   ├─ gatekeeper local/dev HTTP /api/line-task-consult
    ├─ builder extract prompt assembly
-   ├─ aiclient response contract routing
-   └─ gatekeeper PublicLineTaskConsult (未 commit)
+   └─ aiclient response contract routing
 ```
 
 涉及的 internal Go 檔案（不含 .md / .proto / pb generated）：
@@ -1327,8 +1357,11 @@ Review 範圍：commit `8c04fa0` 的 internal Go 變更 + 未 commit 的 `gateke
 | gatekeeper | service.go | 修改 (新增 ValidateLineTaskConsult / ValidateExternalLineTaskConsult) |
 | gatekeeper | service_test.go | 修改 (新增 validation test) |
 | gatekeeper | usecase.go | 修改 (新增 LineTaskConsult + PublicLineTaskConsult) |
+| gatekeeper | handler.go | 修改 (新增 POST /api/line-task-consult) |
+| gatekeeper | handler_test.go | 修改 (新增 line task HTTP handler tests) |
 | grpcapi | service.go | 修改 (新增 LineTaskConsult adapter + parseLineTaskResponse) |
 | grpcapi | service_test.go | 修改 (新增 parse normalize test) |
+| app | app_integration_test.go | 修改 (新增 /api/line-task-consult integration-like test) |
 
 ## A. 架構評價
 
@@ -1369,26 +1402,15 @@ Review 範圍：commit `8c04fa0` 的 internal Go 變更 + 未 commit 的 `gateke
    ├─ extract builder Build (task_builder_factory_test.go)
    ├─ extraction prompt 組裝 (assemble_service_test.go)
    ├─ gatekeeper line task validation (service_test.go)
+   ├─ gatekeeper line task HTTP handler (handler_test.go)
    ├─ aiclient live mode extraction contract (service_test.go)
-   └─ grpcapi parse normalize (service_test.go)
+   ├─ grpcapi parse normalize (service_test.go)
+   └─ app /api/line-task-consult flow (app_integration_test.go)
 ```
 
 ## B. 問題
 
-### B-1. gatekeeper BDD 的 error code 與實際 code 不一致
-
-```text
-gatekeeper_BDD.md
-└─ 寫 `LINE_TASK_MESSAGE_EMPTY`
-
-gatekeeper/service.go:144
-└─ 實際 code 是 `LINE_TASK_MESSAGE_TEXT_MISSING`
-```
-
-BDD 寫 `_EMPTY`，code 寫 `_TEXT_MISSING`，名稱不對齊。
-應統一為其中一個。
-
-### B-2. PublicLineTaskConsult 與 LineTaskConsult 的 command 組裝是複製貼上
+### B-1. PublicLineTaskConsult 與 LineTaskConsult 的 command 組裝是複製貼上
 
 ```text
 gatekeeper/usecase.go
@@ -1413,7 +1435,7 @@ buildLineTaskCommand(appID, builderID, messageText, referenceTime, timeZone, cli
 然後兩個 public method 只負責驗證 + call 共用 command builder。
 目前不是 bug，但如果欄位異動時只改一邊會造成不一致。
 
-### B-3. consultTaskBuilderFactory 每次 Consult 都 new
+### B-2. consultTaskBuilderFactory 每次 Consult 都 new
 
 ```text
 consult_usecase.go:103
@@ -1423,19 +1445,21 @@ consult_usecase.go:103
 `consultTaskBuilderFactory` 是 stateless struct，每次 new 沒有效能問題。
 但語意上 factory 屬於 `ConsultUseCase` 的組件，可在建構時初始化一次存成 field，不需要每次 Consult 都 new。
 
-### B-4. gatekeeper/usecase.go PublicLineTaskConsult 缺少單元測試
+### B-3. PublicLineTaskConsult 目前是 handler/app 路徑覆蓋，仍缺直接的 usecase 單元測試
 
 ```text
 現有測試
 ├─ ValidateLineTaskConsult → service_test.go ✓
 ├─ grpcapi parseLineTaskResponse → service_test.go ✓
-└─ PublicLineTaskConsult → ✗ 無測試
+├─ HTTP /api/line-task-consult handler → handler_test.go ✓
+├─ /api/line-task-consult app flow → app_integration_test.go ✓
+└─ PublicLineTaskConsult usecase direct unit test → ✗ 無
 ```
 
-`PublicLineTaskConsult` 是這次新增的 public method，目前沒有對應的測試。
-建議至少補一個 happy path test，驗證它走 `ValidateLineTaskConsult`（不走 external auth）且最終正確組出 `ConsultModeExtract` command。
+目前不是完全沒測到，但覆蓋點主要在 HTTP / app 路徑。
+若之後 `UseCase` 組 command 的欄位再增加，直接的 usecase 單元測試仍然有價值。
 
-### B-5. extraction prompt 缺少 AI 回傳結果解析容錯的測試
+### B-4. extraction prompt 缺少 AI 回傳結果解析容錯的測試
 
 ```text
 aiclient/response_contract.go
@@ -1456,9 +1480,8 @@ aiclient/response_contract.go
 
 | 優先 | 項目 | 位置 |
 |------|------|------|
-| **高** | BDD error code 與 code 不一致 | gatekeeper_BDD.md vs service.go:144 |
 | **中** | PublicLineTaskConsult 與 LineTaskConsult command 組裝重複 | gatekeeper/usecase.go:166 vs 185 |
-| **中** | PublicLineTaskConsult 缺少測試 | gatekeeper/ |
+| **中** | PublicLineTaskConsult 缺少 direct usecase 單元測試 | gatekeeper/ |
 | **低** | factory 可初始化一次存 field | builder/consult_usecase.go:103 |
 | **低** | extraction fallback parse 缺少測試 | aiclient/response_contract.go |
 
@@ -1468,6 +1491,6 @@ aiclient/response_contract.go
 - Builder Factory 成功消除了 `ConsultUseCase` 的 switch，擴充新任務類型只需加 concrete builder。
 - aiclient 的 response contract routing 讓 Gemma / OpenAI provider 不需要各自判斷 schema 類型。
 - grpcapi 的 `parseLineTaskResponse` 已改成直接委派 `aiclient.ParseExtractionStructuredResponse`，消除了先前重複 parse/normalize 的問題。
-- 新增的 `PublicLineTaskConsult` 遵循了現有 `PublicProfileConsult` 的相同模式（public = 不走 external app auth）。
+- 新增的 `PublicLineTaskConsult` 與 `POST /api/line-task-consult` 已把 local/dev 測試入口和正式 gRPC external path 分清楚。
 
-主要要修的是 **BDD error code 名稱對不上** 和 **PublicLineTaskConsult 的 command 組裝重複**。
+目前主要剩下的是 **PublicLineTaskConsult 的 command 組裝重複**，以及 **usecase direct unit test / extraction fallback parse test** 這類收尾項。 

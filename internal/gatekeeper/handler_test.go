@@ -239,6 +239,90 @@ func TestProfileConsultHandlerRejectsUnsupportedMode(t *testing.T) {
 	}
 }
 
+func TestLineTaskConsultHandlerReturnsTypedEnvelope(t *testing.T) {
+	handler := newTestHandlerWithSeed(t, newLineTaskTestSeed())
+
+	request := httptest.NewRequest(http.MethodPost, "/api/line-task-consult", strings.NewReader(`{
+		"builderId":4,
+		"messageText":"小傑 明天 下午三點找我吃飯",
+		"referenceTime":"2026-04-14 10:00:00",
+		"timeZone":"Asia/Taipei"
+	}`))
+	request.RemoteAddr = "127.0.0.1:4567"
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var envelope infra.APIResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatalf("expected success envelope, got %+v", envelope)
+	}
+
+	dataBytes, err := json.Marshal(envelope.Data)
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+	var response lineTaskConsultResponse
+	if err := json.Unmarshal(dataBytes, &response); err != nil {
+		t.Fatalf("Unmarshal response returned error: %v", err)
+	}
+	if response.Operation != "create" || response.Summary == "" || response.StartAt == "" || response.EndAt == "" {
+		t.Fatalf("unexpected line task response: %+v", response)
+	}
+}
+
+func TestLineTaskConsultHandlerRejectsMissingMessageText(t *testing.T) {
+	handler := newTestHandlerWithSeed(t, newLineTaskTestSeed())
+
+	request := httptest.NewRequest(http.MethodPost, "/api/line-task-consult", strings.NewReader(`{
+		"builderId":4,
+		"messageText":"",
+		"referenceTime":"2026-04-14 10:00:00",
+		"timeZone":"Asia/Taipei"
+	}`))
+	request.RemoteAddr = "127.0.0.1:4567"
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "LINE_TASK_MESSAGE_TEXT_MISSING") {
+		t.Fatalf("expected LINE_TASK_MESSAGE_TEXT_MISSING response, got %s", recorder.Body.String())
+	}
+}
+
+func TestLineTaskConsultHandlerAllowsOptionalAppIDHintWithoutExternalAuth(t *testing.T) {
+	handler := newTestHandlerWithSeed(t, newLineTaskTestSeed())
+
+	request := httptest.NewRequest(http.MethodPost, "/api/line-task-consult", strings.NewReader(`{
+		"appId":"linkchat",
+		"builderId":4,
+		"messageText":"小傑 明天 下午三點找我吃飯",
+		"referenceTime":"2026-04-14 10:00:00",
+		"timeZone":"Asia/Taipei"
+	}`))
+	request.RemoteAddr = "127.0.0.1:4567"
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestExternalBuildersHandlerRejectsMissingAppID(t *testing.T) {
 	handler := newTestHandler(t)
 
@@ -358,6 +442,29 @@ func newTestHandlerWithSeed(t *testing.T, seed infra.StoreSeedData) http.Handler
 	mux := http.NewServeMux()
 	handler.Register(mux)
 	return mux
+}
+
+func newLineTaskTestSeed() infra.StoreSeedData {
+	seed := infra.DefaultSeedData()
+	seed.Builders = append(seed.Builders, infra.BuilderConfig{
+		BuilderID:   4,
+		BuilderCode: "line-memo-crud",
+		GroupLabel:  "LineBot",
+		Name:        "Line 備忘錄抽取",
+		Description: "供 local/dev 驗證 line task extraction 路徑。",
+		IncludeFile: false,
+		FilePrefix:  "line-memo-crud",
+		Active:      true,
+	})
+	seed.Sources = append(seed.Sources, infra.Source{
+		SourceID:           1001,
+		BuilderID:          4,
+		Prompts:            "你現在負責將 LINE 口語訊息轉成固定 extraction JSON。",
+		OrderNo:            1,
+		SystemBlock:        false,
+		NeedsRagSupplement: false,
+	})
+	return seed
 }
 
 func testProjectID(prefix string) string {

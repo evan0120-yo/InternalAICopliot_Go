@@ -12,9 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"com.citrus.internalaicopilot/internal/aiclient"
 	"com.citrus.internalaicopilot/internal/builder"
 	"com.citrus.internalaicopilot/internal/gatekeeper"
 	"com.citrus.internalaicopilot/internal/infra"
+	"com.citrus.internalaicopilot/internal/output"
+	"com.citrus.internalaicopilot/internal/rag"
 )
 
 func TestAppSupportsBuilderListAndConsultFlow(t *testing.T) {
@@ -161,6 +164,56 @@ func TestAppSupportsExternalBuilderListAndConsultFlow(t *testing.T) {
 	}
 }
 
+func TestAppSupportsLineTaskConsultFlow(t *testing.T) {
+	app := newLineTaskIntegrationApp(t)
+
+	server := httptest.NewServer(app.Handler())
+	defer server.Close()
+
+	requestBody := strings.NewReader(`{
+		"builderId":4,
+		"messageText":"小傑 明天 下午三點找我吃飯",
+		"referenceTime":"2026-04-14 10:00:00",
+		"timeZone":"Asia/Taipei"
+	}`)
+	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/line-task-consult", requestBody)
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("POST /api/line-task-consult returned error: %v", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(response.Body)
+		t.Fatalf("POST /api/line-task-consult returned status %d body=%s", response.StatusCode, string(body))
+	}
+
+	var envelope infra.APIResponse
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		t.Fatalf("Decode returned error: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatalf("expected success envelope, got %+v", envelope)
+	}
+
+	dataBytes, _ := json.Marshal(envelope.Data)
+	var lineTaskResponse struct {
+		Operation string `json:"operation"`
+		Summary   string `json:"summary"`
+		StartAt   string `json:"startAt"`
+		EndAt     string `json:"endAt"`
+	}
+	if err := json.Unmarshal(dataBytes, &lineTaskResponse); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+	if lineTaskResponse.Operation != "create" || lineTaskResponse.StartAt == "" || lineTaskResponse.EndAt == "" {
+		t.Fatalf("unexpected line task response: %+v", lineTaskResponse)
+	}
+}
+
 func TestAppSupportsCORSPreflightAndTemplateCreateStatus(t *testing.T) {
 	app, err := New(newIntegrationTestConfig(t))
 	if err != nil {
@@ -209,5 +262,63 @@ func newIntegrationTestConfig(t *testing.T) infra.Config {
 		FirestoreProjectID:  fmt.Sprintf("internal-ai-copilot-app-test-%d", time.Now().UnixNano()),
 		StoreResetOnStart:   true,
 		AIMockMode:          true,
+	}
+}
+
+func newLineTaskIntegrationSeed() infra.StoreSeedData {
+	seed := infra.DefaultSeedData()
+	seed.Builders = append(seed.Builders, infra.BuilderConfig{
+		BuilderID:   4,
+		BuilderCode: "line-memo-crud",
+		GroupLabel:  "LineBot",
+		Name:        "Line 備忘錄抽取",
+		Description: "供 app integration 驗證 line task extraction 路徑。",
+		IncludeFile: false,
+		FilePrefix:  "line-memo-crud",
+		Active:      true,
+	})
+	seed.Sources = append(seed.Sources, infra.Source{
+		SourceID:           1001,
+		BuilderID:          4,
+		Prompts:            "你現在負責將 LINE 口語訊息轉成固定 extraction JSON。",
+		OrderNo:            1,
+		SystemBlock:        false,
+		NeedsRagSupplement: false,
+	})
+	return seed
+}
+
+func newLineTaskIntegrationApp(t *testing.T) *App {
+	t.Helper()
+
+	cfg := newIntegrationTestConfig(t)
+	store, err := infra.NewStoreWithOptions(infra.StoreOptions{
+		ProjectID:     cfg.FirestoreProjectID,
+		EmulatorHost:  cfg.FirestoreEmulatorHost,
+		SeedWhenEmpty: true,
+		ResetOnStart:  cfg.StoreResetOnStart,
+		SeedData:      newLineTaskIntegrationSeed(),
+	})
+	if err != nil {
+		t.Fatalf("NewStoreWithOptions returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	ragUseCase := rag.NewResolveUseCase(rag.NewResolveService(store))
+	aiUseCase := aiclient.NewAnalyzeUseCase(aiclient.NewAnalyzeService(cfg))
+	outputUseCase := output.NewRenderUseCase(output.NewRenderService())
+	builderQueryService := builder.NewQueryService(store)
+	builderAssembleService := builder.NewAssembleService(store)
+	builderConsultUseCase := builder.NewConsultUseCase(store, ragUseCase, aiUseCase, outputUseCase, builderAssembleService, aiclient.DefaultAIRouteForConfig(cfg))
+	gatekeeperUseCase := gatekeeper.NewUseCase(gatekeeper.NewGuardService(cfg, store), nil, builderQueryService, builderConsultUseCase)
+	gatekeeperHandler := gatekeeper.NewHandler(gatekeeperUseCase)
+
+	mux := http.NewServeMux()
+	gatekeeperHandler.Register(mux)
+
+	return &App{
+		handler:           withRequestLogging(withPanicRecovery(withCORS(mux, cfg.CORSAllowedOrigins))),
+		store:             store,
+		gatekeeperUseCase: gatekeeperUseCase,
 	}
 }
