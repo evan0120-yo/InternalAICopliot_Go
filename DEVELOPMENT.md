@@ -163,6 +163,41 @@ LineTaskConsultRequest
 - 沒有 `referenceTime` 與 `timeZone`，Gemma 不應被要求把 `明天 / 下午三點` 穩定轉成絕對時間。
 - `referenceTime` 與 `timeZone` 應由 LineBot server 提供，不由 Internal 自行猜測。
 
+## LineBot Local Testing Route
+除正式的 gRPC `LineTaskConsult` 外，Internal 應補一條 local/dev 專用的 HTTP 測試入口，方便直接從後台或 Postman 驗證 extraction 路徑。
+
+```text
+local/dev tester
+└─ POST /api/line-task-consult
+   ├─ JSON body
+   ├─ 不承擔 external app auth
+   ├─ 不跑 promptguard
+   └─ 直接進 gatekeeper -> builder -> aiclient extraction flow
+```
+
+建議 request shape：
+
+```text
+POST /api/line-task-consult
+├─ appId optional
+├─ builderId required
+├─ messageText required
+├─ referenceTime required
+└─ timeZone required
+```
+
+規則：
+- 這條 HTTP route 的目標是 local/dev prompt testing，不是正式對外整合通道。
+- 若有 `appId`，第一版只作 prompt strategy / builder context hint，不代表通過 external app auth。
+- 這條路應對齊 gRPC `LineTaskConsult` 的核心欄位與 response shape，避免測試結果和正式通道分裂。
+- transport 雖然是 HTTP，但回傳的 `data` 欄位應對齊 gRPC `LineTaskConsultResponse`：
+  - `operation`
+  - `summary`
+  - `startAt`
+  - `endAt`
+  - `location`
+  - `missingFields`
+
 ## LineBot Extraction Response Rule
 LineBot extraction 的 AI 內部格式可以是 JSON，但對外 contract 應是 gRPC protobuf response。
 

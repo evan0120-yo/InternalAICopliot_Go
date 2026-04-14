@@ -43,6 +43,10 @@
   When caller 執行 `POST /api/consult`
   Then consult flow 應成功跑完，且若 builder 需要輸出檔案，response 中應帶有對應檔案 payload
 
+- Given app 已成功啟動且 local/dev 測試用的 line task request 合法
+  When caller 執行 `POST /api/line-task-consult`
+  Then request 應進入同一套 gatekeeper / builder / aiclient extraction 流程
+
 ## Scenario Group: End-to-End External HTTP Flow
 - Given app 已成功啟動且 external app 帶入合法 `X-App-Id`
   When caller 執行 `GET /api/external/builders`

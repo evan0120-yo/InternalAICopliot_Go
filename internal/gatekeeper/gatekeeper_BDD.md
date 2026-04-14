@@ -173,6 +173,32 @@ LineTaskConsult
   When gatekeeper 繼續往下交給 builder
   Then 第一版不應呼叫 promptguard usecase
 
+## Scenario Group: Local HTTP LineTask Testing Route
+```text
+POST /api/line-task-consult
+      │
+      ├─ JSON body
+      ├─ optional appId
+      ├─ builderId / messageText / referenceTime / timeZone
+      ├─ local/dev only
+      └─ 走同一條 UseCase.LineTaskConsult
+```
+
+- Given local/dev tester 呼叫 `POST /api/line-task-consult`
+  And body 同時帶 `builderId`、`messageText`、`referenceTime`、`timeZone`
+  When gatekeeper handler 解析該 request
+  Then 應將 request 映射到 `UseCase.LineTaskConsult`
+  And HTTP 回應的 `data` 欄位應對齊 `LineTaskConsultResponse`
+
+- Given `POST /api/line-task-consult` 缺少 `messageText`
+  When gatekeeper handler 驗證 request
+  Then 應回 validation error
+
+- Given `POST /api/line-task-consult` 帶入 optional `appId`
+  When gatekeeper 處理 local/dev 測試 request
+  Then 不應把它當成 external app auth
+  And 第一版只應把它視為 prompt strategy / builder context hint
+
 - Given `analysisType=astrology` 的某個 slot 採 weighted canonical entries
   And 某筆 entry 缺少 `key`
   When gatekeeper 驗證 structured profile consult

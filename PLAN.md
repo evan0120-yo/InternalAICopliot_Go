@@ -348,6 +348,29 @@ grpcapi
 - 這條線可走同一個 `IntegrationService`，但應使用自己的 RPC contract。
 - 對外 contract 應是 gRPC protobuf response，不直接把 raw AI JSON string 外漏給 LineBot server。
 
+local/dev 補充測試路線：
+
+```text
+internal 後台 / Postman
+└─ POST /api/line-task-consult
+   ├─ JSON body
+   ├─ 可帶 optional appId
+   ├─ 不承擔 external app auth
+   └─ 直接進同一條 gatekeeper -> builder -> aiclient extraction 流程
+```
+
+規則：
+- 這條 HTTP route 只用於 local/dev prompt testing，不作為正式整合入口。
+- 它的 request / response shape 應盡量對齊 gRPC `LineTaskConsult`，避免兩條測試路徑語意漂移。
+- 若帶 `appId`，第一版只作 builder context / prompt strategy hint，不代表 external app auth。
+- transport 雖然是 HTTP，但 response `data` 內應對齊：
+  - `operation`
+  - `summary`
+  - `startAt`
+  - `endAt`
+  - `location`
+  - `missingFields`
+
 LineBot extraction 第一版最小結果模型：
 
 ```text

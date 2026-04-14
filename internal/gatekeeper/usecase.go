@@ -161,6 +161,26 @@ func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID in
 	})
 }
 
+// PublicLineTaskConsult validates and forwards a local/dev LineTask extraction request.
+// appID is treated as an optional builder context hint and does not trigger external app authorization.
+func (u *UseCase) PublicLineTaskConsult(ctx context.Context, appID string, builderID int, messageText, referenceTime, timeZone, clientIP string) (infra.ConsultBusinessResponse, error) {
+	builderConfig, err := u.guardService.ValidateLineTaskConsult(ctx, builderID, messageText, referenceTime, timeZone, clientIP)
+	if err != nil {
+		return infra.ConsultBusinessResponse{}, err
+	}
+
+	return u.builderConsult.Consult(ctx, builder.ConsultCommand{
+		Mode:             builder.ConsultModeExtract,
+		AppID:            strings.TrimSpace(appID),
+		BuilderID:        builderID,
+		PreloadedBuilder: &builderConfig,
+		Text:             strings.TrimSpace(messageText),
+		ReferenceTime:    strings.TrimSpace(referenceTime),
+		TimeZone:         strings.TrimSpace(timeZone),
+		ClientIP:         clientIP,
+	})
+}
+
 // LineTaskConsult validates and forwards a LineBot extraction request.
 func (u *UseCase) LineTaskConsult(ctx context.Context, appID string, builderID int, messageText, referenceTime, timeZone, clientIP string) (infra.ConsultBusinessResponse, error) {
 	_, builderConfig, err := u.guardService.ValidateExternalLineTaskConsult(ctx, appID, builderID, messageText, referenceTime, timeZone, clientIP)
