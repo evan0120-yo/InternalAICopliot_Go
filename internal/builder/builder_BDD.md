@@ -72,6 +72,16 @@ Gatekeeper -> ConsultUseCase
   Then 應回傳 `RAG_SUPPLEMENTS_NOT_FOUND`
 
 ## Scenario Group: AI Route Selection
+```text
+ConsultUseCase
+└─ BuilderFactory
+   └─ task builder
+      └─ chooseAIRouteCode()
+         ├─ direct_gemma
+         ├─ direct_gpt54
+         └─ gemma_then_gpt54
+```
+
 - Given builderCode 對應 LinkChat 的重分析任務
   When builder 完成 consult assembly
   Then builder 應可選擇 `direct_gpt54`
@@ -84,6 +94,36 @@ Gatekeeper -> ConsultUseCase
   When builder 完成 consult assembly
   Then builder 應可選擇 `gemma_then_gpt54`
   And builder 不應自己承擔兩階段 AI 的 stage transition 邏輯
+
+- Given builderCode 對應 `line-memo-crud`
+  When builder 完成 extraction assembly
+  Then builder 應選擇 `direct_gemma`
+
+## Scenario Group: Builder Factory
+```text
+ConsultUseCase
+└─ BuilderFactory
+   ├─ GenericTaskBuilder
+   ├─ ProfileTaskBuilder
+   └─ ExtractTaskBuilder
+```
+
+- Given `ConsultModeGeneric`
+  When `ConsultUseCase` 選 builder strategy
+  Then 應選出 `GenericTaskBuilder`
+
+- Given `ConsultModeProfile`
+  When `ConsultUseCase` 選 builder strategy
+  Then 應選出 `ProfileTaskBuilder`
+
+- Given `ConsultModeExtract`
+  When `ConsultUseCase` 選 builder strategy
+  Then 應選出 `ExtractTaskBuilder`
+
+- Given 未來要新增新的任務模式
+  When builder 擴充
+  Then 應優先新增新的 task builder
+  And 不應把更多任務分支塞回 `ConsultUseCase`
 
 ## Scenario Group: Prompt Assembly
 ```text
@@ -118,6 +158,34 @@ AssemblePrompt
 - Given `appId=linkchat` 且 payload 內帶 `analysisType=astrology`
   When `AssembleService.AssemblePrompt` 執行
   Then LinkChat strategy 應選出對應的 astrology analysis factory 來解讀 payload 與組裝 prompt fragment
+
+## Scenario Group: Extraction Prompt Assembly
+```text
+ConsultModeExtract
+      │
+      ├─ [REFERENCE_TIME]
+      ├─ [TIME_ZONE]
+      ├─ [INPUT_TEXT]
+      ├─ [TIME_RULES]
+      └─ [OUTPUT_SCHEMA]
+```
+
+- Given request mode 為 `ConsultModeExtract`
+  And builderCode 為 `line-memo-crud`
+  When `AssembleService` 組 prompt
+  Then prompt 應包含 `referenceTime` 與 `timeZone`
+  And 不應重用 `ProfileConsult` 的 `[SUBJECT_PROFILE]` 區塊
+
+- Given extraction prompt 正在組裝
+  When builder 寫入輸出 schema
+  Then 應只要求 AI 回：
+    - `operation`
+    - `summary`
+    - `startAt`
+    - `endAt`
+    - `location`
+    - `missingFields`
+  And 不應要求 AI 回 `taskCode`、`appId`、`builderCode`、`requestId` 或 `rawText`
 
 - Given `appId=linkchat` 且 payload 內帶 `analysisType=mbti`
   When `AssembleService.AssemblePrompt` 執行

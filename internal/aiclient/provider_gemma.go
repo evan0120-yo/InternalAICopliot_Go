@@ -43,7 +43,7 @@ func (p *gemmaProvider) Analyze(ctx context.Context, request analyzeRequest) (in
 		Model:             request.Model,
 		SystemInstruction: request.Instructions,
 		Parts:             parts,
-		ResponseSchema:    consultResponseSchema(),
+		ResponseSchema:    responseSchemaForContract(request.ResponseContract),
 		RequireAPIKey:     true,
 		MissingAPIKeyCode: "GEMMA_API_KEY_MISSING",
 		MissingAPIKeyMsg:  "Gemma API key is required for live Gemma mode.",
@@ -57,7 +57,7 @@ func (p *gemmaProvider) Analyze(ctx context.Context, request analyzeRequest) (in
 		return infra.ConsultBusinessResponse{}, err
 	}
 
-	return parseBusinessResponseJSON(raw, "GEMMA_ANALYSIS_FAILED", "Gemma response did not match the expected JSON contract.")
+	return parseAnalyzeBusinessResponse(raw, request.ResponseContract, "GEMMA_ANALYSIS_FAILED", "Gemma response did not match the expected JSON contract.")
 }
 
 func (p *gemmaProvider) buildParts(ctx context.Context, request analyzeRequest) ([]map[string]any, error) {

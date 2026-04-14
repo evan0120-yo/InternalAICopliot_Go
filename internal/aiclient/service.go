@@ -23,6 +23,7 @@ var (
 type analyzeRequest struct {
 	Route             AIRouteCode
 	Model             string
+	ResponseContract  AnalyzeResponseContract
 	UserText          string
 	Instructions      string
 	PromptBodyPreview string
@@ -62,6 +63,7 @@ func newAnalyzeServiceWithProviders(config infra.Config, providers map[infra.AIP
 func (s *AnalyzeService) Analyze(ctx context.Context, command AnalyzeCommand) (response infra.ConsultBusinessResponse, err error) {
 	request := analyzeRequest{
 		Route:             normalizeAIRouteCode(command.Route, DefaultAIRouteForConfig(s.config)),
+		ResponseContract:  normalizeAnalyzeResponseContract(command.ResponseContract),
 		UserText:          command.UserText,
 		Instructions:      command.Instructions,
 		PromptBodyPreview: command.PromptBodyPreview,
@@ -151,6 +153,15 @@ func (s *AnalyzeService) previewPromptBodyAnalyze(request analyzeRequest) (infra
 }
 
 func (s *AnalyzeService) mockAnalyze(request analyzeRequest) infra.ConsultBusinessResponse {
+	if request.ResponseContract == AnalyzeResponseContractExtraction {
+		return infra.ConsultBusinessResponse{
+			Status:         true,
+			StatusAns:      "LINE_TASK_EXTRACTED",
+			Response:       `{"operation":"create","summary":"mock event","startAt":"2026-04-15 15:00:00","endAt":"2026-04-15 15:30:00","location":"","missingFields":[]}`,
+			ResponseDetail: "mock extraction fallback",
+		}
+	}
+
 	builderCode := extractBuilderCode(request.Instructions)
 	switch builderCode {
 	case "qa-smoke-doc":

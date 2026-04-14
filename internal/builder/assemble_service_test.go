@@ -486,3 +486,45 @@ func TestAssemblePromptGuardUsesDedicatedMinimalContext(t *testing.T) {
 		t.Fatalf("unexpected guard user message text: %q", result.UserMessageText)
 	}
 }
+
+func TestAssembleExtractPromptBuildsLineTaskSections(t *testing.T) {
+	service := NewAssembleService(nil)
+
+	result, err := service.AssembleExtractPrompt(
+		context.Background(),
+		infra.BuilderConfig{
+			BuilderID:   1,
+			BuilderCode: "line-memo-crud",
+			Name:        "Line Memo CRUD",
+		},
+		[]infra.Source{
+			{SourceID: 10, OrderNo: 1, Prompts: "補充 extraction 指示"},
+		},
+		map[int64][]infra.RagSupplement{},
+		"小傑 明天 下午三點找我吃飯",
+		"2026-04-14 10:00:00",
+		"Asia/Taipei",
+	)
+	if err != nil {
+		t.Fatalf("AssembleExtractPrompt returned error: %v", err)
+	}
+
+	for _, fragment := range []string{
+		"你是 Internal AI Copilot 的結構化事件抽取器。",
+		"## [REFERENCE_TIME]\n2026-04-14 10:00:00",
+		"## [TIME_ZONE]\nAsia/Taipei",
+		"## [INPUT_TEXT]\n小傑 明天 下午三點找我吃飯",
+		`"startAt": "YYYY-MM-DD HH:mm:ss"`,
+		"## [PROMPT_BLOCK-1]\n補充 extraction 指示",
+	} {
+		if !strings.Contains(result.Instructions, fragment) {
+			t.Fatalf("expected extraction instructions to contain %q, got: %s", fragment, result.Instructions)
+		}
+	}
+	if result.UserMessageText != extractUserMessageText {
+		t.Fatalf("unexpected extraction user message text: %q", result.UserMessageText)
+	}
+	if !strings.Contains(result.PromptBodyPreview, "referenceTime: 2026-04-14 10:00:00") || !strings.Contains(result.PromptBodyPreview, "timeZone: Asia/Taipei") {
+		t.Fatalf("unexpected prompt body preview: %s", result.PromptBodyPreview)
+	}
+}

@@ -21,7 +21,7 @@ func TestChooseAIRouteCodeUsesGPT54ForProfileConsult(t *testing.T) {
 
 func TestChooseAIRouteCodeUsesGemmaForLineMemoBuilders(t *testing.T) {
 	route := chooseAIRouteCode(
-		ConsultCommand{Mode: ConsultModeGeneric},
+		ConsultCommand{Mode: ConsultModeExtract},
 		infra.BuilderConfig{BuilderCode: "line-memo-crud"},
 		aiclient.AIRouteDirectGPT54,
 	)

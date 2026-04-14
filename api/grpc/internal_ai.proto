@@ -10,6 +10,7 @@ service IntegrationService {
   rpc ListBuilders(ListBuildersRequest) returns (ListBuildersResponse);
   rpc Consult(ConsultRequest) returns (ConsultResponse);
   rpc ProfileConsult(ProfileConsultRequest) returns (ProfileConsultResponse);
+  rpc LineTaskConsult(LineTaskConsultRequest) returns (LineTaskConsultResponse);
 }
 
 message ListBuildersRequest {
@@ -78,6 +79,24 @@ message ProfileConsultResponse {
   bool status = 1;
   string status_ans = 2;
   string response = 3;
+}
+
+message LineTaskConsultRequest {
+  string app_id = 1;
+  int32 builder_id = 2;
+  string message_text = 3;
+  string reference_time = 4;
+  string time_zone = 5;
+  string client_ip = 6;
+}
+
+message LineTaskConsultResponse {
+  string operation = 1;
+  string summary = 2;
+  string start_at = 3;
+  string end_at = 4;
+  string location = 5;
+  repeated string missing_fields = 6;
 }
 
 message FilePayload {

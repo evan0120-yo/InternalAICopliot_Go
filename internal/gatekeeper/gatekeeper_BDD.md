@@ -139,6 +139,40 @@ ProfileConsult request
   When gatekeeper 驗證 structured profile consult
   Then gatekeeper 應拒絕該 request
 
+## Scenario Group: LineTaskConsult Validation
+```text
+LineTaskConsult
+      │
+      ├─ appId / builderId 驗證
+      ├─ messageText 必填
+      ├─ referenceTime 必填
+      ├─ timeZone 必填
+      ├─ set ConsultModeExtract
+      └─ 第一版跳過 promptguard
+```
+
+- Given grpcapi `LineTaskConsult` 傳入 `messageText`
+  And request 同時帶 `referenceTime` 與 `timeZone`
+  When gatekeeper 驗證 extraction request
+  Then 不應拒絕該 request
+  And 應以 `ConsultModeExtract` 轉交 builder usecase
+
+- Given `LineTaskConsult` 缺少 `messageText`
+  When gatekeeper 驗證 extraction request
+  Then 應拒絕該 request
+
+- Given `LineTaskConsult` 缺少 `referenceTime`
+  When gatekeeper 驗證 extraction request
+  Then 應拒絕該 request
+
+- Given `LineTaskConsult` 缺少 `timeZone`
+  When gatekeeper 驗證 extraction request
+  Then 應拒絕該 request
+
+- Given `LineTaskConsult` 通過驗證
+  When gatekeeper 繼續往下交給 builder
+  Then 第一版不應呼叫 promptguard usecase
+
 - Given `analysisType=astrology` 的某個 slot 採 weighted canonical entries
   And 某筆 entry 缺少 `key`
   When gatekeeper 驗證 structured profile consult

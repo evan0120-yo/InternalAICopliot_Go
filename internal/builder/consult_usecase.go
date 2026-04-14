@@ -2,7 +2,6 @@ package builder
 
 import (
 	"context"
-	"strings"
 	"sync"
 
 	"com.citrus.internalaicopilot/internal/aiclient"
@@ -101,15 +100,14 @@ func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (i
 		return infra.ConsultBusinessResponse{}, infra.NewError("REQUEST_CANCELLED", "Request was cancelled.", 499)
 	}
 
-	if command.Mode == ConsultModeProfile {
-		filteredSources, filterErr := u.assembleService.FilterProfileSources(ctx, command.AppID, sources, command.SubjectProfile)
-		if filterErr != nil {
-			return infra.ConsultBusinessResponse{}, filterErr
-		}
-		sources = filteredSources
-		if len(sources) == 0 {
-			return infra.ConsultBusinessResponse{}, infra.NewError("SOURCE_ENTRIES_NOT_FOUND", "No source prompt entries were found for the requested builder.", 500)
-		}
+	taskBuilder := newConsultTaskBuilderFactory(u.defaultAIRoute).BuilderFor(command)
+	filteredSources, err := taskBuilder.PrepareSources(ctx, u.assembleService, command, sources)
+	if err != nil {
+		return infra.ConsultBusinessResponse{}, err
+	}
+	sources = filteredSources
+	if len(sources) == 0 {
+		return infra.ConsultBusinessResponse{}, infra.NewError("SOURCE_ENTRIES_NOT_FOUND", "No source prompt entries were found for the requested builder.", 500)
 	}
 
 	ragsBySourceID := make(map[int64][]infra.RagSupplement)
@@ -149,14 +147,12 @@ func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (i
 		return infra.ConsultBusinessResponse{}, infra.NewError("REQUEST_CANCELLED", "Request was cancelled.", 499)
 	}
 
-	userText := command.Text
-	intentText := ""
-	if command.Mode == ConsultModeProfile {
-		userText = strings.TrimSpace(command.UserText)
-		intentText = strings.TrimSpace(command.IntentText)
-	}
-
-	promptResult, err := u.assembleService.AssemblePrompt(ctx, builderConfig, sources, ragsBySourceID, command.AppID, userText, intentText, command.SubjectProfile)
+	buildResult, err := taskBuilder.Build(ctx, u.assembleService, consultTaskBuildInput{
+		Command:        command,
+		BuilderConfig:  builderConfig,
+		Sources:        sources,
+		RagsBySourceID: ragsBySourceID,
+	})
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
@@ -164,12 +160,12 @@ func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (i
 		return infra.ConsultBusinessResponse{}, infra.NewError("REQUEST_CANCELLED", "Request was cancelled.", 499)
 	}
 
-	aiRoute := chooseAIRouteCode(command, builderConfig, u.defaultAIRoute)
 	businessResponse, err := u.aiUseCase.Analyze(ctx, aiclient.AnalyzeCommand{
-		Route:             aiRoute,
-		UserText:          promptResult.UserMessageText,
-		Instructions:      promptResult.Instructions,
-		PromptBodyPreview: promptResult.PromptBodyPreview,
+		Route:             buildResult.Route,
+		ResponseContract:  buildResult.ResponseContract,
+		UserText:          buildResult.Prompt.UserMessageText,
+		Instructions:      buildResult.Prompt.Instructions,
+		PromptBodyPreview: buildResult.Prompt.PromptBodyPreview,
 		Attachments:       command.Attachments,
 		Mode:              command.AIExecutionMode,
 	})

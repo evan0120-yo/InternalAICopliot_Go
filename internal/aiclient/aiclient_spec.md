@@ -130,6 +130,39 @@ aiclient
 - 多階段 route 的 stage transition 與 AI 回應判讀，屬於 aiclient executor 的責任。
 - route code 在 code 裡應使用 enum / constant，不應散落裸數字。
 
+## Structured Extraction Path
+LineBot extraction 這類任務可以使用 dedicated structured extraction contract；aiclient 應負責執行 AI call 並 parse AI JSON。
+
+```text
+builder
+├─ route = direct_gemma
+└─ extraction materials
+   ├─ messageText
+   ├─ referenceTime
+   ├─ timeZone
+   └─ output schema
+      │
+      ▼
+aiclient
+├─ direct_gemma executor
+├─ call Gemma
+├─ parse extraction JSON
+└─ 回 typed extraction result
+```
+
+規則：
+- LineBot extraction 第一版預設走 `direct_gemma`。
+- aiclient 可解析 dedicated extraction JSON contract，但不應理解 Firestore CRUD、Calendar sync 或 LINE reply 的業務決策。
+- 對外最終 contract 應由 grpcapi 回 protobuf response；aiclient 不直接面向外部 transport 暴露 raw JSON string。
+- extraction JSON 應收斂為最小 schema：
+  - `operation`
+  - `summary`
+  - `startAt`
+  - `endAt`
+  - `location`
+  - `missingFields`
+- `taskCode`、`appId`、`builderCode`、`requestId`、`rawText` 不應作為 AI 必填輸出欄位。
+
 ## Layer Responsibilities
 
 ### UseCase

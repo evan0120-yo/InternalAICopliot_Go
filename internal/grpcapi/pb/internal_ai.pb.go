@@ -686,6 +686,174 @@ func (x *ProfileConsultResponse) GetResponse() string {
 	return ""
 }
 
+type LineTaskConsultRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AppId         string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	BuilderId     int32                  `protobuf:"varint,2,opt,name=builder_id,json=builderId,proto3" json:"builder_id,omitempty"`
+	MessageText   string                 `protobuf:"bytes,3,opt,name=message_text,json=messageText,proto3" json:"message_text,omitempty"`
+	ReferenceTime string                 `protobuf:"bytes,4,opt,name=reference_time,json=referenceTime,proto3" json:"reference_time,omitempty"`
+	TimeZone      string                 `protobuf:"bytes,5,opt,name=time_zone,json=timeZone,proto3" json:"time_zone,omitempty"`
+	ClientIp      string                 `protobuf:"bytes,6,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LineTaskConsultRequest) Reset() {
+	*x = LineTaskConsultRequest{}
+	mi := &file_api_grpc_internal_ai_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LineTaskConsultRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LineTaskConsultRequest) ProtoMessage() {}
+
+func (x *LineTaskConsultRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_api_grpc_internal_ai_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LineTaskConsultRequest.ProtoReflect.Descriptor instead.
+func (*LineTaskConsultRequest) Descriptor() ([]byte, []int) {
+	return file_api_grpc_internal_ai_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *LineTaskConsultRequest) GetAppId() string {
+	if x != nil {
+		return x.AppId
+	}
+	return ""
+}
+
+func (x *LineTaskConsultRequest) GetBuilderId() int32 {
+	if x != nil {
+		return x.BuilderId
+	}
+	return 0
+}
+
+func (x *LineTaskConsultRequest) GetMessageText() string {
+	if x != nil {
+		return x.MessageText
+	}
+	return ""
+}
+
+func (x *LineTaskConsultRequest) GetReferenceTime() string {
+	if x != nil {
+		return x.ReferenceTime
+	}
+	return ""
+}
+
+func (x *LineTaskConsultRequest) GetTimeZone() string {
+	if x != nil {
+		return x.TimeZone
+	}
+	return ""
+}
+
+func (x *LineTaskConsultRequest) GetClientIp() string {
+	if x != nil {
+		return x.ClientIp
+	}
+	return ""
+}
+
+type LineTaskConsultResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Operation     string                 `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
+	Summary       string                 `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
+	StartAt       string                 `protobuf:"bytes,3,opt,name=start_at,json=startAt,proto3" json:"start_at,omitempty"`
+	EndAt         string                 `protobuf:"bytes,4,opt,name=end_at,json=endAt,proto3" json:"end_at,omitempty"`
+	Location      string                 `protobuf:"bytes,5,opt,name=location,proto3" json:"location,omitempty"`
+	MissingFields []string               `protobuf:"bytes,6,rep,name=missing_fields,json=missingFields,proto3" json:"missing_fields,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LineTaskConsultResponse) Reset() {
+	*x = LineTaskConsultResponse{}
+	mi := &file_api_grpc_internal_ai_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LineTaskConsultResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LineTaskConsultResponse) ProtoMessage() {}
+
+func (x *LineTaskConsultResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_api_grpc_internal_ai_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LineTaskConsultResponse.ProtoReflect.Descriptor instead.
+func (*LineTaskConsultResponse) Descriptor() ([]byte, []int) {
+	return file_api_grpc_internal_ai_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *LineTaskConsultResponse) GetOperation() string {
+	if x != nil {
+		return x.Operation
+	}
+	return ""
+}
+
+func (x *LineTaskConsultResponse) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *LineTaskConsultResponse) GetStartAt() string {
+	if x != nil {
+		return x.StartAt
+	}
+	return ""
+}
+
+func (x *LineTaskConsultResponse) GetEndAt() string {
+	if x != nil {
+		return x.EndAt
+	}
+	return ""
+}
+
+func (x *LineTaskConsultResponse) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+func (x *LineTaskConsultResponse) GetMissingFields() []string {
+	if x != nil {
+		return x.MissingFields
+	}
+	return nil
+}
+
 type FilePayload struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FileName      string                 `protobuf:"bytes,1,opt,name=file_name,json=fileName,proto3" json:"file_name,omitempty"`
@@ -697,7 +865,7 @@ type FilePayload struct {
 
 func (x *FilePayload) Reset() {
 	*x = FilePayload{}
-	mi := &file_api_grpc_internal_ai_proto_msgTypes[10]
+	mi := &file_api_grpc_internal_ai_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -709,7 +877,7 @@ func (x *FilePayload) String() string {
 func (*FilePayload) ProtoMessage() {}
 
 func (x *FilePayload) ProtoReflect() protoreflect.Message {
-	mi := &file_api_grpc_internal_ai_proto_msgTypes[10]
+	mi := &file_api_grpc_internal_ai_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -722,7 +890,7 @@ func (x *FilePayload) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilePayload.ProtoReflect.Descriptor instead.
 func (*FilePayload) Descriptor() ([]byte, []int) {
-	return file_api_grpc_internal_ai_proto_rawDescGZIP(), []int{10}
+	return file_api_grpc_internal_ai_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *FilePayload) GetFileName() string {
@@ -811,15 +979,31 @@ const file_api_grpc_internal_ai_proto_rawDesc = "" +
 	"\x06status\x18\x01 \x01(\bR\x06status\x12\x1d\n" +
 	"\n" +
 	"status_ans\x18\x02 \x01(\tR\tstatusAns\x12\x1a\n" +
-	"\bresponse\x18\x03 \x01(\tR\bresponse\"a\n" +
+	"\bresponse\x18\x03 \x01(\tR\bresponse\"\xd2\x01\n" +
+	"\x16LineTaskConsultRequest\x12\x15\n" +
+	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1d\n" +
+	"\n" +
+	"builder_id\x18\x02 \x01(\x05R\tbuilderId\x12!\n" +
+	"\fmessage_text\x18\x03 \x01(\tR\vmessageText\x12%\n" +
+	"\x0ereference_time\x18\x04 \x01(\tR\rreferenceTime\x12\x1b\n" +
+	"\ttime_zone\x18\x05 \x01(\tR\btimeZone\x12\x1b\n" +
+	"\tclient_ip\x18\x06 \x01(\tR\bclientIp\"\xc6\x01\n" +
+	"\x17LineTaskConsultResponse\x12\x1c\n" +
+	"\toperation\x18\x01 \x01(\tR\toperation\x12\x18\n" +
+	"\asummary\x18\x02 \x01(\tR\asummary\x12\x19\n" +
+	"\bstart_at\x18\x03 \x01(\tR\astartAt\x12\x15\n" +
+	"\x06end_at\x18\x04 \x01(\tR\x05endAt\x12\x1a\n" +
+	"\blocation\x18\x05 \x01(\tR\blocation\x12%\n" +
+	"\x0emissing_fields\x18\x06 \x03(\tR\rmissingFields\"a\n" +
 	"\vFilePayload\x12\x1b\n" +
 	"\tfile_name\x18\x01 \x01(\tR\bfileName\x12!\n" +
 	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x12\n" +
-	"\x04data\x18\x03 \x01(\fR\x04data2\x89\x03\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data2\x92\x04\n" +
 	"\x12IntegrationService\x12}\n" +
 	"\fListBuilders\x125.internalaicopilot.integration.v1.ListBuildersRequest\x1a6.internalaicopilot.integration.v1.ListBuildersResponse\x12n\n" +
 	"\aConsult\x120.internalaicopilot.integration.v1.ConsultRequest\x1a1.internalaicopilot.integration.v1.ConsultResponse\x12\x83\x01\n" +
-	"\x0eProfileConsult\x127.internalaicopilot.integration.v1.ProfileConsultRequest\x1a8.internalaicopilot.integration.v1.ProfileConsultResponseB9Z7com.citrus.internalaicopilot/internal/grpcapi/pb;grpcpbb\x06proto3"
+	"\x0eProfileConsult\x127.internalaicopilot.integration.v1.ProfileConsultRequest\x1a8.internalaicopilot.integration.v1.ProfileConsultResponse\x12\x86\x01\n" +
+	"\x0fLineTaskConsult\x128.internalaicopilot.integration.v1.LineTaskConsultRequest\x1a9.internalaicopilot.integration.v1.LineTaskConsultResponseB9Z7com.citrus.internalaicopilot/internal/grpcapi/pb;grpcpbb\x06proto3"
 
 var (
 	file_api_grpc_internal_ai_proto_rawDescOnce sync.Once
@@ -833,36 +1017,40 @@ func file_api_grpc_internal_ai_proto_rawDescGZIP() []byte {
 	return file_api_grpc_internal_ai_proto_rawDescData
 }
 
-var file_api_grpc_internal_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_api_grpc_internal_ai_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_api_grpc_internal_ai_proto_goTypes = []any{
-	(*ListBuildersRequest)(nil),    // 0: internalaicopilot.integration.v1.ListBuildersRequest
-	(*ListBuildersResponse)(nil),   // 1: internalaicopilot.integration.v1.ListBuildersResponse
-	(*BuilderSummary)(nil),         // 2: internalaicopilot.integration.v1.BuilderSummary
-	(*ConsultRequest)(nil),         // 3: internalaicopilot.integration.v1.ConsultRequest
-	(*Attachment)(nil),             // 4: internalaicopilot.integration.v1.Attachment
-	(*ConsultResponse)(nil),        // 5: internalaicopilot.integration.v1.ConsultResponse
-	(*ProfileConsultRequest)(nil),  // 6: internalaicopilot.integration.v1.ProfileConsultRequest
-	(*SubjectProfile)(nil),         // 7: internalaicopilot.integration.v1.SubjectProfile
-	(*SubjectAnalysisPayload)(nil), // 8: internalaicopilot.integration.v1.SubjectAnalysisPayload
-	(*ProfileConsultResponse)(nil), // 9: internalaicopilot.integration.v1.ProfileConsultResponse
-	(*FilePayload)(nil),            // 10: internalaicopilot.integration.v1.FilePayload
-	(*structpb.Struct)(nil),        // 11: google.protobuf.Struct
+	(*ListBuildersRequest)(nil),     // 0: internalaicopilot.integration.v1.ListBuildersRequest
+	(*ListBuildersResponse)(nil),    // 1: internalaicopilot.integration.v1.ListBuildersResponse
+	(*BuilderSummary)(nil),          // 2: internalaicopilot.integration.v1.BuilderSummary
+	(*ConsultRequest)(nil),          // 3: internalaicopilot.integration.v1.ConsultRequest
+	(*Attachment)(nil),              // 4: internalaicopilot.integration.v1.Attachment
+	(*ConsultResponse)(nil),         // 5: internalaicopilot.integration.v1.ConsultResponse
+	(*ProfileConsultRequest)(nil),   // 6: internalaicopilot.integration.v1.ProfileConsultRequest
+	(*SubjectProfile)(nil),          // 7: internalaicopilot.integration.v1.SubjectProfile
+	(*SubjectAnalysisPayload)(nil),  // 8: internalaicopilot.integration.v1.SubjectAnalysisPayload
+	(*ProfileConsultResponse)(nil),  // 9: internalaicopilot.integration.v1.ProfileConsultResponse
+	(*LineTaskConsultRequest)(nil),  // 10: internalaicopilot.integration.v1.LineTaskConsultRequest
+	(*LineTaskConsultResponse)(nil), // 11: internalaicopilot.integration.v1.LineTaskConsultResponse
+	(*FilePayload)(nil),             // 12: internalaicopilot.integration.v1.FilePayload
+	(*structpb.Struct)(nil),         // 13: google.protobuf.Struct
 }
 var file_api_grpc_internal_ai_proto_depIdxs = []int32{
 	2,  // 0: internalaicopilot.integration.v1.ListBuildersResponse.builders:type_name -> internalaicopilot.integration.v1.BuilderSummary
 	4,  // 1: internalaicopilot.integration.v1.ConsultRequest.attachments:type_name -> internalaicopilot.integration.v1.Attachment
-	10, // 2: internalaicopilot.integration.v1.ConsultResponse.file:type_name -> internalaicopilot.integration.v1.FilePayload
+	12, // 2: internalaicopilot.integration.v1.ConsultResponse.file:type_name -> internalaicopilot.integration.v1.FilePayload
 	7,  // 3: internalaicopilot.integration.v1.ProfileConsultRequest.subject_profile:type_name -> internalaicopilot.integration.v1.SubjectProfile
 	8,  // 4: internalaicopilot.integration.v1.SubjectProfile.analysis_payloads:type_name -> internalaicopilot.integration.v1.SubjectAnalysisPayload
-	11, // 5: internalaicopilot.integration.v1.SubjectAnalysisPayload.payload:type_name -> google.protobuf.Struct
+	13, // 5: internalaicopilot.integration.v1.SubjectAnalysisPayload.payload:type_name -> google.protobuf.Struct
 	0,  // 6: internalaicopilot.integration.v1.IntegrationService.ListBuilders:input_type -> internalaicopilot.integration.v1.ListBuildersRequest
 	3,  // 7: internalaicopilot.integration.v1.IntegrationService.Consult:input_type -> internalaicopilot.integration.v1.ConsultRequest
 	6,  // 8: internalaicopilot.integration.v1.IntegrationService.ProfileConsult:input_type -> internalaicopilot.integration.v1.ProfileConsultRequest
-	1,  // 9: internalaicopilot.integration.v1.IntegrationService.ListBuilders:output_type -> internalaicopilot.integration.v1.ListBuildersResponse
-	5,  // 10: internalaicopilot.integration.v1.IntegrationService.Consult:output_type -> internalaicopilot.integration.v1.ConsultResponse
-	9,  // 11: internalaicopilot.integration.v1.IntegrationService.ProfileConsult:output_type -> internalaicopilot.integration.v1.ProfileConsultResponse
-	9,  // [9:12] is the sub-list for method output_type
-	6,  // [6:9] is the sub-list for method input_type
+	10, // 9: internalaicopilot.integration.v1.IntegrationService.LineTaskConsult:input_type -> internalaicopilot.integration.v1.LineTaskConsultRequest
+	1,  // 10: internalaicopilot.integration.v1.IntegrationService.ListBuilders:output_type -> internalaicopilot.integration.v1.ListBuildersResponse
+	5,  // 11: internalaicopilot.integration.v1.IntegrationService.Consult:output_type -> internalaicopilot.integration.v1.ConsultResponse
+	9,  // 12: internalaicopilot.integration.v1.IntegrationService.ProfileConsult:output_type -> internalaicopilot.integration.v1.ProfileConsultResponse
+	11, // 13: internalaicopilot.integration.v1.IntegrationService.LineTaskConsult:output_type -> internalaicopilot.integration.v1.LineTaskConsultResponse
+	10, // [10:14] is the sub-list for method output_type
+	6,  // [6:10] is the sub-list for method input_type
 	6,  // [6:6] is the sub-list for extension type_name
 	6,  // [6:6] is the sub-list for extension extendee
 	0,  // [0:6] is the sub-list for field type_name
@@ -881,7 +1069,7 @@ func file_api_grpc_internal_ai_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_grpc_internal_ai_proto_rawDesc), len(file_api_grpc_internal_ai_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

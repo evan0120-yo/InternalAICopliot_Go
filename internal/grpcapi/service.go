@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 
+	"com.citrus.internalaicopilot/internal/aiclient"
 	"com.citrus.internalaicopilot/internal/builder"
 	"com.citrus.internalaicopilot/internal/gatekeeper"
 	"com.citrus.internalaicopilot/internal/grpcapi/pb"
@@ -143,6 +144,37 @@ func (s *Service) ProfileConsult(ctx context.Context, request *grpcpb.ProfileCon
 	}, nil
 }
 
+// LineTaskConsult forwards LineBot extraction requests into the gatekeeper flow.
+func (s *Service) LineTaskConsult(ctx context.Context, request *grpcpb.LineTaskConsultRequest) (*grpcpb.LineTaskConsultResponse, error) {
+	clientIP := resolveClientIP(ctx, request.GetClientIp())
+	result, err := s.useCase.LineTaskConsult(
+		ctx,
+		strings.TrimSpace(request.GetAppId()),
+		int(request.GetBuilderId()),
+		strings.TrimSpace(request.GetMessageText()),
+		strings.TrimSpace(request.GetReferenceTime()),
+		strings.TrimSpace(request.GetTimeZone()),
+		clientIP,
+	)
+	if err != nil {
+		return nil, asGRPCError(err)
+	}
+
+	parsed, err := parseLineTaskResponse(result.Response)
+	if err != nil {
+		return nil, asGRPCError(err)
+	}
+
+	return &grpcpb.LineTaskConsultResponse{
+		Operation:     parsed.Operation,
+		Summary:       parsed.Summary,
+		StartAt:       parsed.StartAt,
+		EndAt:         parsed.EndAt,
+		Location:      parsed.Location,
+		MissingFields: parsed.MissingFields,
+	}, nil
+}
+
 func effectiveProfileUserText(request *grpcpb.ProfileConsultRequest) string {
 	if request == nil {
 		return ""
@@ -269,4 +301,12 @@ func clonePayloadValue(value any) any {
 	default:
 		return typed
 	}
+}
+
+func parseLineTaskResponse(raw string) (aiclient.ExtractionStructuredResponse, error) {
+	return aiclient.ParseExtractionStructuredResponse(
+		[]byte(strings.TrimSpace(raw)),
+		"LINE_TASK_RESPONSE_INVALID",
+		"Line task response did not match the expected JSON contract.",
+	)
 }

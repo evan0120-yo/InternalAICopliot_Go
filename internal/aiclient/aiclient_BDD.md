@@ -28,6 +28,20 @@
   And stage transition 邏輯應封裝在 aiclient executor 內
   And builder 不應承擔這條 route 的 AI 交互流程細節
 
+## Scenario Group: Structured Extraction Analyze
+- Given builder 已選出 `direct_gemma`
+  And materials 代表 LineBot extraction 任務
+  When aiclient 執行 analyze
+  Then 應直接走 Gemma executor
+
+- Given Gemma 回傳合法 extraction JSON
+  When aiclient 執行 structured extraction path
+  Then 應將 JSON parse 成 typed extraction result
+
+- Given外部 caller 最終走 gRPC `LineTaskConsult`
+  When aiclient 完成 extraction analyze
+  Then 不應直接把 raw AI JSON string 視為最終 external contract
+
 ## Scenario Group: Analyze Mode Selection
 - Given preview mode 開關為 true
   When `AnalyzeService.Analyze` 執行

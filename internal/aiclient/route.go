@@ -15,9 +15,18 @@ const (
 	AIRouteGemmaThenGPT54 AIRouteCode = "gemma_then_gpt54"
 )
 
+// AnalyzeResponseContract selects which structured schema the model must return.
+type AnalyzeResponseContract string
+
+const (
+	AnalyzeResponseContractConsult    AnalyzeResponseContract = "consult"
+	AnalyzeResponseContractExtraction AnalyzeResponseContract = "extraction"
+)
+
 // AnalyzeCommand is the builder-facing AI execution contract.
 type AnalyzeCommand struct {
 	Route             AIRouteCode
+	ResponseContract  AnalyzeResponseContract
 	UserText          string
 	Instructions      string
 	PromptBodyPreview string
@@ -45,5 +54,14 @@ func normalizeAIRouteCode(value AIRouteCode, fallback AIRouteCode) AIRouteCode {
 		return AIRouteDirectGPT54
 	default:
 		return fallback
+	}
+}
+
+func normalizeAnalyzeResponseContract(value AnalyzeResponseContract) AnalyzeResponseContract {
+	switch AnalyzeResponseContract(strings.ToLower(strings.TrimSpace(string(value)))) {
+	case AnalyzeResponseContractExtraction:
+		return AnalyzeResponseContractExtraction
+	default:
+		return AnalyzeResponseContractConsult
 	}
 }

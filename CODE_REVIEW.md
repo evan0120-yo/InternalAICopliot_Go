@@ -11,6 +11,7 @@
 - 內部前台使用者：查 builders、送出一般 consult、拿文字或檔案結果。
 - 外部整合系統：透過 `X-App-Id` 或 gRPC `appId` 走 app 授權。
 - LinkChat：走 `ProfileConsult`，把結構化 profile 交給 Internal 組 prompt。
+- LineBot server：走 `LineTaskConsult`，把口語句子交給 Internal 轉成結構化事件資料。
 - 管理員：維護 builder graph 與 template library。
 
 它目前比較像公司內部的小型 AI 平台，不是高流量 SaaS。
@@ -18,10 +19,11 @@
 
 從 code 看得出的刻意選擇有幾個：
 - HTTP 和 gRPC 共用同一組 gatekeeper / builder / aiclient / output 邊界，不分兩套業務流程。
-- generic consult 和 profile consult 被明確拆成兩個 mode，不讓 builder 自己猜。
+- builder 任務現在被明確拆成 `GenericTaskBuilder / ProfileTaskBuilder / ExtractTaskBuilder`，不再讓 `ConsultUseCase` 自己越長越大的 `switch` 去猜。
 - AI 執行邏輯已拆成 `preview / mock / live`；`live` 不再直接看全域 provider，而是由 builder 先選 `direct_gpt54 / direct_gemma / gemma_then_gpt54` route，再交給 aiclient 的 route factory / executor 執行。
 - repo 內另外長出一個獨立的 `promptguard` module，而且現在已經接進 `linkchat-astrology` 的 profile 主流程；generic consult 仍不走這條 guard。
 - LinkChat 的 prompt 差異不塞在 transport，而是塞在 builder 的 app-aware strategy。
+- LineBot extraction 也沒有硬塞進 `ProfileConsult`；它有自己的 gRPC contract，但進 Internal 後仍走同一套 gatekeeper / builder / aiclient 骨架。
 - local 開發刻意保留 Firestore emulator + reset/seed on start。
 
 它目前不是：
@@ -600,14 +602,33 @@ ConsultUseCase.Consult
    ├─ goroutine B: 讀 SourcesByBuilderIDContext
    ├─ sources 空 -> SOURCE_ENTRIES_NOT_FOUND
    │
+   ├─ taskBuilderFactory.BuilderFor(command.Mode)
+   │   ├─ GenericTaskBuilder
+   │   ├─ ProfileTaskBuilder
+   │   └─ ExtractTaskBuilder
+   │
+   ├─ taskBuilder.PrepareSources
+   │   └─ 只有 ProfileTaskBuilder 會先做 FilterProfileSources
+   │
    ├─ foreach source where NeedsRagSupplement
    │   -> rag.ResolveUseCase.ResolveBySourceID
    │   -> 若需要 rag 但拿不到 -> RAG_SUPPLEMENTS_NOT_FOUND
    │
-   ├─ assembleService.AssemblePrompt
+   ├─ taskBuilder.Build
+   │   ├─ generic/profile -> AssemblePrompt
+   │   └─ extract -> AssembleExtractPrompt
+   │
    ├─ aiUseCase.Analyze
+   │   ├─ 吃 taskBuilder 回傳的 Prompt
+   │   ├─ 吃 taskBuilder 回傳的 Route
+   │   └─ 吃 taskBuilder 回傳的 ResponseContract
    └─ outputUseCase.Render
 ```
+
+這代表：
+- `ConsultUseCase` 現在不再自己用大型 `switch` 處理 generic / profile / extract 的組裝分支。
+- mode-specific 的素材準備與 prompt 組裝已收斂到 `GenericTaskBuilder / ProfileTaskBuilder / ExtractTaskBuilder`。
+- `ExtractTaskBuilder` 目前會固定選 extraction response contract，讓 `aiclient` 走結構化 JSON 解析路徑。
 
 ### prompt 組裝實際內容
 
@@ -739,7 +760,83 @@ foreach source
 
 因此 non-profile request 幾乎拿不到有內容的 prompt body preview。
 
-## E. AI 執行層與 provider
+## E. LineTask Extraction
+
+關鍵檔案：
+- internal/grpcapi/service.go (line 144)
+- internal/gatekeeper/usecase.go (line 140)
+- internal/gatekeeper/service.go (line 167)
+- internal/builder/model.go (line 13)
+- internal/builder/task_builder_factory.go (line 18)
+- internal/builder/assemble_service.go (line 147)
+- internal/aiclient/response_contract.go (line 10)
+
+這條線是給 LineBot server 走的 extraction contract，不共用 `ProfileConsult`。
+
+```text
+gRPC LineTaskConsult
+  -> grpcapi.Service.LineTaskConsult
+  -> gatekeeper.UseCase.LineTaskConsult
+  -> guard.ValidateLineTaskConsult / ValidateExternalLineTaskConsult
+  -> builder.ConsultUseCase.Consult
+     -> ExtractTaskBuilder
+     -> AssembleExtractPrompt
+     -> chooseAIRouteCode(...)=direct_gemma
+  -> aiclient.Analyze
+     -> direct_gemma executor
+     -> extraction response contract
+  -> grpcapi.parseLineTaskResponse
+  -> pb.LineTaskConsultResponse
+```
+
+### gatekeeper 驗證規則
+
+| 檢查 | 失敗碼 |
+| --- | --- |
+| client IP 空 | `CLIENT_IP_MISSING` |
+| builderId 為 0 | `BUILDER_ID_MISSING` |
+| builder 不存在 / inactive | `BUILDER_NOT_FOUND` / `BUILDER_INACTIVE` |
+| `messageText` 空 | `LINE_TASK_MESSAGE_TEXT_MISSING` |
+| `referenceTime` 空 | `LINE_TASK_REFERENCE_TIME_MISSING` |
+| `timeZone` 空 | `LINE_TASK_TIME_ZONE_MISSING` |
+| external app 缺值 / 不存在 / inactive | `APP_ID_MISSING` / `APP_NOT_FOUND` / `APP_INACTIVE` |
+| builder 不在 app 白名單 | `APP_BUILDER_FORBIDDEN` |
+
+補充：
+- 這條線第一版不跑 `promptguard`。
+- `referenceTime` 與 `timeZone` 是必要欄位，因為 extraction prompt 會要求 Gemma 把相對時間換成絕對時間。
+
+### extraction prompt 與 response contract
+
+```text
+instructions
+├─ [TASK]
+├─ [REFERENCE_TIME]
+├─ [TIME_ZONE]
+├─ [INPUT_TEXT]
+├─ [TIME_RULES]
+└─ [OUTPUT_SCHEMA]
+
+response schema
+├─ operation
+├─ summary
+├─ startAt
+├─ endAt
+├─ location
+└─ missingFields[]
+```
+
+目前 prompt 內明寫的時間規則：
+- 未指定結束時間時，`endAt = startAt + 30 分鐘`
+- 只有日期、沒有開始時間時，預設 `00:00:00 ~ 01:00:00`
+- 必須依 `referenceTime + timeZone` 把相對時間轉成絕對時間
+- 只能回 JSON，不可夾帶說明文字
+
+補充：
+- `taskCode / builderCode / appId / requestId / rawText` 不要求 AI 回，這些由程式自己持有。
+- `grpcapi` 會在回 gRPC 前再次 parse / normalize extraction JSON，因此對外 contract 是 typed protobuf，不是 raw JSON string。
+
+## F. AI 執行層與 provider
 
 關鍵檔案：
 - internal/aiclient/service.go (line 35)
@@ -920,7 +1017,7 @@ gatekeeper.UseCase.PublicProfileConsult / ProfileConsult
 - 這條路現在真的可能因為外部 Gemma/local guard 失敗而把 request 當成 system error 擋下。
 - `AnalyzeGuard` 現在對 promptguard JSON 做了最小容錯：若 Gemma 回 markdown code fence 或前後夾雜說明文字，會先嘗試清理並抽出第一段 JSON object；只有真的抽不出合法 JSON 時才回 502。
 
-## F. Output 與 transport 回應
+## G. Output 與 transport 回應
 
 關鍵檔案：
 - internal/output/service.go (line 21)
@@ -956,14 +1053,20 @@ gRPC Consult
 gRPC ProfileConsult
   -> 只取 Status / StatusAns / Response
   -> File 與 ResponseDetail 都不映射
+
+gRPC LineTaskConsult
+  -> 先把 business response 的 Response 當 extraction JSON parse
+  -> normalize operation / summary / startAt / endAt / location / missingFields
+  -> 映射成 pb.LineTaskConsultResponse
 ```
 
 這代表 `responseDetail` 雖然是 business response contract 的一部分，但：
 - HTTP 會照原樣回。
 - gRPC generic consult 只回 status/statusAns/response/file。
 - gRPC profile consult 更精簡，只回 status/statusAns/response。
+- gRPC line task consult 則不直接暴露 business response，而是把 extraction JSON 轉成 typed response。
 
-## G. Admin Graph
+## H. Admin Graph
 
 關鍵檔案：
 - internal/builder/admin_handler.go (line 35)
@@ -1024,7 +1127,7 @@ transaction
 - transaction 內再把 placeholder 轉真實 ID。
 - code 沒做 source graph 循環檢查。
 
-## H. Admin Templates
+## I. Admin Templates
 
 關鍵檔案：
 - internal/builder/admin_handler.go (line 68)
@@ -1094,7 +1197,7 @@ DeleteTemplate
 - template 已刪，但 source metadata 還沒清完
 - 或 template 已刪，其他 templates 的 orderNo 尚未收斂
 
-## I. 持久化模型、seed 基線、目前 gap
+## J. 持久化模型、seed 基線、目前 gap
 
 關鍵檔案：
 - internal/infra/store.go (line 20)

@@ -59,24 +59,59 @@ UseCase -> Service -> Repository
 builder consult command 必須帶明確 mode：
 - `ConsultModeGeneric`
 - `ConsultModeProfile`
+- `ConsultModeExtract`
 
 規則：
 - `ConsultModeGeneric` 代表 generic consult，走全量 source 選取規則。
 - `ConsultModeProfile` 代表 profile consult，走 app-aware structured profile 規則。
+- `ConsultModeExtract` 代表 extraction 類任務，例如 LineBot 備忘錄 / 日程事件抽取。
 - builder 不得靠 structured profile payload 是否為空推斷 mode。
 - `subjectProfile` 缺值且 `userText!=""` 或 `intentText!=""` 在 `ConsultModeProfile` 中仍是合法 request。
 
 補充方向：
 - 若未來新增 LineBot extraction 或其他非 profile 任務，builder 應透過新的 task kind / consult mode / dedicated request contract 承接，而不是硬塞進現有 profile shape。
 
+## Builder Factory
+`ConsultUseCase` 不應長期直接承擔所有任務分支；任務級差異應由 builder factory 選出的 task builder 承接。
+
+```text
+ConsultUseCase
+└─ BuilderFactory
+   ├─ GenericTaskBuilder
+   ├─ ProfileTaskBuilder
+   └─ ExtractTaskBuilder
+      │
+      ├─ prepare sources
+      ├─ assemble prompt materials
+      ├─ choose response contract
+      └─ choose AI route code
+```
+
+規則：
+- `ConsultUseCase` 應保留共享 orchestration：
+  - 載入 builder / source
+  - resolve RAG
+  - call aiclient
+  - call output
+- task builder 應承接任務級差異：
+  - source 前處理
+  - prompt 組裝
+  - response contract
+  - route selection
+- 新任務優先透過新增 task builder 擴充，而不是持續擴大 `ConsultUseCase` 內的條件分支。
+
 ## AI Route Selection Ownership
 builder 應擁有 AI route 選擇權；aiclient 只負責執行 builder 指定的 route。
 
 ```text
 builder
-├─ 載入 source / rag / template
-├─ 準備 instructions / user message / schema
-└─ 選 AI route code
+├─ BuilderFactory
+│  ├─ GenericTaskBuilder
+│  ├─ ProfileTaskBuilder
+│  └─ ExtractTaskBuilder
+├─ task builder 載入 source / rag / template
+├─ task builder 準備 instructions / user message / schema
+└─ task builder 選 AI route code
    ├─ direct_gemma
    ├─ direct_gpt54
    └─ gemma_then_gpt54
@@ -101,6 +136,51 @@ route example：
   - 直接打 GPT-5.4
 - `gemma_then_gpt54`
   - 先打 Gemma，再由 aiclient executor 決定後續 GPT-5.4 互動流程
+
+## Extraction Prompt Assembly
+LineBot extraction 這條線不應重用 `ProfileConsult` prompt shape；builder 應提供 extraction 專用的素材組裝方式。
+
+```text
+ConsultModeExtract
+├─ builderCode = line-memo-crud
+├─ input
+│  ├─ messageText
+│  ├─ referenceTime
+│  └─ timeZone
+├─ route = direct_gemma
+└─ prompt blocks
+   ├─ [TASK]
+   ├─ [REFERENCE_TIME]
+   ├─ [TIME_ZONE]
+   ├─ [INPUT_TEXT]
+   ├─ [TIME_RULES]
+   └─ [OUTPUT_SCHEMA]
+```
+
+規則：
+- 第一版 `ConsultModeExtract` 先以 `builderCode=line-memo-crud` 為主要任務。
+- extraction path 不應帶 `subjectProfile`、`[REQUEST_INTENT]` 或 profile common source blocks。
+- builder 應把 `referenceTime` 與 `timeZone` 明確寫進 prompt，讓 Gemma 可把相對時間轉成絕對時間。
+- builder 應把預設時間規則明寫進 prompt：
+  - 未指定結束時間 -> `endAt = startAt + 30 分鐘`
+  - 只有日期、未指定開始時間 -> `00:00:00 ~ 01:00:00`
+- builder 應要求 AI 只回最小 extraction schema，不應要求 AI 回 `taskCode`、`appId`、`builderCode`、`requestId` 或 `rawText`。
+
+第一版最小 schema：
+
+```text
+extraction result
+├─ operation
+├─ summary
+├─ startAt
+├─ endAt
+├─ location
+└─ missingFields[]
+```
+
+持久化提醒：
+- Firestore 不應存單一 `start ~ end` 字串。
+- 下游應拆欄存 `startAt` / `endAt`。
 
 ## Profile Input Split
 builder 在 profile-analysis path 應接收兩種自然語言輸入：

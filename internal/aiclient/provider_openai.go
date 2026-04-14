@@ -78,7 +78,7 @@ func (p *openAIProvider) Analyze(ctx context.Context, request analyzeRequest) (i
 		return infra.ConsultBusinessResponse{}, infra.NewError("OPENAI_EMPTY_OUTPUT", "OpenAI returned no structured response.", http.StatusBadGateway)
 	}
 
-	return parseBusinessResponseJSON([]byte(parsed.Output[0].Content[0].Text), "OPENAI_ANALYSIS_FAILED", "OpenAI response did not match the expected JSON contract.")
+	return parseAnalyzeBusinessResponse([]byte(parsed.Output[0].Content[0].Text), request.ResponseContract, "OPENAI_ANALYSIS_FAILED", "OpenAI response did not match the expected JSON contract.")
 }
 
 func (p *openAIProvider) buildInputContent(ctx context.Context, request analyzeRequest) ([]map[string]any, error) {
@@ -117,8 +117,8 @@ func buildResponsesPayload(request analyzeRequest, content []map[string]any) map
 		"text": map[string]any{
 			"format": map[string]any{
 				"type":   "json_schema",
-				"name":   "consult_response",
-				"schema": consultResponseSchema(),
+				"name":   string(normalizeAnalyzeResponseContract(request.ResponseContract)) + "_response",
+				"schema": responseSchemaForContract(request.ResponseContract),
 			},
 		},
 		"input": []map[string]any{

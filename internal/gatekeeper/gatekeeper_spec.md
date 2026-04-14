@@ -36,6 +36,7 @@ gRPC transport adapter 不在此 module 內，但應重用同一個 gatekeeper u
 - 接收 external app 的 `multipart/form-data` generic consult 請求
 - 接收 grpcapi 轉進來的 generic `Consult` command
 - 接收 grpcapi 轉進來的 `ProfileConsult` command
+- 接收 grpcapi 轉進來的 `LineTaskConsult` command
 - 驗證 `appId`
 - 驗證 `builderId`
 - 驗證 `outputFormat`
@@ -47,6 +48,8 @@ gRPC transport adapter 不在此 module 內，但應重用同一個 gatekeeper u
 - 將 validated `appId` 或 optional public `appId` 傳給 builder，供 prompt strategy 選擇
 - 在第一版 astrology/profile 主流程中，於 builder consult 前先呼叫 promptguard usecase
 - 依 promptguard 結果決定直接回 blocked business response，或繼續轉交 builder usecase
+- 驗證 LineBot extraction 所需的 `messageText` / `referenceTime` / `timeZone`
+- 將 LineBot extraction request 映射成 `ConsultModeExtract`
 - 將合法請求轉交給 builder usecase
 
 ## Layer Responsibilities
@@ -59,6 +62,7 @@ gRPC transport adapter 不在此 module 內，但應重用同一個 gatekeeper u
 
 ### UseCase
 - orchestration for `ListBuilders` / `ListExternalBuilders` / `Consult` / `ExternalConsult`
+- orchestration for task-specific extraction requests，例如 `LineTaskConsult`
 - bridge gatekeeper service、promptguard usecase 與 builder usecase
 - map validated request to builder command
 - 承接 HTTP 或 gRPC transport 已轉好的 consult payload
@@ -70,7 +74,26 @@ gRPC transport adapter 不在此 module 內，但應重用同一個 gatekeeper u
 - guard validation
 - client IP resolution
 - structured profile consult field validation
+- LineBot extraction 基本欄位驗證
 - gatekeeper service 仍只負責同步驗證，不直接承擔 promptguard orchestration
+
+## LineTaskConsult Validation
+
+```text
+LineTaskConsult
+├─ appId / builderId 驗證
+├─ messageText 非空
+├─ referenceTime 非空
+├─ timeZone 非空
+├─ 設定 ConsultModeExtract
+└─ 第一版預設跳過 promptguard
+```
+
+規則：
+- `LineTaskConsult` 不應重用 `ProfileConsult` 的 `subjectProfile / userText / intentText` shape。
+- `messageText` 應視為 LineBot server 已完成前綴清理後的純任務文字。
+- gatekeeper 不負責相對時間換算；它只驗證 `referenceTime` 與 `timeZone` 是否存在。
+- gatekeeper 不負責 Firestore CRUD、Calendar sync 或 AI JSON parse。
 
 ## Profile PromptGuard Integration
 

@@ -67,26 +67,30 @@ internal/aiclient
 ```
 
 ## AI Route Ownership Rule
-AI model/provider/staged-flow 的決定權應放在 `builder`，不是 `aiclient`。
+AI route code 的選擇權應放在 `builder`；實際 model/provider/staged-flow 互動細節則由 `aiclient` executor 承接。
 
 規則：
 - `builder` 的責任是：
-  - 依 builderCode / task kind / request contract 決定這次任務的 AI route
-  - 載入 source / rag / template 等素材
-  - 組好要送進 AI 的材料
+  - 透過 builder factory 選出對應 task builder
+  - 由 task builder 依 builderCode / task kind / request contract 決定這次任務的 AI route
+  - 由 task builder 載入 source / rag / template 等素材並組好材料
 - `aiclient` 的責任是：
   - 收到 route code 與 builder 已準備好的材料
   - 用 factory / executor 決定如何與 AI 互動
   - 執行單階段或多階段 AI 流程
-- `aiclient` 不應自行從業務語意猜測要打哪個 model。
+- `aiclient` 不應自行從業務語意猜測要打哪個 route。
 - `builder` 不應承擔多階段 AI stage transition 的交互細節。
 
 建議決策樹：
 
 ```text
 builder
-├─ 準備素材
-├─ 選 route code
+├─ BuilderFactory
+│  ├─ GenericTaskBuilder
+│  ├─ ProfileTaskBuilder
+│  └─ ExtractTaskBuilder
+├─ task builder 準備素材
+├─ task builder 選 route code
 │  ├─ direct_gemma
 │  ├─ direct_gpt54
 │  └─ gemma_then_gpt54
@@ -103,6 +107,128 @@ aiclient
 補充：
 - route code 在 code 中應使用明確 enum / constant，不應散落裸數字。
 - 若未來新增新的 AI 溝通方式，主要變動點應集中在 `aiclient` 的 executor factory，而不是每次重改整個 `builder` 主幹。
+
+## LineBot Extraction Rule
+LineBot 這條線應作為同一份 Internal codebase 下的新任務路徑，而不是硬塞進現有 `ProfileConsult` contract。
+
+```text
+LINE 使用者
+└─ 輸入 "AI: ..."
+   └─ LineBot server
+      ├─ 判斷 AI: 前綴
+      ├─ 去掉前綴
+      ├─ 補 referenceTime / timeZone
+      ├─ gRPC 呼叫 Internal
+      └─ 收到結果後
+         ├─ Firestore CRUD
+         ├─ 未來可串 Google Calendar
+         └─ 回 LINE 使用者
+
+Internal
+└─ internal/grpcapi
+   └─ internal/gatekeeper
+      └─ internal/builder
+         └─ internal/aiclient
+            └─ Gemma
+```
+
+規則：
+- `AI:` 前綴判斷與去除由 LineBot server 負責，不放進 Internal。
+- Internal 這條線第一版預設不跑 `promptguard`。
+- Internal 不直接做 Firestore CRUD；資料寫入由 LineBot server 負責。
+- Internal 不直接回 raw AI JSON 給 LineBot server；最終應回 protobuf response。
+- LineBot extraction 走新的 gRPC contract，不共用 `ProfileConsult` shape。
+
+## LineBot Extraction Contract Rule
+若 Internal 要把 `明天`、`下午三點` 這類相對時間轉為絕對時間，request 必須帶基準時間與時區。
+
+```text
+LineTaskConsultRequest
+├─ appId
+├─ builderId
+├─ messageText
+├─ referenceTime
+└─ timeZone
+```
+
+欄位責任：
+- `messageText`
+  - 去掉 `AI:` 後的口語句子
+- `referenceTime`
+  - 相對時間換算基準
+- `timeZone`
+  - 相對時間換算使用的時區
+
+規則：
+- 沒有 `referenceTime` 與 `timeZone`，Gemma 不應被要求把 `明天 / 下午三點` 穩定轉成絕對時間。
+- `referenceTime` 與 `timeZone` 應由 LineBot server 提供，不由 Internal 自行猜測。
+
+## LineBot Extraction Response Rule
+LineBot extraction 的 AI 內部格式可以是 JSON，但對外 contract 應是 gRPC protobuf response。
+
+```text
+Gemma
+└─ 回 extraction JSON
+   └─ Internal parse / validate
+      └─ grpcapi 回 protobuf response
+```
+
+第一版最小 AI schema：
+
+```text
+extraction result
+├─ operation
+├─ summary
+├─ startAt
+├─ endAt
+├─ location
+└─ missingFields[]
+```
+
+欄位規則：
+- AI 應回傳：
+  - `operation`
+  - `summary`
+  - `startAt`
+  - `endAt`
+  - `location`
+  - `missingFields`
+- 不應要求 AI 回傳：
+  - `taskCode`
+  - `builderCode`
+  - `appId`
+  - `requestId`
+  - `rawText`
+
+原因：
+- 這些欄位是程式已知資訊，不是 AI 判斷能力。
+- 輕量模型欄位越多，失真風險越高。
+
+## LineBot Time Normalization Rule
+LineBot extraction 第一版直接朝 calendar-oriented event schema 設計，Gemma 應把相對時間轉成絕對時間。
+
+```text
+輸入
+└─ "小傑 明天 下午三點找我吃飯"
+
+Gemma 輸出
+├─ startAt = 2026-04-15 15:00:00
+└─ endAt   = 2026-04-15 15:30:00
+```
+
+預設規則：
+- 若未指定結束時間：
+  - `endAt = startAt + 30 分鐘`
+- 若只指定日期、未指定開始時間：
+  - `startAt = 00:00:00`
+  - `endAt = 01:00:00`
+
+持久化規則：
+- Firestore 不應存單一區間字串，例如：
+  - `2026-04-15 15:00:00 ~ 2026-04-15 15:30:00`
+- Firestore 應拆欄存：
+  - `startAt`
+  - `endAt`
 
 ## Primary Development Flow
 

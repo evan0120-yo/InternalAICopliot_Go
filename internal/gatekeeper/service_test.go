@@ -384,6 +384,20 @@ func TestValidateProfileConsultRejectsWeightedEntryWithoutKey(t *testing.T) {
 	}
 }
 
+func TestValidateLineTaskConsultRequiresMessageReferenceTimeAndTimeZone(t *testing.T) {
+	service := NewGuardService(infra.Config{}, nil)
+
+	if _, validationErr := service.ValidateLineTaskConsult(context.Background(), 1, "", "2026-04-14 10:00:00", "Asia/Taipei", "127.0.0.1"); validationErr == nil || !strings.Contains(validationErr.Error(), "LINE_TASK_MESSAGE_TEXT_MISSING") {
+		t.Fatalf("expected messageText missing error, got %v", validationErr)
+	}
+	if _, validationErr := service.ValidateLineTaskConsult(context.Background(), 1, "小傑 明天 下午三點找我吃飯", "", "Asia/Taipei", "127.0.0.1"); validationErr == nil || !strings.Contains(validationErr.Error(), "LINE_TASK_REFERENCE_TIME_MISSING") {
+		t.Fatalf("expected referenceTime missing error, got %v", validationErr)
+	}
+	if _, validationErr := service.ValidateLineTaskConsult(context.Background(), 1, "小傑 明天 下午三點找我吃飯", "2026-04-14 10:00:00", "", "127.0.0.1"); validationErr == nil || !strings.Contains(validationErr.Error(), "LINE_TASK_TIME_ZONE_MISSING") {
+		t.Fatalf("expected timeZone missing error, got %v", validationErr)
+	}
+}
+
 func ptrString(value string) *string {
 	return &value
 }

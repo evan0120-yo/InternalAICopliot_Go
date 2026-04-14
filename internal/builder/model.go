@@ -2,12 +2,13 @@ package builder
 
 import "com.citrus.internalaicopilot/internal/infra"
 
-// ConsultMode keeps generic consult and profile consult paths explicit.
+// ConsultMode keeps generic consult, profile consult, and extraction paths explicit.
 type ConsultMode int
 
 const (
 	ConsultModeGeneric ConsultMode = iota
 	ConsultModeProfile
+	ConsultModeExtract
 )
 
 // BuilderSummary matches the frontend builder dropdown contract.
@@ -30,6 +31,8 @@ type ConsultCommand struct {
 	BuilderID        int
 	PreloadedBuilder *infra.BuilderConfig
 	Text             string
+	ReferenceTime    string
+	TimeZone         string
 	UserText         string
 	IntentText       string
 	OutputFormat     *infra.OutputFormat

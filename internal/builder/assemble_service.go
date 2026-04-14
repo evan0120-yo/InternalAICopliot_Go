@@ -13,6 +13,7 @@ import (
 
 const (
 	consultUserMessageText     = "請依 instructions 執行本次 consult，若有附件請一併納入分析。"
+	extractUserMessageText     = "請依 instructions 執行本次 extraction，且只能回傳指定 JSON。"
 	promptGuardUserMessageText = "請依 instructions 只做 promptguard 判定，僅回傳指定 JSON。"
 	userTextPlaceholder        = "{{userText}}"
 	defaultPromptStrategyKey   = "default"
@@ -143,6 +144,49 @@ func (s *AssembleService) AssemblePrompt(ctx context.Context, builderConfig infr
 		Instructions:      promptBuilder.String(),
 		PromptBodyPreview: buildPromptBodyPreview(intentText, userText, profileBlock),
 		UserMessageText:   consultUserMessageText,
+	}, nil
+}
+
+// AssembleExtractPrompt builds the extraction-specific AI instructions.
+func (s *AssembleService) AssembleExtractPrompt(_ context.Context, builderConfig infra.BuilderConfig, sources []infra.Source, ragsBySourceID map[int64][]infra.RagSupplement, messageText, referenceTime, timeZone string) (promptAssemblyResult, error) {
+	infra.SortByOrderThenID(sources, func(source infra.Source) int { return source.OrderNo }, func(source infra.Source) int64 { return source.SourceID })
+
+	trimmedMessageText := strings.TrimSpace(messageText)
+	trimmedReferenceTime := strings.TrimSpace(referenceTime)
+	trimmedTimeZone := strings.TrimSpace(timeZone)
+
+	var promptBuilder strings.Builder
+	promptBuilder.WriteString(buildExtractionFrameworkHeader(builderConfig))
+	promptBuilder.WriteString(buildExtractionTaskSection())
+	promptBuilder.WriteString(buildExtractionReferenceTimeSection(trimmedReferenceTime))
+	promptBuilder.WriteString(buildExtractionTimeZoneSection(trimmedTimeZone))
+	promptBuilder.WriteString(buildExtractionInputTextSection(trimmedMessageText))
+	promptBuilder.WriteString(buildExtractionTimeRulesSection())
+	promptBuilder.WriteString(buildExtractionOutputSchemaSection())
+
+	for _, source := range sources {
+		promptBuilder.WriteString(fmt.Sprintf("\n## [PROMPT_BLOCK-%d]\n%s\n", source.OrderNo, source.Prompts))
+
+		rags := ragsBySourceID[source.SourceID]
+		if !source.NeedsRagSupplement {
+			continue
+		}
+		if len(rags) == 0 {
+			return promptAssemblyResult{}, infra.NewError("RAG_SUPPLEMENTS_NOT_FOUND", "A source entry requires RAG supplements but none were found.", 500)
+		}
+		for _, rag := range rags {
+			title := strings.TrimSpace(rag.Title)
+			if title == "" {
+				title = "補充內容"
+			}
+			promptBuilder.WriteString(fmt.Sprintf("\n### [SUPPLEMENT] %s\n%s\n", title, strings.TrimSpace(rag.Content)))
+		}
+	}
+
+	return promptAssemblyResult{
+		Instructions:      promptBuilder.String(),
+		PromptBodyPreview: buildExtractionPromptBodyPreview(trimmedMessageText, trimmedReferenceTime, trimmedTimeZone),
+		UserMessageText:   extractUserMessageText,
 	}, nil
 }
 
@@ -648,6 +692,75 @@ func buildRequestIntentSection(intentText string) string {
 `, trimmed)
 }
 
+func buildExtractionFrameworkHeader(builderConfig infra.BuilderConfig) string {
+	return fmt.Sprintf(`你是 Internal AI Copilot 的結構化事件抽取器。
+你只負責把輸入句子轉成固定 JSON，不做聊天、不做多餘解釋、不輸出 markdown code fence。
+
+builderCode=%s
+builderName=%s
+
+執行要求：
+1. 只能回傳單一 JSON object。
+2. 你必須依 referenceTime 與 timeZone 將相對時間轉成絕對時間。
+3. 不可回傳 taskCode、builderCode、appId、requestId、rawText。
+4. 無法從輸入推導的欄位，請保持空字串，並在 missingFields 內列出欄位名稱。
+5. 不可補造未出現在輸入中的人名、地點或事件內容。
+`, strings.TrimSpace(builderConfig.BuilderCode), strings.TrimSpace(builderConfig.Name))
+}
+
+func buildExtractionTaskSection() string {
+	return `
+## [TASK]
+請判斷這句話要做的事件操作，並抽出事件資料。
+operation 只允許為 create、update、delete、query。
+`
+}
+
+func buildExtractionReferenceTimeSection(referenceTime string) string {
+	return fmt.Sprintf(`
+## [REFERENCE_TIME]
+%s
+`, referenceTime)
+}
+
+func buildExtractionTimeZoneSection(timeZone string) string {
+	return fmt.Sprintf(`
+## [TIME_ZONE]
+%s
+`, timeZone)
+}
+
+func buildExtractionInputTextSection(messageText string) string {
+	return fmt.Sprintf(`
+## [INPUT_TEXT]
+%s
+`, messageText)
+}
+
+func buildExtractionTimeRulesSection() string {
+	return `
+## [TIME_RULES]
+1. 依 [REFERENCE_TIME] 與 [TIME_ZONE] 將「今天 / 明天 / 下週二 / 下午三點」等相對時間轉成絕對時間。
+2. 若未指定結束時間，endAt = startAt + 30 分鐘。
+3. 若只指定日期、未指定開始時間，startAt = 00:00:00，endAt = 01:00:00。
+4. startAt 與 endAt 格式固定為 YYYY-MM-DD HH:mm:ss。
+`
+}
+
+func buildExtractionOutputSchemaSection() string {
+	return `
+## [OUTPUT_SCHEMA]
+{
+  "operation": "create | update | delete | query",
+  "summary": "",
+  "startAt": "YYYY-MM-DD HH:mm:ss",
+  "endAt": "YYYY-MM-DD HH:mm:ss",
+  "location": "",
+  "missingFields": []
+}
+`
+}
+
 func buildRawUserTextSection(userText string) string {
 	if strings.TrimSpace(userText) == "" {
 		userText = "用戶沒有額外需求"
@@ -656,6 +769,20 @@ func buildRawUserTextSection(userText string) string {
 ## [RAW_USER_TEXT]
 %s
 `, strings.TrimSpace(userText))
+}
+
+func buildExtractionPromptBodyPreview(messageText, referenceTime, timeZone string) string {
+	lines := make([]string, 0, 3)
+	if value := strings.TrimSpace(messageText); value != "" {
+		lines = append(lines, value)
+	}
+	if value := strings.TrimSpace(referenceTime); value != "" {
+		lines = append(lines, "referenceTime: "+value)
+	}
+	if value := strings.TrimSpace(timeZone); value != "" {
+		lines = append(lines, "timeZone: "+value)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func buildRenderedSubjectProfileSection(subjectProfile *renderedSubjectProfile, includeTheoryVersion bool) string {

@@ -1,7 +1,7 @@
 # GRPC API Module Spec
 
 ## Purpose
-這份文件是 grpcapi module 的規格文件，用來定義 Internal gRPC transport adapter 的責任、邊界，以及 generic `Consult` 與 `ProfileConsult` 兩條 integration contract。
+這份文件是 grpcapi module 的規格文件，用來定義 Internal gRPC transport adapter 的責任、邊界，以及 generic `Consult`、`ProfileConsult` 與 task-specific extraction contract。
 
 ## Overview
 grpcapi 是 Internal 對 external integrations 暴露的 gRPC transport adapter。它負責把 gRPC request 轉成 gatekeeper usecase 可理解的 command，並將 business error 映射為 gRPC status。
@@ -43,7 +43,7 @@ IntegrationService
 ├─ Consult
 ├─ ProfileConsult
 └─ future RPCs
-   ├─ LineMemoExtract
+   ├─ LineTaskConsult
    └─ other task-specific contracts
 ```
 
@@ -110,6 +110,36 @@ generic `Consult` 對應 `ConsultModeGeneric`。
 - `subject_profile` 缺值且 `user_text!=""` 或 `intent_text!=""` 都是合法的 profile request。
 - `text` 在相容期內可暫時視為 `user_text` alias。
 - `user_text`-only / `intent_text`-only profile request 仍必須維持 `ConsultModeProfile`，讓 builder 只跑 common sources。
+
+## LineTaskConsult Contract
+`LineTaskConsult` 應作為 LineBot extraction 的專用 gRPC contract，不重用 `ProfileConsult`。
+
+```text
+LineTaskConsultRequest
+├─ app_id
+├─ builder_id
+├─ message_text
+├─ reference_time
+├─ time_zone
+└─ client_ip optional
+```
+
+```text
+LineTaskConsultResponse
+├─ operation
+├─ summary
+├─ start_at
+├─ end_at
+├─ location
+└─ missing_fields[]
+```
+
+規則：
+- `message_text` 應是 LineBot server 已去掉 `AI:` 前綴後的自然語言內容。
+- `reference_time` 與 `time_zone` 是讓下游 AI 將 `明天 / 下午三點` 轉成絕對時間所必需的欄位。
+- `LineTaskConsult` 對應 `ConsultModeExtract`。
+- `LineTaskConsult` 的 response 應是 typed protobuf contract，不應只回 raw JSON string。
+- grpcapi 不解析 AI JSON；它只接收下游已驗證的 extraction result，再映射成 protobuf response。
 
 ## Discovery Rule
 `ListBuilders` 仍保留為 integration discovery surface，但 LinkChat profile-analysis hot path 不應每次 consult 前都先叫一次 `ListBuilders`。

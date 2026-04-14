@@ -20,6 +20,31 @@
   Then grpcapi 應保留 transport 差異
   And 在 adapter 層把它轉成 Internal command
 
+## Scenario Group: LineTaskConsult Adaptation
+```text
+gRPC LineTaskConsult
+      │
+      ├─ keep appId / builderId
+      ├─ map messageText
+      ├─ map referenceTime
+      ├─ map timeZone
+      ├─ fallback clientIp
+      └─ set ConsultModeExtract
+```
+
+- Given LineBot server 傳入 `LineTaskConsult` request
+  When grpcapi `LineTaskConsult` 執行
+  Then 應將其轉成 gatekeeper / builder 可用的 extraction command
+
+- Given `LineTaskConsult` request 帶 `messageText`、`referenceTime` 與 `timeZone`
+  When grpcapi 建立 command
+  Then command `Mode` 應為 `ConsultModeExtract`
+
+- Given `LineTaskConsult` 執行成功
+  When grpcapi 準備回應 external caller
+  Then 應回 typed protobuf response
+  And 不應只回 raw AI JSON string
+
 ## Scenario Group: List Builders
 - Given external app 呼叫 `ListBuilders`
   When grpcapi service 執行

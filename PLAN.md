@@ -112,8 +112,9 @@ Step 6: 文件同步
 │  └─ 驗證與 request boundary
 │
 ├─ builder
-│  ├─ 準備 source / rag / prompt materials
-│  └─ 決定 AI route code
+│  ├─ BuilderFactory
+│  ├─ task builder 準備 source / rag / prompt materials
+│  └─ task builder 決定 AI route code
 │
 └─ aiclient
    ├─ AI route factory
@@ -294,41 +295,98 @@ builder
 LineBot 這條線的已確認方向如下：
 
 ```text
-LineBot server
-   │
-   └─ gRPC call
-      │
-      ▼
+LINE 使用者
+└─ 輸入 "AI: ..."
+   └─ LineBot server
+      ├─ 判斷 AI: 前綴
+      ├─ 去掉前綴
+      ├─ 補 `referenceTime`
+      ├─ 補 `timeZone`
+      ├─ gRPC call
+      └─ 收到結果後
+         ├─ Firestore CRUD
+         ├─ 未來可同步日曆服務
+         └─ 回 LINE 使用者
+            │
+            ▼
 grpcapi
-   └─ dedicated LineBot contract
+└─ `LineTaskConsult`
+   ├─ `appId`
+   ├─ `builderId`
+   ├─ `messageText`
+   ├─ `referenceTime`
+   └─ `timeZone`
       │
       ▼
 gatekeeper
-   ├─ 基本欄位驗證
-   └─ 這條線預設不跑 promptguard
-      │
-      ▼
-builder
-   ├─ 準備 extraction prompt materials
-   └─ route = direct_gemma
-      │
-      ▼
-aiclient
-   └─ Gemma executor
-      │
-      ▼
-回傳固定 JSON
+├─ 基本欄位驗證
+├─ 設定 `ConsultModeExtract`
+└─ 第一版預設不跑 promptguard
    │
    ▼
-LineBot server
-   └─ Firestore CRUD / reply handling
+builder
+├─ 準備 extraction prompt materials
+├─ 組 calendar-oriented schema
+└─ route = direct_gemma
+   │
+   ▼
+aiclient
+├─ direct_gemma executor
+├─ 要求 Gemma 回 extraction JSON
+└─ parse / validate extraction JSON
+   │
+   ▼
+grpcapi
+└─ 回 protobuf response
 ```
 
 規則：
-- Internal 只負責把口語句子轉成固定 JSON，不直接碰 LineBot server 的 Firestore CRUD。
-- 相對時間換算若由 LineBot server 自己處理，則 Internal 不需要扛 reference time / timezone 推理責任。
+- Internal 只負責把口語句子轉成固定結構結果，不直接碰 LineBot server 的 Firestore CRUD。
+- `AI:` 前綴處理由 LineBot server 負責，不放進 Internal。
+- `referenceTime` 與 `timeZone` 應由 LineBot server 提供。
 - LineBot extraction contract 不應硬塞進現有 `ProfileConsult` 的 request shape。
 - 這條線可走同一個 `IntegrationService`，但應使用自己的 RPC contract。
+- 對外 contract 應是 gRPC protobuf response，不直接把 raw AI JSON string 外漏給 LineBot server。
+
+LineBot extraction 第一版最小結果模型：
+
+```text
+LineTaskConsultResponse
+├─ operation
+├─ summary
+├─ startAt
+├─ endAt
+├─ location
+└─ missingFields[]
+```
+
+規則：
+- AI 應回：
+  - `operation`
+  - `summary`
+  - `startAt`
+  - `endAt`
+  - `location`
+  - `missingFields`
+- 程式自己補：
+  - `taskCode`
+  - `builderCode`
+  - `appId`
+  - `requestId`
+  - `rawText`
+
+時間規則：
+- 若未指定結束時間：
+  - `endAt = startAt + 30 分鐘`
+- 若只指定日期、未指定開始時間：
+  - `startAt = 00:00:00`
+  - `endAt = 01:00:00`
+
+持久化規則：
+- Firestore 不應存單一區間字串。
+- Firestore 應拆欄存：
+  - `startAt`
+  - `endAt`
 
 current follow-up：
 - internal React 測試頁不再傳 `mode`

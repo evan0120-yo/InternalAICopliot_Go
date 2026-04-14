@@ -19,9 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	IntegrationService_ListBuilders_FullMethodName   = "/internalaicopilot.integration.v1.IntegrationService/ListBuilders"
-	IntegrationService_Consult_FullMethodName        = "/internalaicopilot.integration.v1.IntegrationService/Consult"
-	IntegrationService_ProfileConsult_FullMethodName = "/internalaicopilot.integration.v1.IntegrationService/ProfileConsult"
+	IntegrationService_ListBuilders_FullMethodName    = "/internalaicopilot.integration.v1.IntegrationService/ListBuilders"
+	IntegrationService_Consult_FullMethodName         = "/internalaicopilot.integration.v1.IntegrationService/Consult"
+	IntegrationService_ProfileConsult_FullMethodName  = "/internalaicopilot.integration.v1.IntegrationService/ProfileConsult"
+	IntegrationService_LineTaskConsult_FullMethodName = "/internalaicopilot.integration.v1.IntegrationService/LineTaskConsult"
 )
 
 // IntegrationServiceClient is the client API for IntegrationService service.
@@ -31,6 +32,7 @@ type IntegrationServiceClient interface {
 	ListBuilders(ctx context.Context, in *ListBuildersRequest, opts ...grpc.CallOption) (*ListBuildersResponse, error)
 	Consult(ctx context.Context, in *ConsultRequest, opts ...grpc.CallOption) (*ConsultResponse, error)
 	ProfileConsult(ctx context.Context, in *ProfileConsultRequest, opts ...grpc.CallOption) (*ProfileConsultResponse, error)
+	LineTaskConsult(ctx context.Context, in *LineTaskConsultRequest, opts ...grpc.CallOption) (*LineTaskConsultResponse, error)
 }
 
 type integrationServiceClient struct {
@@ -71,6 +73,16 @@ func (c *integrationServiceClient) ProfileConsult(ctx context.Context, in *Profi
 	return out, nil
 }
 
+func (c *integrationServiceClient) LineTaskConsult(ctx context.Context, in *LineTaskConsultRequest, opts ...grpc.CallOption) (*LineTaskConsultResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LineTaskConsultResponse)
+	err := c.cc.Invoke(ctx, IntegrationService_LineTaskConsult_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IntegrationServiceServer is the server API for IntegrationService service.
 // All implementations must embed UnimplementedIntegrationServiceServer
 // for forward compatibility.
@@ -78,6 +90,7 @@ type IntegrationServiceServer interface {
 	ListBuilders(context.Context, *ListBuildersRequest) (*ListBuildersResponse, error)
 	Consult(context.Context, *ConsultRequest) (*ConsultResponse, error)
 	ProfileConsult(context.Context, *ProfileConsultRequest) (*ProfileConsultResponse, error)
+	LineTaskConsult(context.Context, *LineTaskConsultRequest) (*LineTaskConsultResponse, error)
 	mustEmbedUnimplementedIntegrationServiceServer()
 }
 
@@ -96,6 +109,9 @@ func (UnimplementedIntegrationServiceServer) Consult(context.Context, *ConsultRe
 }
 func (UnimplementedIntegrationServiceServer) ProfileConsult(context.Context, *ProfileConsultRequest) (*ProfileConsultResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ProfileConsult not implemented")
+}
+func (UnimplementedIntegrationServiceServer) LineTaskConsult(context.Context, *LineTaskConsultRequest) (*LineTaskConsultResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method LineTaskConsult not implemented")
 }
 func (UnimplementedIntegrationServiceServer) mustEmbedUnimplementedIntegrationServiceServer() {}
 func (UnimplementedIntegrationServiceServer) testEmbeddedByValue()                            {}
@@ -172,6 +188,24 @@ func _IntegrationService_ProfileConsult_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IntegrationService_LineTaskConsult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LineTaskConsultRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationServiceServer).LineTaskConsult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationService_LineTaskConsult_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationServiceServer).LineTaskConsult(ctx, req.(*LineTaskConsultRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IntegrationService_ServiceDesc is the grpc.ServiceDesc for IntegrationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -190,6 +224,10 @@ var IntegrationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ProfileConsult",
 			Handler:    _IntegrationService_ProfileConsult_Handler,
+		},
+		{
+			MethodName: "LineTaskConsult",
+			Handler:    _IntegrationService_LineTaskConsult_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -191,6 +191,69 @@ func TestAnalyzeLiveModeRoutesToConfiguredGemmaProvider(t *testing.T) {
 	}
 }
 
+func TestAnalyzeLiveModeDirectGemmaSupportsStructuredExtractionContract(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1beta/models/gemma-4-31b-it:generateContent" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("Decode returned error: %v", err)
+		}
+		configSection, ok := payload["generationConfig"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected generationConfig, got %+v", payload["generationConfig"])
+		}
+		schema, ok := configSection["responseJsonSchema"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected responseJsonSchema, got %+v", configSection["responseJsonSchema"])
+		}
+		properties, ok := schema["properties"].(map[string]any)
+		if !ok || properties["startAt"] == nil || properties["missingFields"] == nil {
+			t.Fatalf("expected extraction response schema, got %+v", schema)
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"candidates": []map[string]any{
+				{
+					"content": map[string]any{
+						"parts": []map[string]any{
+							{
+								"text": `{"operation":"create","summary":"找小傑吃飯","startAt":"2026-04-15 15:00:00","endAt":"2026-04-15 15:30:00","location":"","missingFields":[]}`,
+							},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	service := NewAnalyzeService(infra.Config{
+		GemmaAPIKey:  "gemma-key",
+		GemmaBaseURL: server.URL + "/v1beta",
+		GemmaModel:   "gemma-4-31b-it",
+	})
+
+	response, err := service.Analyze(context.Background(), AnalyzeCommand{
+		Route:            AIRouteDirectGemma,
+		ResponseContract: AnalyzeResponseContractExtraction,
+		UserText:         "請依 instructions 執行 extraction",
+		Instructions:     "assembled extraction instructions",
+		Mode:             infra.AIExecutionModeLive,
+	})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if !response.Status || response.StatusAns != "LINE_TASK_EXTRACTED" {
+		t.Fatalf("unexpected response envelope: %+v", response)
+	}
+	if !strings.Contains(response.Response, `"startAt":"2026-04-15 15:00:00"`) {
+		t.Fatalf("expected normalized extraction JSON in response, got %+v", response)
+	}
+}
+
 func TestAnalyzeLiveModeGemmaThenGPT54RunsBothStages(t *testing.T) {
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

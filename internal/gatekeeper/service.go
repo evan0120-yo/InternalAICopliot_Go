@@ -135,6 +135,27 @@ func (s *GuardService) ValidateProfileConsult(ctx context.Context, appID string,
 	return builderConfig, normalizedProfile, nil
 }
 
+// ValidateLineTaskConsult validates structured LineBot extraction input.
+func (s *GuardService) ValidateLineTaskConsult(ctx context.Context, builderID int, messageText, referenceTime, timeZone, clientIP string) (infra.BuilderConfig, error) {
+	if strings.TrimSpace(clientIP) == "" {
+		return infra.BuilderConfig{}, infra.NewError("CLIENT_IP_MISSING", "Client IP could not be resolved.", http.StatusBadRequest)
+	}
+	if strings.TrimSpace(messageText) == "" {
+		return infra.BuilderConfig{}, infra.NewError("LINE_TASK_MESSAGE_TEXT_MISSING", "messageText is required.", http.StatusBadRequest)
+	}
+	if strings.TrimSpace(referenceTime) == "" {
+		return infra.BuilderConfig{}, infra.NewError("LINE_TASK_REFERENCE_TIME_MISSING", "referenceTime is required.", http.StatusBadRequest)
+	}
+	if strings.TrimSpace(timeZone) == "" {
+		return infra.BuilderConfig{}, infra.NewError("LINE_TASK_TIME_ZONE_MISSING", "timeZone is required.", http.StatusBadRequest)
+	}
+	builderConfig, err := s.validateActiveBuilder(ctx, builderID)
+	if err != nil {
+		return infra.BuilderConfig{}, err
+	}
+	return builderConfig, nil
+}
+
 // ValidateExternalApp validates the external caller app identity.
 func (s *GuardService) ValidateExternalApp(ctx context.Context, appID string) (infra.AppAccess, error) {
 	appID = strings.TrimSpace(appID)
@@ -189,6 +210,23 @@ func (s *GuardService) ValidateExternalProfileConsult(ctx context.Context, appID
 	}
 
 	return app, builderConfig, normalizedProfile, nil
+}
+
+// ValidateExternalLineTaskConsult validates an external app LineBot extraction request.
+func (s *GuardService) ValidateExternalLineTaskConsult(ctx context.Context, appID string, builderID int, messageText, referenceTime, timeZone, clientIP string) (infra.AppAccess, infra.BuilderConfig, error) {
+	app, err := s.ValidateExternalApp(ctx, appID)
+	if err != nil {
+		return infra.AppAccess{}, infra.BuilderConfig{}, err
+	}
+
+	builderConfig, err := s.ValidateLineTaskConsult(ctx, builderID, messageText, referenceTime, timeZone, clientIP)
+	if err != nil {
+		return infra.AppAccess{}, infra.BuilderConfig{}, err
+	}
+	if !appAllowsBuilder(app, builderID) {
+		return infra.AppAccess{}, infra.BuilderConfig{}, infra.NewError("APP_BUILDER_FORBIDDEN", "Requested app is not allowed to use this builder.", http.StatusForbidden)
+	}
+	return app, builderConfig, nil
 }
 
 func (s *GuardService) validateActiveBuilder(ctx context.Context, builderID int) (infra.BuilderConfig, error) {
