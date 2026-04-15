@@ -372,6 +372,44 @@ func TestExternalBuildersHandlerFiltersAuthorizedBuilders(t *testing.T) {
 	}
 }
 
+func TestListBuildersHandlerIncludesLineMemoBuilderFromDefaultSeed(t *testing.T) {
+	handler := newTestHandler(t)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/builders", nil)
+	recorder := httptest.NewRecorder()
+
+	handler.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var envelope infra.APIResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("Unmarshal returned error: %v", err)
+	}
+
+	dataBytes, err := json.Marshal(envelope.Data)
+	if err != nil {
+		t.Fatalf("Marshal returned error: %v", err)
+	}
+	var builders []builder.BuilderSummary
+	if err := json.Unmarshal(dataBytes, &builders); err != nil {
+		t.Fatalf("Unmarshal builders returned error: %v", err)
+	}
+
+	found := false
+	for _, item := range builders {
+		if item.BuilderCode == "line-memo-crud" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected public builders to include line-memo-crud, got %+v", builders)
+	}
+}
+
 func TestExternalConsultHandlerRejectsUnauthorizedBuilder(t *testing.T) {
 	seed := infra.DefaultSeedData()
 	seed.Apps[0].AllowedBuilderIDs = []int{1}
@@ -445,26 +483,7 @@ func newTestHandlerWithSeed(t *testing.T, seed infra.StoreSeedData) http.Handler
 }
 
 func newLineTaskTestSeed() infra.StoreSeedData {
-	seed := infra.DefaultSeedData()
-	seed.Builders = append(seed.Builders, infra.BuilderConfig{
-		BuilderID:   4,
-		BuilderCode: "line-memo-crud",
-		GroupLabel:  "LineBot",
-		Name:        "Line 備忘錄抽取",
-		Description: "供 local/dev 驗證 line task extraction 路徑。",
-		IncludeFile: false,
-		FilePrefix:  "line-memo-crud",
-		Active:      true,
-	})
-	seed.Sources = append(seed.Sources, infra.Source{
-		SourceID:           1001,
-		BuilderID:          4,
-		Prompts:            "你現在負責將 LINE 口語訊息轉成固定 extraction JSON。",
-		OrderNo:            1,
-		SystemBlock:        false,
-		NeedsRagSupplement: false,
-	})
-	return seed
+	return infra.DefaultSeedData()
 }
 
 func testProjectID(prefix string) string {

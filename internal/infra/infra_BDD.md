@@ -43,6 +43,11 @@
   When `NewStore` 或 `NewStoreWithOptions` 建立成功且資料為空
   Then 應載入 `DefaultSeedData`
 
+- Given `DefaultSeedData` 被載入到 local/dev runtime
+  When internal frontend 呼叫 `GET /api/builders`
+  Then runtime builder list 應包含 `builderCode=line-memo-crud`
+  And 其對應 source graph 應至少包含一個 extraction prompt source
+
 - Given local/dev bootstrap 明確要求 reset and seed
   When app 啟動前執行 infra bootstrap
   Then 系統應先清除既有 Firestore 開發資料，再重新載入 `DefaultSeedData`

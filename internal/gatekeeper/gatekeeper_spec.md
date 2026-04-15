@@ -240,6 +240,8 @@ Header：
 - gatekeeper 只做基本欄位驗證，不跑 promptguard
 - request / response shape 應盡量對齊 gRPC `LineTaskConsult`
 - transport 雖然是 HTTP，但應回 `APIResponse` JSON envelope；其中 `data` 內的欄位應對齊 `LineTaskConsultResponse`
+- 若 Internal frontend 將 `line-memo-crud` 顯示於 sidebar 測試列表，該畫面提交時也應走這條 route，而不是 generic `/api/consult`
+- gatekeeper 不負責判斷 front-end screen variant；它只要求 transport 已送入正確的 LineTask request shape
 
 ### gRPC generic `Consult`
 generic `Consult` 仍承接 generic consult 語意：

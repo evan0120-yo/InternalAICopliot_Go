@@ -66,6 +66,13 @@ infra 需要承接 local 開發用的 reset/seed bootstrap 能力。
   - `templates/{templateId}`
   - `templates/{templateId}/templateRags/{templateRagId}`
 
+目前 `DefaultSeedData` 補充：
+- public runtime builders 除原本的 PM / QA / LinkChat 外，現在也包含：
+  - `builderId=4`
+  - `builderCode=line-memo-crud`
+- 這筆 seed 的目的不是對外商業功能，而是讓 Internal frontend / local tester 可直接看到並測試 LineTask extraction 路徑。
+- external app 的 `AllowedBuilderIDs` 仍可維持獨立白名單，不因 public runtime seed 自動獲得該 builder 權限。
+
 限制：
 - reset 動作必須受 local/dev config 保護
 - infra 可以提供 bootstrap helper，但不應把 builder/rag/output 的業務規則搬進 infra

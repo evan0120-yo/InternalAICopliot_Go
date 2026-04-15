@@ -176,3 +176,30 @@ func TestStoreReadsAppPromptConfig(t *testing.T) {
 		t.Fatalf("expected linkchat strategy, got %+v", config)
 	}
 }
+
+func TestStoreDefaultSeedIncludesLineMemoBuilderSource(t *testing.T) {
+	store, err := NewStore("")
+	if err != nil {
+		t.Fatalf("NewStore returned error: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	sources, err := store.SourcesByBuilderIDContext(context.Background(), 4)
+	if err != nil {
+		t.Fatalf("SourcesByBuilderIDContext returned error: %v", err)
+	}
+	if len(sources) == 0 {
+		t.Fatalf("expected line-memo-crud seed sources to exist")
+	}
+
+	found := false
+	for _, source := range sources {
+		if source.Prompts == "你現在負責將 LINE 口語訊息轉成固定 extraction JSON。" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected extraction prompt source in builder 4 graph, got %+v", sources)
+	}
+}

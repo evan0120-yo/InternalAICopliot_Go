@@ -47,6 +47,11 @@
   When caller 執行 `POST /api/line-task-consult`
   Then request 應進入同一套 gatekeeper / builder / aiclient extraction 流程
 
+- Given runtime builder list 包含 `line-memo-crud`
+  When Internal frontend 以該 builder 進入 line task 測試畫面
+  Then submit 應命中 `POST /api/line-task-consult`
+  And 不應退回 generic `POST /api/consult`
+
 ## Scenario Group: End-to-End External HTTP Flow
 - Given app 已成功啟動且 external app 帶入合法 `X-App-Id`
   When caller 執行 `GET /api/external/builders`

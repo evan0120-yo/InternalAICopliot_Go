@@ -371,6 +371,32 @@ internal 後台 / Postman
   - `location`
   - `missingFields`
 
+### Scenario group: Internal frontend as testing console
+
+Internal frontend 的定位不是單一 generic chat 頁，而是 backend 各條能力路線的測試入口。
+
+```text
+Sidebar builder list
+   │
+   ▼
+依 builderCode 決定 screen variant
+   ├─ generic_consult
+   ├─ astrology_profile
+   └─ line_task_extract
+      │
+      ▼
+POST /api/line-task-consult
+   │
+   ▼
+gatekeeper -> builder -> aiclient
+```
+
+規則：
+- backend runtime seed 現在應包含 `line-memo-crud`，讓 Internal frontend / local tester 可發現這條 extraction 路徑。
+- `line_task_extract` 不應重用 generic `/api/consult` contract。
+- screen variant 分流應優先依 `builderCode` 判斷，而不是硬編碼 `builderId`。
+- 在前端 variant 尚未完成前，`POST /api/line-task-consult` 仍可由 Postman / local tester 直接驗證。
+
 LineBot extraction 第一版最小結果模型：
 
 ```text

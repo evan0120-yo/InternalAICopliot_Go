@@ -60,6 +60,16 @@ func DefaultSeedData() StoreSeedData {
 			FilePrefix:  "linkchat-astrology",
 			Active:      true,
 		},
+		{
+			BuilderID:   4,
+			BuilderCode: "line-memo-crud",
+			GroupLabel:  "LineBot",
+			Name:        "Line 備忘錄抽取",
+			Description: "供 Internal 後台測試 LineTask extraction 路徑。",
+			IncludeFile: false,
+			FilePrefix:  "line-memo-crud",
+			Active:      true,
+		},
 	}
 
 	templates := []Template{
@@ -488,6 +498,14 @@ func DefaultSeedData() StoreSeedData {
 			SystemBlock:        false,
 			NeedsRagSupplement: false,
 		},
+		{
+			SourceID:           33,
+			BuilderID:          4,
+			Prompts:            "你現在負責將 LINE 口語訊息轉成固定 extraction JSON。",
+			OrderNo:            1,
+			SystemBlock:        false,
+			NeedsRagSupplement: false,
+		},
 	}
 
 	rags := []RagSupplement{
@@ -541,7 +559,7 @@ func DefaultSeedData() StoreSeedData {
 		Rags:             rags,
 		Templates:        templates,
 		TemplateRags:     templateRags,
-		NextSourceID:     32,
+		NextSourceID:     33,
 		NextRagID:        4,
 		NextTemplateID:   4,
 		NextTemplateRag:  5,

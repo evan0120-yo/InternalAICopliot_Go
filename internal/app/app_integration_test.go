@@ -38,6 +38,25 @@ func TestAppSupportsBuilderListAndConsultFlow(t *testing.T) {
 	if buildersResponse.StatusCode != http.StatusOK {
 		t.Fatalf("GET /api/builders returned status %d", buildersResponse.StatusCode)
 	}
+	var buildersEnvelope infra.APIResponse
+	if err := json.NewDecoder(buildersResponse.Body).Decode(&buildersEnvelope); err != nil {
+		t.Fatalf("Decode builders returned error: %v", err)
+	}
+	buildersBytes, _ := json.Marshal(buildersEnvelope.Data)
+	var builders []builder.BuilderSummary
+	if err := json.Unmarshal(buildersBytes, &builders); err != nil {
+		t.Fatalf("Unmarshal builders returned error: %v", err)
+	}
+	foundLineMemo := false
+	for _, item := range builders {
+		if item.BuilderCode == "line-memo-crud" {
+			foundLineMemo = true
+			break
+		}
+	}
+	if !foundLineMemo {
+		t.Fatalf("expected public builders to include line-memo-crud, got %+v", builders)
+	}
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -266,26 +285,7 @@ func newIntegrationTestConfig(t *testing.T) infra.Config {
 }
 
 func newLineTaskIntegrationSeed() infra.StoreSeedData {
-	seed := infra.DefaultSeedData()
-	seed.Builders = append(seed.Builders, infra.BuilderConfig{
-		BuilderID:   4,
-		BuilderCode: "line-memo-crud",
-		GroupLabel:  "LineBot",
-		Name:        "Line 備忘錄抽取",
-		Description: "供 app integration 驗證 line task extraction 路徑。",
-		IncludeFile: false,
-		FilePrefix:  "line-memo-crud",
-		Active:      true,
-	})
-	seed.Sources = append(seed.Sources, infra.Source{
-		SourceID:           1001,
-		BuilderID:          4,
-		Prompts:            "你現在負責將 LINE 口語訊息轉成固定 extraction JSON。",
-		OrderNo:            1,
-		SystemBlock:        false,
-		NeedsRagSupplement: false,
-	})
-	return seed
+	return infra.DefaultSeedData()
 }
 
 func newLineTaskIntegrationApp(t *testing.T) *App {

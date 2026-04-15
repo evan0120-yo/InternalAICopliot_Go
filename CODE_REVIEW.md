@@ -15,7 +15,7 @@
 - 管理員：維護 builder graph 與 template library。
 
 它目前比較像公司內部的小型 AI 平台，不是高流量 SaaS。
-程式有很多「先全撈再 Go 層過濾」的做法，代表它預設的資料量不大。現在 seed data 只有 3 個 builders、1 個外部 app、1 組 app prompt config，這個假設很明顯。
+程式有很多「先全撈再 Go 層過濾」的做法，代表它預設的資料量不大。現在 seed data 只有 4 個 builders、1 個外部 app、1 組 app prompt config，這個假設很明顯。
 
 從 code 看得出的刻意選擇有幾個：
 - HTTP 和 gRPC 共用同一組 gatekeeper / builder / aiclient / output 邊界，不分兩套業務流程。
@@ -75,6 +75,8 @@ ListBuilders
 目前就是先撈全部，再用 Go 層做過濾與排序。
 
 > 注意：回傳排序基本上是 builderId 升序。
+
+> 注意：public runtime builder list 現在除了 `pm-estimate`、`qa-smoke-doc`、`linkchat-astrology`，也會帶出 `line-memo-crud`，目的是讓 Internal frontend / local tester 可以直接發現並測試 LineTask extraction 路徑。
 
 ## C. 一般 Consult
 
@@ -1258,10 +1260,14 @@ _sourceLookup/{sourceId}
 目前 `DefaultSeedData()` 會種下：
 - 1 個 app：`linkchat`
 - 1 個 appPromptConfig：`linkchat -> linkchat`
-- 3 個 builders：`pm-estimate`、`qa-smoke-doc`、`linkchat-astrology`
+- 4 個 builders：`pm-estimate`、`qa-smoke-doc`、`linkchat-astrology`、`line-memo-crud`
 - 4 個 templates
-- 32 個 sources
+- 33 個 sources
 - 4 個 source rags
+
+補充：
+- `line-memo-crud` 的 seed 目的不是正式商業功能，而是把 LineTask extraction 路徑放進 runtime discovery。
+- external app 的 `AllowedBuilderIDs` 仍維持獨立白名單；`linkchat` 目前沒有因 public seed 自動拿到 `builderId=4` 權限。
 
 ### reset / seed 規則
 

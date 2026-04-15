@@ -198,6 +198,40 @@ POST /api/line-task-consult
   - `location`
   - `missingFields`
 
+## Internal Frontend Testing Console Rule
+Internal 前端應視為 Backend 的整合測試入口，而不只是 generic consult 展示頁。
+
+```text
+Internal frontend
+├─ builder discovery
+├─ generic consult testing
+├─ profile consult testing
+└─ line task extraction testing
+```
+
+規則：
+- 若某條 backend 路線已成為正式測試入口，前端應提供對應 screen variant，而不是強行重用既有 generic form。
+- backend runtime seed 現在已包含 `line-memo-crud`，方便 Internal frontend / local tester 直接發現這條 extraction builder。
+- Internal frontend 若顯示 `line-memo-crud`，提交時必須呼叫 `POST /api/line-task-consult`，不得誤走 `/api/consult`。
+- 前端對 builder 類型的辨識應優先使用 stable `builderCode`，不應以固定 `builderId` 當作長期判斷依據。
+
+建議畫面分流：
+
+```text
+/:builderId
+├─ generic_consult
+├─ astrology_profile
+└─ line_task_extract
+   ├─ builderCode = line-memo-crud
+   ├─ request:
+   │  ├─ builderId
+   │  ├─ messageText
+   │  ├─ referenceTime
+   │  └─ timeZone
+   └─ submit:
+      └─ POST /api/line-task-consult
+```
+
 ## LineBot Extraction Response Rule
 LineBot extraction 的 AI 內部格式可以是 JSON，但對外 contract 應是 gRPC protobuf response。
 
