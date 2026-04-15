@@ -782,6 +782,7 @@ formal external path
   -> grpcapi.Service.LineTaskConsult
   -> gatekeeper.UseCase.LineTaskConsult
   -> guard.ValidateExternalLineTaskConsult
+  -> buildLineTaskCommand (AIExecutionMode=live forced)
   -> builder.ConsultUseCase.Consult
      -> ExtractTaskBuilder
      -> AssembleExtractPrompt
@@ -797,6 +798,7 @@ local/dev test path
   -> gatekeeper.Handler.lineTaskConsult
   -> gatekeeper.UseCase.PublicLineTaskConsult
   -> guard.ValidateLineTaskConsult
+  -> buildLineTaskCommand (AIExecutionMode=live forced)
   -> builder.ConsultUseCase.Consult
      -> ExtractTaskBuilder
      -> AssembleExtractPrompt
@@ -822,6 +824,7 @@ local/dev test path
 補充：
 - 這條線第一版不跑 `promptguard`。
 - `referenceTime` 與 `timeZone` 對 builder prompt 仍是必要值，但現在由 usecase 在缺省時自動補系統時間 / 系統時區。
+- `buildLineTaskCommand()` 現在明確設定 `AIExecutionMode: infra.AIExecutionModeLive`，確保 extraction 永遠走 live 路徑；即使環境 `AIDefaultMode` 或 `AIPreviewMode` 開了 preview，也不會影響 line task extraction。這是因為 extraction response 必須是 AI 產生的結構化 JSON，不可以是 preview instructions。
 - gRPC `LineTaskConsult` 會做 external app 驗證；HTTP `POST /api/line-task-consult` 只做 local/dev 基本驗證，不承擔 external app auth。
 - HTTP `POST /api/line-task-consult` 的 `appId` 只是 optional builder context hint，不會觸發 external app authorization。
 
@@ -1455,6 +1458,6 @@ aiclient/response_contract.go
 - aiclient 的 response contract routing 讓 Gemma / OpenAI provider 不需要各自判斷 schema 類型。
 - grpcapi 的 `parseLineTaskResponse` 已改成直接委派 `aiclient.ParseExtractionStructuredResponse`，消除了先前重複 parse/normalize 的問題。
 - 新增的 `PublicLineTaskConsult` 與 `POST /api/line-task-consult` 已把 local/dev 測試入口和正式 gRPC external path 分清楚。
-- `buildLineTaskCommand(...)` 現在已把 local/dev 與 external path 的 command 組裝、缺省系統時間 / 系統時區補值集中到單一 helper。
+- `buildLineTaskCommand(...)` 現在已把 local/dev 與 external path 的 command 組裝、缺省系統時間 / 系統時區補值、以及強制 `AIExecutionModeLive` 集中到單一 helper，確保 extraction 不會因環境 preview 預設而走錯路徑。
 
 目前主要剩下的是 **builder factory 可初始化一次存 field** 與 **extraction fallback parse test** 這類收尾項。 

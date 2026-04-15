@@ -148,6 +148,7 @@ LineTaskConsult
       ├─ referenceTime 空 -> usecase 補系統時間
       ├─ timeZone 空 -> usecase 補系統時區
       ├─ set ConsultModeExtract
+      ├─ force AIExecutionMode = live
       └─ 第一版跳過 promptguard
 ```
 
@@ -167,6 +168,11 @@ LineTaskConsult
 - Given `LineTaskConsult` 缺少 `timeZone`
   When gatekeeper usecase 建立 extraction command
   Then 應以 backend 系統時區補值
+
+- Given `LineTaskConsult` 通過驗證
+  When gatekeeper usecase 建立 extraction command
+  Then command 的 `AIExecutionMode` 應為 `live`
+  And 即使環境預設為 preview mode，extraction 仍應走 live 路徑
 
 - Given `LineTaskConsult` 通過驗證
   When gatekeeper 繼續往下交給 builder

@@ -87,6 +87,7 @@ LineTaskConsult
 ├─ 若 `referenceTime` 為空 -> usecase 補系統時間
 ├─ 若 `timeZone` 為空 -> usecase 補系統時區
 ├─ 設定 ConsultModeExtract
+├─ 強制 AIExecutionMode = live
 └─ 第一版預設跳過 promptguard
 ```
 
@@ -96,6 +97,7 @@ LineTaskConsult
 - gatekeeper 不負責相對時間換算；它只要求 builder 最終一定拿到 concrete `referenceTime` 與 `timeZone`。
 - gatekeeper 不負責 Firestore CRUD、Calendar sync 或 AI JSON parse。
 - 正式整合入口應是 gRPC `LineTaskConsult`；但 local/dev 可另外補一條 HTTP `POST /api/line-task-consult` 測試入口，兩者都應收斂到同一條 extraction 主流程；HTTP 測試入口應映射到 `UseCase.PublicLineTaskConsult`。
+- `buildLineTaskCommand()` 必須明確設定 `AIExecutionMode = live`；extraction 路徑的回傳必須是 AI 產生的結構化 JSON，不可因環境 preview 預設而走成 preview mode 回 instructions。
 
 ## Profile PromptGuard Integration
 

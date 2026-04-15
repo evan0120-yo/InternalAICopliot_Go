@@ -239,6 +239,7 @@ func buildLineTaskCommand(appID string, builderID int, messageText, referenceTim
 
 	return builder.ConsultCommand{
 		Mode:             builder.ConsultModeExtract,
+		AIExecutionMode:  infra.AIExecutionModeLive,
 		AppID:            strings.TrimSpace(appID),
 		BuilderID:        builderID,
 		PreloadedBuilder: &builderConfig,

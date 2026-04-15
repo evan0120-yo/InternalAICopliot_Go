@@ -231,3 +231,25 @@ func TestResolveLineTaskExecutionContextKeepsCustomOverrides(t *testing.T) {
 		t.Fatalf("expected custom timeZone to stay unchanged, got %q", timeZone)
 	}
 }
+
+func TestBuildLineTaskCommandForcesLiveMode(t *testing.T) {
+	command := buildLineTaskCommand(
+		"",
+		4,
+		"小傑 明天下午三點找我吃飯",
+		"",
+		"",
+		"127.0.0.1",
+		infra.BuilderConfig{BuilderID: 4, BuilderCode: "line-memo-crud"},
+	)
+
+	if command.AIExecutionMode != infra.AIExecutionModeLive {
+		t.Fatalf("expected line task command to force live mode, got %q", command.AIExecutionMode)
+	}
+	if strings.TrimSpace(command.ReferenceTime) == "" {
+		t.Fatalf("expected line task command to resolve referenceTime, got %+v", command)
+	}
+	if strings.TrimSpace(command.TimeZone) == "" {
+		t.Fatalf("expected line task command to resolve timeZone, got %+v", command)
+	}
+}
