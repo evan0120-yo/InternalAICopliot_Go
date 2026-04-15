@@ -26,8 +26,8 @@ gRPC LineTaskConsult
       │
       ├─ keep appId / builderId
       ├─ map messageText
-      ├─ map referenceTime
-      ├─ map timeZone
+      ├─ map optional referenceTime
+      ├─ map optional timeZone
       ├─ fallback clientIp
       └─ set ConsultModeExtract
 ```
@@ -36,7 +36,7 @@ gRPC LineTaskConsult
   When grpcapi `LineTaskConsult` 執行
   Then 應將其轉成 gatekeeper / builder 可用的 extraction command
 
-- Given `LineTaskConsult` request 帶 `messageText`、`referenceTime` 與 `timeZone`
+- Given `LineTaskConsult` request 至少帶 `messageText`
   When grpcapi 建立 command
   Then command `Mode` 應為 `ConsultModeExtract`
 

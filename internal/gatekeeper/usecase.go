@@ -2,7 +2,9 @@ package gatekeeper
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	"com.citrus.internalaicopilot/internal/builder"
 	"com.citrus.internalaicopilot/internal/infra"
@@ -16,6 +18,8 @@ type UseCase struct {
 	builderQuery       *builder.QueryService
 	builderConsult     *builder.ConsultUseCase
 }
+
+var lineTaskNow = time.Now
 
 // NewUseCase builds the gatekeeper entrypoint.
 func NewUseCase(guardService *GuardService, promptGuardUseCase *promptguard.EvaluateUseCase, builderQuery *builder.QueryService, builderConsult *builder.ConsultUseCase) *UseCase {
@@ -164,40 +168,22 @@ func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID in
 // PublicLineTaskConsult validates and forwards a local/dev LineTask extraction request.
 // appID is treated as an optional builder context hint and does not trigger external app authorization.
 func (u *UseCase) PublicLineTaskConsult(ctx context.Context, appID string, builderID int, messageText, referenceTime, timeZone, clientIP string) (infra.ConsultBusinessResponse, error) {
-	builderConfig, err := u.guardService.ValidateLineTaskConsult(ctx, builderID, messageText, referenceTime, timeZone, clientIP)
+	builderConfig, err := u.guardService.ValidateLineTaskConsult(ctx, builderID, messageText, clientIP)
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
 
-	return u.builderConsult.Consult(ctx, builder.ConsultCommand{
-		Mode:             builder.ConsultModeExtract,
-		AppID:            strings.TrimSpace(appID),
-		BuilderID:        builderID,
-		PreloadedBuilder: &builderConfig,
-		Text:             strings.TrimSpace(messageText),
-		ReferenceTime:    strings.TrimSpace(referenceTime),
-		TimeZone:         strings.TrimSpace(timeZone),
-		ClientIP:         clientIP,
-	})
+	return u.builderConsult.Consult(ctx, buildLineTaskCommand(appID, builderID, messageText, referenceTime, timeZone, clientIP, builderConfig))
 }
 
 // LineTaskConsult validates and forwards a LineBot extraction request.
 func (u *UseCase) LineTaskConsult(ctx context.Context, appID string, builderID int, messageText, referenceTime, timeZone, clientIP string) (infra.ConsultBusinessResponse, error) {
-	_, builderConfig, err := u.guardService.ValidateExternalLineTaskConsult(ctx, appID, builderID, messageText, referenceTime, timeZone, clientIP)
+	_, builderConfig, err := u.guardService.ValidateExternalLineTaskConsult(ctx, appID, builderID, messageText, clientIP)
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
 
-	return u.builderConsult.Consult(ctx, builder.ConsultCommand{
-		Mode:             builder.ConsultModeExtract,
-		AppID:            strings.TrimSpace(appID),
-		BuilderID:        builderID,
-		PreloadedBuilder: &builderConfig,
-		Text:             strings.TrimSpace(messageText),
-		ReferenceTime:    strings.TrimSpace(referenceTime),
-		TimeZone:         strings.TrimSpace(timeZone),
-		ClientIP:         clientIP,
-	})
+	return u.builderConsult.Consult(ctx, buildLineTaskCommand(appID, builderID, messageText, referenceTime, timeZone, clientIP, builderConfig))
 }
 
 func (u *UseCase) evaluatePromptGuard(ctx context.Context, appID string, builderConfig infra.BuilderConfig, userText, intentText string) (*infra.ConsultBusinessResponse, error) {
@@ -246,4 +232,57 @@ func shouldRunPromptGuard(builderConfig infra.BuilderConfig, userText, intentTex
 		return false
 	}
 	return strings.TrimSpace(builderConfig.BuilderCode) == "linkchat-astrology"
+}
+
+func buildLineTaskCommand(appID string, builderID int, messageText, referenceTime, timeZone, clientIP string, builderConfig infra.BuilderConfig) builder.ConsultCommand {
+	resolvedReferenceTime, resolvedTimeZone := resolveLineTaskExecutionContext(referenceTime, timeZone)
+
+	return builder.ConsultCommand{
+		Mode:             builder.ConsultModeExtract,
+		AppID:            strings.TrimSpace(appID),
+		BuilderID:        builderID,
+		PreloadedBuilder: &builderConfig,
+		Text:             strings.TrimSpace(messageText),
+		ReferenceTime:    resolvedReferenceTime,
+		TimeZone:         resolvedTimeZone,
+		ClientIP:         clientIP,
+	}
+}
+
+func resolveLineTaskExecutionContext(referenceTime, timeZone string) (string, string) {
+	now := lineTaskNow()
+
+	trimmedReferenceTime := strings.TrimSpace(referenceTime)
+	if trimmedReferenceTime == "" {
+		trimmedReferenceTime = now.Format("2006-01-02 15:04:05")
+	}
+
+	trimmedTimeZone := strings.TrimSpace(timeZone)
+	if trimmedTimeZone == "" {
+		trimmedTimeZone = defaultLineTaskTimeZone(now)
+	}
+
+	return trimmedReferenceTime, trimmedTimeZone
+}
+
+func defaultLineTaskTimeZone(now time.Time) string {
+	locationName := strings.TrimSpace(now.Location().String())
+	if locationName != "" && !strings.EqualFold(locationName, "local") {
+		return locationName
+	}
+
+	zoneName, offsetSeconds := now.Zone()
+	zoneName = strings.TrimSpace(zoneName)
+	if zoneName != "" && !strings.EqualFold(zoneName, "local") {
+		return zoneName
+	}
+
+	sign := "+"
+	if offsetSeconds < 0 {
+		sign = "-"
+		offsetSeconds = -offsetSeconds
+	}
+	hours := offsetSeconds / 3600
+	minutes := (offsetSeconds % 3600) / 60
+	return fmt.Sprintf("UTC%s%02d:%02d", sign, hours, minutes)
 }

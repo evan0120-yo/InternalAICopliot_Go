@@ -244,9 +244,7 @@ func TestLineTaskConsultHandlerReturnsTypedEnvelope(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodPost, "/api/line-task-consult", strings.NewReader(`{
 		"builderId":4,
-		"messageText":"小傑 明天 下午三點找我吃飯",
-		"referenceTime":"2026-04-14 10:00:00",
-		"timeZone":"Asia/Taipei"
+		"messageText":"小傑 明天 下午三點找我吃飯"
 	}`))
 	request.RemoteAddr = "127.0.0.1:4567"
 	request.Header.Set("Content-Type", "application/json")
@@ -284,9 +282,7 @@ func TestLineTaskConsultHandlerRejectsMissingMessageText(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodPost, "/api/line-task-consult", strings.NewReader(`{
 		"builderId":4,
-		"messageText":"",
-		"referenceTime":"2026-04-14 10:00:00",
-		"timeZone":"Asia/Taipei"
+		"messageText":""
 	}`))
 	request.RemoteAddr = "127.0.0.1:4567"
 	request.Header.Set("Content-Type", "application/json")
@@ -308,9 +304,7 @@ func TestLineTaskConsultHandlerAllowsOptionalAppIDHintWithoutExternalAuth(t *tes
 	request := httptest.NewRequest(http.MethodPost, "/api/line-task-consult", strings.NewReader(`{
 		"appId":"linkchat",
 		"builderId":4,
-		"messageText":"小傑 明天 下午三點找我吃飯",
-		"referenceTime":"2026-04-14 10:00:00",
-		"timeZone":"Asia/Taipei"
+		"messageText":"小傑 明天 下午三點找我吃飯"
 	}`))
 	request.RemoteAddr = "127.0.0.1:4567"
 	request.Header.Set("Content-Type", "application/json")

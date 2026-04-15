@@ -145,14 +145,13 @@ LineTaskConsult
       │
       ├─ appId / builderId 驗證
       ├─ messageText 必填
-      ├─ referenceTime 必填
-      ├─ timeZone 必填
+      ├─ referenceTime 空 -> usecase 補系統時間
+      ├─ timeZone 空 -> usecase 補系統時區
       ├─ set ConsultModeExtract
       └─ 第一版跳過 promptguard
 ```
 
 - Given grpcapi `LineTaskConsult` 傳入 `messageText`
-  And request 同時帶 `referenceTime` 與 `timeZone`
   When gatekeeper 驗證 extraction request
   Then 不應拒絕該 request
   And 應以 `ConsultModeExtract` 轉交 builder usecase
@@ -162,12 +161,12 @@ LineTaskConsult
   Then 應拒絕該 request
 
 - Given `LineTaskConsult` 缺少 `referenceTime`
-  When gatekeeper 驗證 extraction request
-  Then 應拒絕該 request
+  When gatekeeper usecase 建立 extraction command
+  Then 應以 backend 系統時間補值
 
 - Given `LineTaskConsult` 缺少 `timeZone`
-  When gatekeeper 驗證 extraction request
-  Then 應拒絕該 request
+  When gatekeeper usecase 建立 extraction command
+  Then 應以 backend 系統時區補值
 
 - Given `LineTaskConsult` 通過驗證
   When gatekeeper 繼續往下交給 builder
@@ -179,16 +178,22 @@ POST /api/line-task-consult
       │
       ├─ JSON body
       ├─ optional appId
-      ├─ builderId / messageText / referenceTime / timeZone
+      ├─ builderId / messageText
+      ├─ referenceTime optional override
+      ├─ timeZone optional override
       ├─ local/dev only
       └─ 走 `UseCase.PublicLineTaskConsult`
 ```
 
 - Given local/dev tester 呼叫 `POST /api/line-task-consult`
-  And body 同時帶 `builderId`、`messageText`、`referenceTime`、`timeZone`
+  And body 帶 `builderId`、`messageText`
   When gatekeeper handler 解析該 request
   Then 應將 request 映射到 `UseCase.PublicLineTaskConsult`
   And HTTP 回應的 `data` 欄位應對齊 `LineTaskConsultResponse`
+
+- Given local/dev tester 另外帶入 `referenceTime` 與 `timeZone`
+  When gatekeeper handler 解析該 request
+  Then 應把它們視為測試覆蓋值往下傳
 
 - Given `POST /api/line-task-consult` 缺少 `messageText`
   When gatekeeper handler 驗證 request

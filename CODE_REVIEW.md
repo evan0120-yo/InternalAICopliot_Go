@@ -816,14 +816,12 @@ local/dev test path
 | builderId 為 0 | `BUILDER_ID_MISSING` |
 | builder 不存在 / inactive | `BUILDER_NOT_FOUND` / `BUILDER_INACTIVE` |
 | `messageText` 空 | `LINE_TASK_MESSAGE_TEXT_MISSING` |
-| `referenceTime` 空 | `LINE_TASK_REFERENCE_TIME_MISSING` |
-| `timeZone` 空 | `LINE_TASK_TIME_ZONE_MISSING` |
 | external app 缺值 / 不存在 / inactive | `APP_ID_MISSING` / `APP_NOT_FOUND` / `APP_INACTIVE` |
 | builder 不在 app 白名單 | `APP_BUILDER_FORBIDDEN` |
 
 補充：
 - 這條線第一版不跑 `promptguard`。
-- `referenceTime` 與 `timeZone` 是必要欄位，因為 extraction prompt 會要求 Gemma 把相對時間換成絕對時間。
+- `referenceTime` 與 `timeZone` 對 builder prompt 仍是必要值，但現在由 usecase 在缺省時自動補系統時間 / 系統時區。
 - gRPC `LineTaskConsult` 會做 external app 驗證；HTTP `POST /api/line-task-consult` 只做 local/dev 基本驗證，不承擔 external app auth。
 - HTTP `POST /api/line-task-consult` 的 `appId` 只是 optional builder context hint，不會觸發 external app authorization。
 
@@ -1416,32 +1414,7 @@ Review 範圍：LineTask extraction、BuilderFactory，以及 local/dev HTTP `PO
 
 ## B. 問題
 
-### B-1. PublicLineTaskConsult 與 LineTaskConsult 的 command 組裝是複製貼上
-
-```text
-gatekeeper/usecase.go
-├─ PublicLineTaskConsult (line 166)
-│  └─ return u.builderConsult.Consult(ctx, builder.ConsultCommand{...})
-│
-└─ LineTaskConsult (line 185)
-   └─ return u.builderConsult.Consult(ctx, builder.ConsultCommand{...})
-```
-
-這兩個方法的 `builder.ConsultCommand{...}` 區塊完全一樣（9 個欄位逐字相同），差異只在驗證路徑：
-- `PublicLineTaskConsult` → `ValidateLineTaskConsult`（不走 external app auth）
-- `LineTaskConsult` → `ValidateExternalLineTaskConsult`（走 external app auth）
-
-可抽成共用的 private method：
-
-```text
-buildLineTaskCommand(appID, builderID, messageText, referenceTime, timeZone, clientIP, builderConfig)
-└─ 回 builder.ConsultCommand
-```
-
-然後兩個 public method 只負責驗證 + call 共用 command builder。
-目前不是 bug，但如果欄位異動時只改一邊會造成不一致。
-
-### B-2. consultTaskBuilderFactory 每次 Consult 都 new
+### B-1. consultTaskBuilderFactory 每次 Consult 都 new
 
 ```text
 consult_usecase.go:103
@@ -1451,21 +1424,7 @@ consult_usecase.go:103
 `consultTaskBuilderFactory` 是 stateless struct，每次 new 沒有效能問題。
 但語意上 factory 屬於 `ConsultUseCase` 的組件，可在建構時初始化一次存成 field，不需要每次 Consult 都 new。
 
-### B-3. PublicLineTaskConsult 目前是 handler/app 路徑覆蓋，仍缺直接的 usecase 單元測試
-
-```text
-現有測試
-├─ ValidateLineTaskConsult → service_test.go ✓
-├─ grpcapi parseLineTaskResponse → service_test.go ✓
-├─ HTTP /api/line-task-consult handler → handler_test.go ✓
-├─ /api/line-task-consult app flow → app_integration_test.go ✓
-└─ PublicLineTaskConsult usecase direct unit test → ✗ 無
-```
-
-目前不是完全沒測到，但覆蓋點主要在 HTTP / app 路徑。
-若之後 `UseCase` 組 command 的欄位再增加，直接的 usecase 單元測試仍然有價值。
-
-### B-4. extraction prompt 缺少 AI 回傳結果解析容錯的測試
+### B-2. extraction prompt 缺少 AI 回傳結果解析容錯的測試
 
 ```text
 aiclient/response_contract.go
@@ -1486,8 +1445,6 @@ aiclient/response_contract.go
 
 | 優先 | 項目 | 位置 |
 |------|------|------|
-| **中** | PublicLineTaskConsult 與 LineTaskConsult command 組裝重複 | gatekeeper/usecase.go:166 vs 185 |
-| **中** | PublicLineTaskConsult 缺少 direct usecase 單元測試 | gatekeeper/ |
 | **低** | factory 可初始化一次存 field | builder/consult_usecase.go:103 |
 | **低** | extraction fallback parse 缺少測試 | aiclient/response_contract.go |
 
@@ -1498,5 +1455,6 @@ aiclient/response_contract.go
 - aiclient 的 response contract routing 讓 Gemma / OpenAI provider 不需要各自判斷 schema 類型。
 - grpcapi 的 `parseLineTaskResponse` 已改成直接委派 `aiclient.ParseExtractionStructuredResponse`，消除了先前重複 parse/normalize 的問題。
 - 新增的 `PublicLineTaskConsult` 與 `POST /api/line-task-consult` 已把 local/dev 測試入口和正式 gRPC external path 分清楚。
+- `buildLineTaskCommand(...)` 現在已把 local/dev 與 external path 的 command 組裝、缺省系統時間 / 系統時區補值集中到單一 helper。
 
-目前主要剩下的是 **PublicLineTaskConsult 的 command 組裝重複**，以及 **usecase direct unit test / extraction fallback parse test** 這類收尾項。 
+目前主要剩下的是 **builder factory 可初始化一次存 field** 與 **extraction fallback parse test** 這類收尾項。 

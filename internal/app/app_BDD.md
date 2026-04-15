@@ -46,6 +46,7 @@
 - Given app 已成功啟動且 local/dev 測試用的 line task request 合法
   When caller 執行 `POST /api/line-task-consult`
   Then request 應進入同一套 gatekeeper / builder / aiclient extraction 流程
+  And 若 request 未帶 `referenceTime` / `timeZone`，應由 backend usecase 自動補系統值
 
 - Given runtime builder list 包含 `line-memo-crud`
   When Internal frontend 以該 builder 進入 line task 測試畫面

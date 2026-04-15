@@ -136,18 +136,12 @@ func (s *GuardService) ValidateProfileConsult(ctx context.Context, appID string,
 }
 
 // ValidateLineTaskConsult validates structured LineBot extraction input.
-func (s *GuardService) ValidateLineTaskConsult(ctx context.Context, builderID int, messageText, referenceTime, timeZone, clientIP string) (infra.BuilderConfig, error) {
+func (s *GuardService) ValidateLineTaskConsult(ctx context.Context, builderID int, messageText, clientIP string) (infra.BuilderConfig, error) {
 	if strings.TrimSpace(clientIP) == "" {
 		return infra.BuilderConfig{}, infra.NewError("CLIENT_IP_MISSING", "Client IP could not be resolved.", http.StatusBadRequest)
 	}
 	if strings.TrimSpace(messageText) == "" {
 		return infra.BuilderConfig{}, infra.NewError("LINE_TASK_MESSAGE_TEXT_MISSING", "messageText is required.", http.StatusBadRequest)
-	}
-	if strings.TrimSpace(referenceTime) == "" {
-		return infra.BuilderConfig{}, infra.NewError("LINE_TASK_REFERENCE_TIME_MISSING", "referenceTime is required.", http.StatusBadRequest)
-	}
-	if strings.TrimSpace(timeZone) == "" {
-		return infra.BuilderConfig{}, infra.NewError("LINE_TASK_TIME_ZONE_MISSING", "timeZone is required.", http.StatusBadRequest)
 	}
 	builderConfig, err := s.validateActiveBuilder(ctx, builderID)
 	if err != nil {
@@ -213,13 +207,13 @@ func (s *GuardService) ValidateExternalProfileConsult(ctx context.Context, appID
 }
 
 // ValidateExternalLineTaskConsult validates an external app LineBot extraction request.
-func (s *GuardService) ValidateExternalLineTaskConsult(ctx context.Context, appID string, builderID int, messageText, referenceTime, timeZone, clientIP string) (infra.AppAccess, infra.BuilderConfig, error) {
+func (s *GuardService) ValidateExternalLineTaskConsult(ctx context.Context, appID string, builderID int, messageText, clientIP string) (infra.AppAccess, infra.BuilderConfig, error) {
 	app, err := s.ValidateExternalApp(ctx, appID)
 	if err != nil {
 		return infra.AppAccess{}, infra.BuilderConfig{}, err
 	}
 
-	builderConfig, err := s.ValidateLineTaskConsult(ctx, builderID, messageText, referenceTime, timeZone, clientIP)
+	builderConfig, err := s.ValidateLineTaskConsult(ctx, builderID, messageText, clientIP)
 	if err != nil {
 		return infra.AppAccess{}, infra.BuilderConfig{}, err
 	}

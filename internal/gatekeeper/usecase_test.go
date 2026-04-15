@@ -203,3 +203,31 @@ func newPromptGuardTestUseCase(t *testing.T, promptGuardUseCase *promptguard.Eva
 
 	return NewUseCase(NewGuardService(cfg, store), promptGuardUseCase, builderQuery, builderConsult)
 }
+
+func TestResolveLineTaskExecutionContextUsesSystemDefaultsWhenOverrideMissing(t *testing.T) {
+	originalNow := lineTaskNow
+	lineTaskNow = func() time.Time {
+		return time.Date(2026, time.April, 15, 11, 49, 0, 0, time.FixedZone("UTC+8", 8*60*60))
+	}
+	t.Cleanup(func() {
+		lineTaskNow = originalNow
+	})
+
+	referenceTime, timeZone := resolveLineTaskExecutionContext("", "")
+	if referenceTime != "2026-04-15 11:49:00" {
+		t.Fatalf("expected default referenceTime, got %q", referenceTime)
+	}
+	if timeZone != "UTC+8" {
+		t.Fatalf("expected default timeZone from system clock, got %q", timeZone)
+	}
+}
+
+func TestResolveLineTaskExecutionContextKeepsCustomOverrides(t *testing.T) {
+	referenceTime, timeZone := resolveLineTaskExecutionContext("2026-04-20 09:30:00", "Asia/Taipei")
+	if referenceTime != "2026-04-20 09:30:00" {
+		t.Fatalf("expected custom referenceTime to stay unchanged, got %q", referenceTime)
+	}
+	if timeZone != "Asia/Taipei" {
+		t.Fatalf("expected custom timeZone to stay unchanged, got %q", timeZone)
+	}
+}

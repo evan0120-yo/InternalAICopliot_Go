@@ -300,8 +300,9 @@ LINE 使用者
    └─ LineBot server
       ├─ 判斷 AI: 前綴
       ├─ 去掉前綴
-      ├─ 補 `referenceTime`
-      ├─ 補 `timeZone`
+      ├─ 預設自己抓系統時間 / 系統時區
+      ├─ 需要測試覆蓋時才帶 `referenceTime`
+      ├─ 需要測試覆蓋時才帶 `timeZone`
       ├─ gRPC call
       └─ 收到結果後
          ├─ Firestore CRUD
@@ -314,8 +315,8 @@ grpcapi
    ├─ `appId`
    ├─ `builderId`
    ├─ `messageText`
-   ├─ `referenceTime`
-   └─ `timeZone`
+   ├─ `referenceTime` optional override
+   └─ `timeZone` optional override
       │
       ▼
 gatekeeper
@@ -343,7 +344,8 @@ grpcapi
 規則：
 - Internal 只負責把口語句子轉成固定結構結果，不直接碰 LineBot server 的 Firestore CRUD。
 - `AI:` 前綴處理由 LineBot server 負責，不放進 Internal。
-- `referenceTime` 與 `timeZone` 應由 LineBot server 提供。
+- builder 最終一定要拿到 concrete `referenceTime` 與 `timeZone`。
+- 正式 LineBot server 預設應自己抓系統時間 / 系統時區；local/dev 測試才需要覆蓋。
 - LineBot extraction contract 不應硬塞進現有 `ProfileConsult` 的 request shape。
 - 這條線可走同一個 `IntegrationService`，但應使用自己的 RPC contract。
 - 對外 contract 應是 gRPC protobuf response，不直接把 raw AI JSON string 外漏給 LineBot server。
@@ -363,6 +365,7 @@ internal 後台 / Postman
 - 這條 HTTP route 只用於 local/dev prompt testing，不作為正式整合入口。
 - 它的 request / response shape 應盡量對齊 gRPC `LineTaskConsult`，避免兩條測試路徑語意漂移。
 - 若帶 `appId`，第一版只作 builder context / prompt strategy hint，不代表 external app auth。
+- 若未帶 `referenceTime` / `timeZone`，backend usecase 應補系統時間 / 系統時區。
 - transport 雖然是 HTTP，但 response `data` 內應對齊：
   - `operation`
   - `summary`
@@ -395,6 +398,7 @@ gatekeeper -> builder -> aiclient
 - backend runtime seed 現在應包含 `line-memo-crud`，讓 Internal frontend / local tester 可發現這條 extraction 路徑。
 - `line_task_extract` 不應重用 generic `/api/consult` contract。
 - screen variant 分流應優先依 `builderCode` 判斷，而不是硬編碼 `builderId`。
+- frontend 預設應讓 backend 自動補系統時間；只有測試模式才展開 `referenceTime / timeZone` 覆蓋欄位。
 - 在前端 variant 尚未完成前，`POST /api/line-task-consult` 仍可由 Postman / local tester 直接驗證。
 
 LineBot extraction 第一版最小結果模型：

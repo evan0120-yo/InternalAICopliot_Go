@@ -191,9 +191,7 @@ func TestAppSupportsLineTaskConsultFlow(t *testing.T) {
 
 	requestBody := strings.NewReader(`{
 		"builderId":4,
-		"messageText":"小傑 明天 下午三點找我吃飯",
-		"referenceTime":"2026-04-14 10:00:00",
-		"timeZone":"Asia/Taipei"
+		"messageText":"小傑 明天 下午三點找我吃飯"
 	}`)
 	request, err := http.NewRequest(http.MethodPost, server.URL+"/api/line-task-consult", requestBody)
 	if err != nil {

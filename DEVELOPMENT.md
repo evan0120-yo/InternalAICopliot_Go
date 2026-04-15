@@ -117,7 +117,8 @@ LINE 使用者
    └─ LineBot server
       ├─ 判斷 AI: 前綴
       ├─ 去掉前綴
-      ├─ 補 referenceTime / timeZone
+      ├─ 預設自己抓系統時間 / 系統時區
+      ├─ 需要測試覆蓋時才帶 referenceTime / timeZone
       ├─ gRPC 呼叫 Internal
       └─ 收到結果後
          ├─ Firestore CRUD
@@ -140,15 +141,15 @@ Internal
 - LineBot extraction 走新的 gRPC contract，不共用 `ProfileConsult` shape。
 
 ## LineBot Extraction Contract Rule
-若 Internal 要把 `明天`、`下午三點` 這類相對時間轉為絕對時間，request 必須帶基準時間與時區。
+若 Internal 要把 `明天`、`下午三點` 這類相對時間轉為絕對時間，最終一定要有基準時間與時區；它們可以由 caller 帶入，也可以由 Internal 補值。
 
 ```text
 LineTaskConsultRequest
 ├─ appId
 ├─ builderId
 ├─ messageText
-├─ referenceTime
-└─ timeZone
+├─ referenceTime optional override
+└─ timeZone optional override
 ```
 
 欄位責任：
@@ -156,12 +157,15 @@ LineTaskConsultRequest
   - 去掉 `AI:` 後的口語句子
 - `referenceTime`
   - 相對時間換算基準
+  - 若 caller 未提供，Internal 以系統時間補值
 - `timeZone`
   - 相對時間換算使用的時區
+  - 若 caller 未提供，Internal 以系統時區補值
 
 規則：
-- 沒有 `referenceTime` 與 `timeZone`，Gemma 不應被要求把 `明天 / 下午三點` 穩定轉成絕對時間。
-- `referenceTime` 與 `timeZone` 應由 LineBot server 提供，不由 Internal 自行猜測。
+- builder 最終一定要拿到 concrete `referenceTime` 與 `timeZone`。
+- 正式 LineBot 整合時，server 預設應自己抓系統時間 / 系統時區；一般使用者不該手填這兩個欄位。
+- local/dev 測試時，仍可用 request override 指定自定義現在時間。
 
 ## LineBot Local Testing Route
 除正式的 gRPC `LineTaskConsult` 外，Internal 應補一條 local/dev 專用的 HTTP 測試入口，方便直接從後台或 Postman 驗證 extraction 路徑。
@@ -182,13 +186,14 @@ POST /api/line-task-consult
 ├─ appId optional
 ├─ builderId required
 ├─ messageText required
-├─ referenceTime required
-└─ timeZone required
+├─ referenceTime optional override
+└─ timeZone optional override
 ```
 
 規則：
 - 這條 HTTP route 的目標是 local/dev prompt testing，不是正式對外整合通道。
 - 若有 `appId`，第一版只作 prompt strategy / builder context hint，不代表通過 external app auth。
+- 若 request 未帶 `referenceTime` / `timeZone`，backend usecase 應自動補系統時間 / 系統時區。
 - 這條路應對齊 gRPC `LineTaskConsult` 的核心欄位與 response shape，避免測試結果和正式通道分裂。
 - transport 雖然是 HTTP，但回傳的 `data` 欄位應對齊 gRPC `LineTaskConsultResponse`：
   - `operation`
@@ -226,8 +231,8 @@ Internal frontend
    ├─ request:
    │  ├─ builderId
    │  ├─ messageText
-   │  ├─ referenceTime
-   │  └─ timeZone
+   │  ├─ 預設不帶 referenceTime / timeZone
+   │  └─ 測試模式才帶 override
    └─ submit:
       └─ POST /api/line-task-consult
 ```

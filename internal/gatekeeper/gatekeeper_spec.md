@@ -48,7 +48,8 @@ gRPC transport adapter 不在此 module 內，但應重用同一個 gatekeeper u
 - 將 validated `appId` 或 optional public `appId` 傳給 builder，供 prompt strategy 選擇
 - 在第一版 astrology/profile 主流程中，於 builder consult 前先呼叫 promptguard usecase
 - 依 promptguard 結果決定直接回 blocked business response，或繼續轉交 builder usecase
-- 驗證 LineBot extraction 所需的 `messageText` / `referenceTime` / `timeZone`
+- 驗證 LineBot extraction 所需的 `messageText`
+- 在 usecase 層補齊 LineBot extraction 所需的 `referenceTime` / `timeZone`
 - 將 LineBot extraction request 映射成 `ConsultModeExtract`
 - 將合法請求轉交給 builder usecase
 
@@ -83,8 +84,8 @@ gRPC transport adapter 不在此 module 內，但應重用同一個 gatekeeper u
 LineTaskConsult
 ├─ appId / builderId 驗證
 ├─ messageText 非空
-├─ referenceTime 非空
-├─ timeZone 非空
+├─ 若 `referenceTime` 為空 -> usecase 補系統時間
+├─ 若 `timeZone` 為空 -> usecase 補系統時區
 ├─ 設定 ConsultModeExtract
 └─ 第一版預設跳過 promptguard
 ```
@@ -92,7 +93,7 @@ LineTaskConsult
 規則：
 - `LineTaskConsult` 不應重用 `ProfileConsult` 的 `subjectProfile / userText / intentText` shape。
 - `messageText` 應視為 LineBot server 已完成前綴清理後的純任務文字。
-- gatekeeper 不負責相對時間換算；它只驗證 `referenceTime` 與 `timeZone` 是否存在。
+- gatekeeper 不負責相對時間換算；它只要求 builder 最終一定拿到 concrete `referenceTime` 與 `timeZone`。
 - gatekeeper 不負責 Firestore CRUD、Calendar sync 或 AI JSON parse。
 - 正式整合入口應是 gRPC `LineTaskConsult`；但 local/dev 可另外補一條 HTTP `POST /api/line-task-consult` 測試入口，兩者都應收斂到同一條 extraction 主流程；HTTP 測試入口應映射到 `UseCase.PublicLineTaskConsult`。
 
@@ -232,12 +233,13 @@ Header：
   - 不代表 external app auth
 - `builderId` required
 - `messageText` required
-- `referenceTime` required
-- `timeZone` required
+- `referenceTime` optional
+- `timeZone` optional
 
 限制：
 - 此 route 應直接映射到 `UseCase.PublicLineTaskConsult`
 - gatekeeper 只做基本欄位驗證，不跑 promptguard
+- 若 request 未帶 `referenceTime` / `timeZone`，usecase 應以 backend 系統時間 / 系統時區補值
 - request / response shape 應盡量對齊 gRPC `LineTaskConsult`
 - transport 雖然是 HTTP，但應回 `APIResponse` JSON envelope；其中 `data` 內的欄位應對齊 `LineTaskConsultResponse`
 - 若 Internal frontend 將 `line-memo-crud` 顯示於 sidebar 測試列表，該畫面提交時也應走這條 route，而不是 generic `/api/consult`
