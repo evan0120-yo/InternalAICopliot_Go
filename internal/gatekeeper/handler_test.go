@@ -272,7 +272,7 @@ func TestLineTaskConsultHandlerReturnsTypedEnvelope(t *testing.T) {
 	if err := json.Unmarshal(dataBytes, &response); err != nil {
 		t.Fatalf("Unmarshal response returned error: %v", err)
 	}
-	if response.Operation != "create" || response.Summary == "" || response.StartAt == "" || response.EndAt == "" {
+	if response.TaskType != "calendar" || response.Operation != "create" || response.Summary == "" || response.StartAt == "" || response.EndAt == "" {
 		t.Fatalf("unexpected line task response: %+v", response)
 	}
 }

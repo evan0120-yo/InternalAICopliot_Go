@@ -164,12 +164,14 @@ ConsultModeExtract
 - builder 應把預設時間規則明寫進 prompt：
   - 未指定結束時間 -> `endAt = startAt + 30 分鐘`
   - 只有日期、未指定開始時間 -> `00:00:00 ~ 01:00:00`
+- builder 應把 caller 傳入的 `supportedTaskTypes` 寫進 prompt，並要求 AI 只能從清單中選出 `taskType`。
 - builder 應要求 AI 只回最小 extraction schema，不應要求 AI 回 `taskCode`、`appId`、`builderCode`、`requestId` 或 `rawText`。
 
 第一版最小 schema：
 
 ```text
 extraction result
+├─ taskType
 ├─ operation
 ├─ summary
 ├─ startAt

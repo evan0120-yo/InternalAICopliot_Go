@@ -239,6 +239,7 @@ func TestBuildLineTaskCommandForcesLiveMode(t *testing.T) {
 		"小傑 明天下午三點找我吃飯",
 		"",
 		"",
+		nil,
 		"127.0.0.1",
 		infra.BuilderConfig{BuilderID: 4, BuilderCode: "line-memo-crud"},
 	)
@@ -251,5 +252,8 @@ func TestBuildLineTaskCommandForcesLiveMode(t *testing.T) {
 	}
 	if strings.TrimSpace(command.TimeZone) == "" {
 		t.Fatalf("expected line task command to resolve timeZone, got %+v", command)
+	}
+	if len(command.SupportedTaskTypes) != 1 || command.SupportedTaskTypes[0] != "calendar" {
+		t.Fatalf("expected default calendar supported task type, got %+v", command.SupportedTaskTypes)
 	}
 }

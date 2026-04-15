@@ -86,6 +86,7 @@ LineTaskConsult
 ├─ messageText 非空
 ├─ 若 `referenceTime` 為空 -> usecase 補系統時間
 ├─ 若 `timeZone` 為空 -> usecase 補系統時區
+├─ 若 `supportedTaskTypes` 為空 -> usecase 補預設 `calendar`
 ├─ 設定 ConsultModeExtract
 ├─ 強制 AIExecutionMode = live
 └─ 第一版預設跳過 promptguard
@@ -95,6 +96,7 @@ LineTaskConsult
 - `LineTaskConsult` 不應重用 `ProfileConsult` 的 `subjectProfile / userText / intentText` shape。
 - `messageText` 應視為 LineBot server 已完成前綴清理後的純任務文字。
 - gatekeeper 不負責相對時間換算；它只要求 builder 最終一定拿到 concrete `referenceTime` 與 `timeZone`。
+- gatekeeper 不判斷任務最終類型；它只負責把 supported task type list 傳給 builder，讓 AI 從其中選出 `taskType`。
 - gatekeeper 不負責 Firestore CRUD、Calendar sync 或 AI JSON parse。
 - 正式整合入口應是 gRPC `LineTaskConsult`；但 local/dev 可另外補一條 HTTP `POST /api/line-task-consult` 測試入口，兩者都應收斂到同一條 extraction 主流程；HTTP 測試入口應映射到 `UseCase.PublicLineTaskConsult`。
 - `buildLineTaskCommand()` 必須明確設定 `AIExecutionMode = live`；extraction 路徑的回傳必須是 AI 產生的結構化 JSON，不可因環境 preview 預設而走成 preview mode 回 instructions。
@@ -237,13 +239,22 @@ Header：
 - `messageText` required
 - `referenceTime` optional
 - `timeZone` optional
+- `supportedTaskTypes` optional
 
 限制：
 - 此 route 應直接映射到 `UseCase.PublicLineTaskConsult`
 - gatekeeper 只做基本欄位驗證，不跑 promptguard
 - 若 request 未帶 `referenceTime` / `timeZone`，usecase 應以 backend 系統時間 / 系統時區補值
+- 若 request 未帶 `supportedTaskTypes`，usecase 應以 `["calendar"]` 補值
 - request / response shape 應盡量對齊 gRPC `LineTaskConsult`
 - transport 雖然是 HTTP，但應回 `APIResponse` JSON envelope；其中 `data` 內的欄位應對齊 `LineTaskConsultResponse`
+  - `taskType`
+  - `operation`
+  - `summary`
+  - `startAt`
+  - `endAt`
+  - `location`
+  - `missingFields`
 - 若 Internal frontend 將 `line-memo-crud` 顯示於 sidebar 測試列表，該畫面提交時也應走這條 route，而不是 generic `/api/consult`
 - gatekeeper 不負責判斷 front-end screen variant；它只要求 transport 已送入正確的 LineTask request shape
 

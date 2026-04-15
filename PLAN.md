@@ -316,7 +316,8 @@ grpcapi
    ├─ `builderId`
    ├─ `messageText`
    ├─ `referenceTime` optional override
-   └─ `timeZone` optional override
+   ├─ `timeZone` optional override
+   └─ `supportedTaskTypes[]`
       │
       ▼
 gatekeeper
@@ -327,7 +328,8 @@ gatekeeper
    ▼
 builder
 ├─ 準備 extraction prompt materials
-├─ 組 calendar-oriented schema
+├─ 寫入 supported task type list
+├─ 組 task-oriented extraction schema
 └─ route = direct_gemma
    │
    ▼
@@ -345,6 +347,8 @@ grpcapi
 - Internal 只負責把口語句子轉成固定結構結果，不直接碰 LineBot server 的 Firestore CRUD。
 - `AI:` 前綴處理由 LineBot server 負責，不放進 Internal。
 - builder 最終一定要拿到 concrete `referenceTime` 與 `timeZone`。
+- builder 最終應拿到 `supportedTaskTypes`；第一版 LineBot server 會傳 `["calendar"]`。
+- Gemma 應從 `supportedTaskTypes` 中選出 `taskType` 回傳，讓 LineBot server 可依 `taskType` 分派功能 module。
 - 正式 LineBot server 預設應自己抓系統時間 / 系統時區；local/dev 測試才需要覆蓋。
 - LineBot extraction contract 不應硬塞進現有 `ProfileConsult` 的 request shape。
 - 這條線可走同一個 `IntegrationService`，但應使用自己的 RPC contract。
@@ -367,6 +371,7 @@ internal 後台 / Postman
 - 若帶 `appId`，第一版只作 builder context / prompt strategy hint，不代表 external app auth。
 - 若未帶 `referenceTime` / `timeZone`，backend usecase 應補系統時間 / 系統時區。
 - transport 雖然是 HTTP，但 response `data` 內應對齊：
+  - `taskType`
   - `operation`
   - `summary`
   - `startAt`
@@ -405,6 +410,7 @@ LineBot extraction 第一版最小結果模型：
 
 ```text
 LineTaskConsultResponse
+├─ taskType
 ├─ operation
 ├─ summary
 ├─ startAt
@@ -415,6 +421,7 @@ LineTaskConsultResponse
 
 規則：
 - AI 應回：
+  - `taskType`
   - `operation`
   - `summary`
   - `startAt`

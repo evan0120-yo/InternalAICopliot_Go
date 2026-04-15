@@ -88,6 +88,7 @@ message LineTaskConsultRequest {
   string reference_time = 4;
   string time_zone = 5;
   string client_ip = 6;
+  repeated string supported_task_types = 7;
 }
 
 message LineTaskConsultResponse {
@@ -97,6 +98,7 @@ message LineTaskConsultResponse {
   string end_at = 4;
   string location = 5;
   repeated string missing_fields = 6;
+  string task_type = 7;
 }
 
 message FilePayload {

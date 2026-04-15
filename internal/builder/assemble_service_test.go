@@ -504,6 +504,7 @@ func TestAssembleExtractPromptBuildsLineTaskSections(t *testing.T) {
 		"小傑 明天 下午三點找我吃飯",
 		"2026-04-14 10:00:00",
 		"Asia/Taipei",
+		[]string{"calendar"},
 	)
 	if err != nil {
 		t.Fatalf("AssembleExtractPrompt returned error: %v", err)
@@ -513,7 +514,9 @@ func TestAssembleExtractPromptBuildsLineTaskSections(t *testing.T) {
 		"你是 Internal AI Copilot 的結構化事件抽取器。",
 		"## [REFERENCE_TIME]\n2026-04-14 10:00:00",
 		"## [TIME_ZONE]\nAsia/Taipei",
+		"## [SUPPORTED_TASK_TYPES]\ncalendar",
 		"## [INPUT_TEXT]\n小傑 明天 下午三點找我吃飯",
+		`"taskType": "calendar"`,
 		`"startAt": "YYYY-MM-DD HH:mm:ss"`,
 		"## [PROMPT_BLOCK-1]\n補充 extraction 指示",
 	} {

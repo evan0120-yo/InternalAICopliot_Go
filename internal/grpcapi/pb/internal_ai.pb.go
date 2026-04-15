@@ -687,15 +687,16 @@ func (x *ProfileConsultResponse) GetResponse() string {
 }
 
 type LineTaskConsultRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AppId         string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	BuilderId     int32                  `protobuf:"varint,2,opt,name=builder_id,json=builderId,proto3" json:"builder_id,omitempty"`
-	MessageText   string                 `protobuf:"bytes,3,opt,name=message_text,json=messageText,proto3" json:"message_text,omitempty"`
-	ReferenceTime string                 `protobuf:"bytes,4,opt,name=reference_time,json=referenceTime,proto3" json:"reference_time,omitempty"`
-	TimeZone      string                 `protobuf:"bytes,5,opt,name=time_zone,json=timeZone,proto3" json:"time_zone,omitempty"`
-	ClientIp      string                 `protobuf:"bytes,6,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	AppId              string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	BuilderId          int32                  `protobuf:"varint,2,opt,name=builder_id,json=builderId,proto3" json:"builder_id,omitempty"`
+	MessageText        string                 `protobuf:"bytes,3,opt,name=message_text,json=messageText,proto3" json:"message_text,omitempty"`
+	ReferenceTime      string                 `protobuf:"bytes,4,opt,name=reference_time,json=referenceTime,proto3" json:"reference_time,omitempty"`
+	TimeZone           string                 `protobuf:"bytes,5,opt,name=time_zone,json=timeZone,proto3" json:"time_zone,omitempty"`
+	ClientIp           string                 `protobuf:"bytes,6,opt,name=client_ip,json=clientIp,proto3" json:"client_ip,omitempty"`
+	SupportedTaskTypes []string               `protobuf:"bytes,7,rep,name=supported_task_types,json=supportedTaskTypes,proto3" json:"supported_task_types,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *LineTaskConsultRequest) Reset() {
@@ -770,6 +771,13 @@ func (x *LineTaskConsultRequest) GetClientIp() string {
 	return ""
 }
 
+func (x *LineTaskConsultRequest) GetSupportedTaskTypes() []string {
+	if x != nil {
+		return x.SupportedTaskTypes
+	}
+	return nil
+}
+
 type LineTaskConsultResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Operation     string                 `protobuf:"bytes,1,opt,name=operation,proto3" json:"operation,omitempty"`
@@ -778,6 +786,7 @@ type LineTaskConsultResponse struct {
 	EndAt         string                 `protobuf:"bytes,4,opt,name=end_at,json=endAt,proto3" json:"end_at,omitempty"`
 	Location      string                 `protobuf:"bytes,5,opt,name=location,proto3" json:"location,omitempty"`
 	MissingFields []string               `protobuf:"bytes,6,rep,name=missing_fields,json=missingFields,proto3" json:"missing_fields,omitempty"`
+	TaskType      string                 `protobuf:"bytes,7,opt,name=task_type,json=taskType,proto3" json:"task_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -852,6 +861,13 @@ func (x *LineTaskConsultResponse) GetMissingFields() []string {
 		return x.MissingFields
 	}
 	return nil
+}
+
+func (x *LineTaskConsultResponse) GetTaskType() string {
+	if x != nil {
+		return x.TaskType
+	}
+	return ""
 }
 
 type FilePayload struct {
@@ -979,7 +995,7 @@ const file_api_grpc_internal_ai_proto_rawDesc = "" +
 	"\x06status\x18\x01 \x01(\bR\x06status\x12\x1d\n" +
 	"\n" +
 	"status_ans\x18\x02 \x01(\tR\tstatusAns\x12\x1a\n" +
-	"\bresponse\x18\x03 \x01(\tR\bresponse\"\xd2\x01\n" +
+	"\bresponse\x18\x03 \x01(\tR\bresponse\"\x84\x02\n" +
 	"\x16LineTaskConsultRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1d\n" +
 	"\n" +
@@ -987,14 +1003,16 @@ const file_api_grpc_internal_ai_proto_rawDesc = "" +
 	"\fmessage_text\x18\x03 \x01(\tR\vmessageText\x12%\n" +
 	"\x0ereference_time\x18\x04 \x01(\tR\rreferenceTime\x12\x1b\n" +
 	"\ttime_zone\x18\x05 \x01(\tR\btimeZone\x12\x1b\n" +
-	"\tclient_ip\x18\x06 \x01(\tR\bclientIp\"\xc6\x01\n" +
+	"\tclient_ip\x18\x06 \x01(\tR\bclientIp\x120\n" +
+	"\x14supported_task_types\x18\a \x03(\tR\x12supportedTaskTypes\"\xe3\x01\n" +
 	"\x17LineTaskConsultResponse\x12\x1c\n" +
 	"\toperation\x18\x01 \x01(\tR\toperation\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x19\n" +
 	"\bstart_at\x18\x03 \x01(\tR\astartAt\x12\x15\n" +
 	"\x06end_at\x18\x04 \x01(\tR\x05endAt\x12\x1a\n" +
 	"\blocation\x18\x05 \x01(\tR\blocation\x12%\n" +
-	"\x0emissing_fields\x18\x06 \x03(\tR\rmissingFields\"a\n" +
+	"\x0emissing_fields\x18\x06 \x03(\tR\rmissingFields\x12\x1b\n" +
+	"\ttask_type\x18\a \x01(\tR\btaskType\"a\n" +
 	"\vFilePayload\x12\x1b\n" +
 	"\tfile_name\x18\x01 \x01(\tR\bfileName\x12!\n" +
 	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x12\n" +

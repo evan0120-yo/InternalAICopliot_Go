@@ -104,6 +104,7 @@ func (h *Handler) lineTaskConsult(w http.ResponseWriter, r *http.Request) {
 		request.MessageText,
 		request.ReferenceTime,
 		request.TimeZone,
+		request.SupportedTaskTypes,
 		clientIP,
 	)
 	if err != nil {
@@ -219,14 +220,16 @@ func (r profileConsultRequest) effectiveIntentText() string {
 }
 
 type lineTaskConsultRequest struct {
-	AppID         string `json:"appId"`
-	BuilderID     int    `json:"builderId"`
-	MessageText   string `json:"messageText"`
-	ReferenceTime string `json:"referenceTime"`
-	TimeZone      string `json:"timeZone"`
+	AppID              string   `json:"appId"`
+	BuilderID          int      `json:"builderId"`
+	MessageText        string   `json:"messageText"`
+	ReferenceTime      string   `json:"referenceTime"`
+	TimeZone           string   `json:"timeZone"`
+	SupportedTaskTypes []string `json:"supportedTaskTypes"`
 }
 
 type lineTaskConsultResponse struct {
+	TaskType      string   `json:"taskType"`
 	Operation     string   `json:"operation"`
 	Summary       string   `json:"summary"`
 	StartAt       string   `json:"startAt"`

@@ -37,6 +37,7 @@
 - Given Gemma 回傳合法 extraction JSON
   When aiclient 執行 structured extraction path
   Then 應將 JSON parse 成 typed extraction result
+  And typed result 應包含 `taskType`
 
 - Given外部 caller 最終走 gRPC `LineTaskConsult`
   When aiclient 完成 extraction analyze

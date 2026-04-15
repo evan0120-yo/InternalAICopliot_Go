@@ -149,7 +149,8 @@ LineTaskConsultRequest
 ├─ builderId
 ├─ messageText
 ├─ referenceTime optional override
-└─ timeZone optional override
+├─ timeZone optional override
+└─ supportedTaskTypes[] optional
 ```
 
 欄位責任：
@@ -161,9 +162,15 @@ LineTaskConsultRequest
 - `timeZone`
   - 相對時間換算使用的時區
   - 若 caller 未提供，Internal 以系統時區補值
+- `supportedTaskTypes`
+  - caller 可執行的任務類型清單
+  - 第一版 LineBot server 會傳 `["calendar"]`
+  - 若 caller 未提供，Internal local/dev route 可預設為 `["calendar"]`
 
 規則：
 - builder 最終一定要拿到 concrete `referenceTime` 與 `timeZone`。
+- builder 最終應拿到 canonical `supportedTaskTypes`，並把它寫進 extraction prompt。
+- AI 回傳的 `taskType` 必須從 `supportedTaskTypes` 中選一個。
 - 正式 LineBot 整合時，server 預設應自己抓系統時間 / 系統時區；一般使用者不該手填這兩個欄位。
 - local/dev 測試時，仍可用 request override 指定自定義現在時間。
 
@@ -187,15 +194,18 @@ POST /api/line-task-consult
 ├─ builderId required
 ├─ messageText required
 ├─ referenceTime optional override
-└─ timeZone optional override
+├─ timeZone optional override
+└─ supportedTaskTypes optional
 ```
 
 規則：
 - 這條 HTTP route 的目標是 local/dev prompt testing，不是正式對外整合通道。
 - 若有 `appId`，第一版只作 prompt strategy / builder context hint，不代表通過 external app auth。
 - 若 request 未帶 `referenceTime` / `timeZone`，backend usecase 應自動補系統時間 / 系統時區。
+- 若 request 未帶 `supportedTaskTypes`，backend local/dev usecase 應預設為 `["calendar"]`。
 - 這條路應對齊 gRPC `LineTaskConsult` 的核心欄位與 response shape，避免測試結果和正式通道分裂。
 - transport 雖然是 HTTP，但回傳的 `data` 欄位應對齊 gRPC `LineTaskConsultResponse`：
+  - `taskType`
   - `operation`
   - `summary`
   - `startAt`
@@ -231,6 +241,7 @@ Internal frontend
    ├─ request:
    │  ├─ builderId
    │  ├─ messageText
+   │  ├─ supportedTaskTypes = ["calendar"]
    │  ├─ 預設不帶 referenceTime / timeZone
    │  └─ 測試模式才帶 override
    └─ submit:
@@ -251,6 +262,7 @@ Gemma
 
 ```text
 extraction result
+├─ taskType
 ├─ operation
 ├─ summary
 ├─ startAt
@@ -261,6 +273,7 @@ extraction result
 
 欄位規則：
 - AI 應回傳：
+  - `taskType`
   - `operation`
   - `summary`
   - `startAt`

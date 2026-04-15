@@ -94,6 +94,7 @@ func TestProfileConsultPassesTheoryMappedPayloadThroughService(t *testing.T) {
 
 func TestParseLineTaskResponseNormalizesFields(t *testing.T) {
 	response, err := parseLineTaskResponse(`{
+		"taskType":" Calendar ",
 		"operation":"create",
 		"summary":" 找小傑吃飯 ",
 		"startAt":" 2026-04-15 15:00:00 ",
@@ -104,7 +105,7 @@ func TestParseLineTaskResponseNormalizesFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseLineTaskResponse returned error: %v", err)
 	}
-	if response.Operation != "create" || response.Summary != "找小傑吃飯" {
+	if response.TaskType != "calendar" || response.Operation != "create" || response.Summary != "找小傑吃飯" {
 		t.Fatalf("unexpected parsed response: %+v", response)
 	}
 	if len(response.MissingFields) != 1 || response.MissingFields[0] != "location" {

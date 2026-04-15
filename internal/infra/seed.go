@@ -16,6 +16,14 @@ func DefaultSeedData() StoreSeedData {
 			AllowedBuilderIDs:    []int{1, 2, 3},
 			ServiceAccountEmails: []string{linkChatServiceAccount},
 		},
+		{
+			AppID:                "linebot-app",
+			Name:                 "LineBot",
+			Description:          "LineBot task extraction integration.",
+			Active:               true,
+			AllowedBuilderIDs:    []int{4},
+			ServiceAccountEmails: []string{},
+		},
 	}
 
 	appPromptConfigs := []AppPromptConfig{

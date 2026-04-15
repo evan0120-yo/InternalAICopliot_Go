@@ -218,6 +218,7 @@ func TestAppSupportsLineTaskConsultFlow(t *testing.T) {
 
 	dataBytes, _ := json.Marshal(envelope.Data)
 	var lineTaskResponse struct {
+		TaskType  string `json:"taskType"`
 		Operation string `json:"operation"`
 		Summary   string `json:"summary"`
 		StartAt   string `json:"startAt"`
@@ -226,7 +227,7 @@ func TestAppSupportsLineTaskConsultFlow(t *testing.T) {
 	if err := json.Unmarshal(dataBytes, &lineTaskResponse); err != nil {
 		t.Fatalf("Unmarshal returned error: %v", err)
 	}
-	if lineTaskResponse.Operation != "create" || lineTaskResponse.StartAt == "" || lineTaskResponse.EndAt == "" {
+	if lineTaskResponse.TaskType != "calendar" || lineTaskResponse.Operation != "create" || lineTaskResponse.StartAt == "" || lineTaskResponse.EndAt == "" {
 		t.Fatalf("unexpected line task response: %+v", lineTaskResponse)
 	}
 }

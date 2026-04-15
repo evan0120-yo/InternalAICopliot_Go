@@ -155,6 +155,7 @@ aiclient
 - aiclient 可解析 dedicated extraction JSON contract，但不應理解 Firestore CRUD、Calendar sync 或 LINE reply 的業務決策。
 - 對外最終 contract 應由 grpcapi 回 protobuf response；aiclient 不直接面向外部 transport 暴露 raw JSON string。
 - extraction JSON 應收斂為最小 schema：
+  - `taskType`
   - `operation`
   - `summary`
   - `startAt`

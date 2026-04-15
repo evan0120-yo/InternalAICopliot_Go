@@ -120,6 +120,7 @@ func (b extractConsultTaskBuilder) Build(ctx context.Context, assembleService *A
 		strings.TrimSpace(input.Command.Text),
 		strings.TrimSpace(input.Command.ReferenceTime),
 		strings.TrimSpace(input.Command.TimeZone),
+		input.Command.SupportedTaskTypes,
 	)
 	if err != nil {
 		return consultTaskBuildResult{}, err

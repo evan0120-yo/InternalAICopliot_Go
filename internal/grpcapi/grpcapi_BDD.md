@@ -28,6 +28,7 @@ gRPC LineTaskConsult
       ├─ map messageText
       ├─ map optional referenceTime
       ├─ map optional timeZone
+      ├─ map supportedTaskTypes
       ├─ fallback clientIp
       └─ set ConsultModeExtract
 ```
@@ -40,9 +41,14 @@ gRPC LineTaskConsult
   When grpcapi 建立 command
   Then command `Mode` 應為 `ConsultModeExtract`
 
+- Given `LineTaskConsult` request 帶入 `supported_task_types=["calendar"]`
+  When grpcapi 建立 command
+  Then 應保留 supported task types 並往 gatekeeper / builder 傳遞
+
 - Given `LineTaskConsult` 執行成功
   When grpcapi 準備回應 external caller
   Then 應回 typed protobuf response
+  And response 應包含 `task_type`
   And 不應只回 raw AI JSON string
 
 ## Scenario Group: List Builders

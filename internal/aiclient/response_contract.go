@@ -10,6 +10,7 @@ import (
 )
 
 type ExtractionStructuredResponse struct {
+	TaskType      string   `json:"taskType"`
 	Operation     string   `json:"operation"`
 	Summary       string   `json:"summary"`
 	StartAt       string   `json:"startAt"`
@@ -40,6 +41,9 @@ func extractionResponseSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
+			"taskType": map[string]any{
+				"type": "string",
+			},
 			"operation": map[string]any{
 				"type": "string",
 				"enum": []string{"create", "update", "delete", "query"},
@@ -50,7 +54,7 @@ func extractionResponseSchema() map[string]any {
 			"location":      map[string]any{"type": "string"},
 			"missingFields": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		},
-		"required":             []string{"operation", "summary", "startAt", "endAt", "location", "missingFields"},
+		"required":             []string{"taskType", "operation", "summary", "startAt", "endAt", "location", "missingFields"},
 		"additionalProperties": false,
 	}
 }
@@ -92,6 +96,7 @@ func ParseExtractionStructuredResponse(raw []byte, code, message string) (Extrac
 		}
 	}
 
+	result.TaskType = strings.ToLower(strings.TrimSpace(result.TaskType))
 	result.Operation = strings.ToLower(strings.TrimSpace(result.Operation))
 	result.Summary = strings.TrimSpace(result.Summary)
 	result.StartAt = strings.TrimSpace(result.StartAt)
@@ -99,6 +104,9 @@ func ParseExtractionStructuredResponse(raw []byte, code, message string) (Extrac
 	result.Location = strings.TrimSpace(result.Location)
 	result.MissingFields = normalizeMissingFields(result.MissingFields)
 
+	if result.TaskType == "" {
+		return ExtractionStructuredResponse{}, infra.NewError(code, message, http.StatusBadGateway)
+	}
 	if !isAllowedExtractionOperation(result.Operation) {
 		return ExtractionStructuredResponse{}, infra.NewError(code, message, http.StatusBadGateway)
 	}

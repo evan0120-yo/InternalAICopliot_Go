@@ -179,6 +179,7 @@ ConsultModeExtract
 - Given extraction prompt 正在組裝
   When builder 寫入輸出 schema
   Then 應只要求 AI 回：
+    - `taskType`
     - `operation`
     - `summary`
     - `startAt`
@@ -186,6 +187,10 @@ ConsultModeExtract
     - `location`
     - `missingFields`
   And 不應要求 AI 回 `taskCode`、`appId`、`builderCode`、`requestId` 或 `rawText`
+
+- Given extraction command 帶入 `supportedTaskTypes=["calendar"]`
+  When `AssembleService` 組 prompt
+  Then prompt 應要求 AI 只能從 supported task types 中選出 `taskType`
 
 - Given `appId=linkchat` 且 payload 內帶 `analysisType=mbti`
   When `AssembleService.AssemblePrompt` 執行

@@ -148,21 +148,23 @@ func (s *AssembleService) AssemblePrompt(ctx context.Context, builderConfig infr
 }
 
 // AssembleExtractPrompt builds the extraction-specific AI instructions.
-func (s *AssembleService) AssembleExtractPrompt(_ context.Context, builderConfig infra.BuilderConfig, sources []infra.Source, ragsBySourceID map[int64][]infra.RagSupplement, messageText, referenceTime, timeZone string) (promptAssemblyResult, error) {
+func (s *AssembleService) AssembleExtractPrompt(_ context.Context, builderConfig infra.BuilderConfig, sources []infra.Source, ragsBySourceID map[int64][]infra.RagSupplement, messageText, referenceTime, timeZone string, supportedTaskTypes []string) (promptAssemblyResult, error) {
 	infra.SortByOrderThenID(sources, func(source infra.Source) int { return source.OrderNo }, func(source infra.Source) int64 { return source.SourceID })
 
 	trimmedMessageText := strings.TrimSpace(messageText)
 	trimmedReferenceTime := strings.TrimSpace(referenceTime)
 	trimmedTimeZone := strings.TrimSpace(timeZone)
+	normalizedSupportedTaskTypes := normalizeExtractionSupportedTaskTypes(supportedTaskTypes)
 
 	var promptBuilder strings.Builder
 	promptBuilder.WriteString(buildExtractionFrameworkHeader(builderConfig))
 	promptBuilder.WriteString(buildExtractionTaskSection())
 	promptBuilder.WriteString(buildExtractionReferenceTimeSection(trimmedReferenceTime))
 	promptBuilder.WriteString(buildExtractionTimeZoneSection(trimmedTimeZone))
+	promptBuilder.WriteString(buildExtractionSupportedTaskTypesSection(normalizedSupportedTaskTypes))
 	promptBuilder.WriteString(buildExtractionInputTextSection(trimmedMessageText))
 	promptBuilder.WriteString(buildExtractionTimeRulesSection())
-	promptBuilder.WriteString(buildExtractionOutputSchemaSection())
+	promptBuilder.WriteString(buildExtractionOutputSchemaSection(normalizedSupportedTaskTypes))
 
 	for _, source := range sources {
 		promptBuilder.WriteString(fmt.Sprintf("\n## [PROMPT_BLOCK-%d]\n%s\n", source.OrderNo, source.Prompts))
@@ -185,7 +187,7 @@ func (s *AssembleService) AssembleExtractPrompt(_ context.Context, builderConfig
 
 	return promptAssemblyResult{
 		Instructions:      promptBuilder.String(),
-		PromptBodyPreview: buildExtractionPromptBodyPreview(trimmedMessageText, trimmedReferenceTime, trimmedTimeZone),
+		PromptBodyPreview: buildExtractionPromptBodyPreview(trimmedMessageText, trimmedReferenceTime, trimmedTimeZone) + "\nsupportedTaskTypes: " + strings.Join(normalizedSupportedTaskTypes, ","),
 		UserMessageText:   extractUserMessageText,
 	}, nil
 }
@@ -711,9 +713,17 @@ builderName=%s
 func buildExtractionTaskSection() string {
 	return `
 ## [TASK]
-請判斷這句話要做的事件操作，並抽出事件資料。
+請先從 [SUPPORTED_TASK_TYPES] 中選出這句話對應的 taskType，再判斷這句話要做的事件操作，並抽出事件資料。
+taskType 只能是 [SUPPORTED_TASK_TYPES] 內的一個值。
 operation 只允許為 create、update、delete、query。
 `
+}
+
+func buildExtractionSupportedTaskTypesSection(supportedTaskTypes []string) string {
+	return fmt.Sprintf(`
+## [SUPPORTED_TASK_TYPES]
+%s
+`, strings.Join(normalizeExtractionSupportedTaskTypes(supportedTaskTypes), "\n"))
 }
 
 func buildExtractionReferenceTimeSection(referenceTime string) string {
@@ -747,10 +757,12 @@ func buildExtractionTimeRulesSection() string {
 `
 }
 
-func buildExtractionOutputSchemaSection() string {
-	return `
+func buildExtractionOutputSchemaSection(supportedTaskTypes []string) string {
+	taskTypeExample := strings.Join(normalizeExtractionSupportedTaskTypes(supportedTaskTypes), " | ")
+	return fmt.Sprintf(`
 ## [OUTPUT_SCHEMA]
 {
+  "taskType": "%s",
   "operation": "create | update | delete | query",
   "summary": "",
   "startAt": "YYYY-MM-DD HH:mm:ss",
@@ -758,7 +770,27 @@ func buildExtractionOutputSchemaSection() string {
   "location": "",
   "missingFields": []
 }
-`
+`, taskTypeExample)
+}
+
+func normalizeExtractionSupportedTaskTypes(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.ToLower(strings.TrimSpace(value))
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	if len(normalized) == 0 {
+		return []string{"calendar"}
+	}
+	return normalized
 }
 
 func buildRawUserTextSection(userText string) string {

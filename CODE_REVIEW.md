@@ -765,14 +765,15 @@ foreach source
 ## E. LineTask Extraction
 
 關鍵檔案：
-- internal/gatekeeper/handler.go (line 78)
-- internal/grpcapi/service.go (line 144)
-- internal/gatekeeper/usecase.go (line 140)
+- api/grpc/internal_ai.proto (line 84)
+- internal/gatekeeper/handler.go (line 92)
+- internal/grpcapi/service.go (line 148)
+- internal/gatekeeper/usecase.go (line 170)
 - internal/gatekeeper/service.go (line 167)
-- internal/builder/model.go (line 13)
+- internal/builder/model.go (line 27)
 - internal/builder/task_builder_factory.go (line 18)
-- internal/builder/assemble_service.go (line 147)
-- internal/aiclient/response_contract.go (line 10)
+- internal/builder/assemble_service.go (line 151)
+- internal/aiclient/response_contract.go (line 12)
 
 這條線是給 LineBot server 走的 extraction contract，不共用 `ProfileConsult`。
 
@@ -782,7 +783,7 @@ formal external path
   -> grpcapi.Service.LineTaskConsult
   -> gatekeeper.UseCase.LineTaskConsult
   -> guard.ValidateExternalLineTaskConsult
-  -> buildLineTaskCommand (AIExecutionMode=live forced)
+  -> buildLineTaskCommand (AIExecutionMode=live forced, supportedTaskTypes default calendar)
   -> builder.ConsultUseCase.Consult
      -> ExtractTaskBuilder
      -> AssembleExtractPrompt
@@ -798,7 +799,7 @@ local/dev test path
   -> gatekeeper.Handler.lineTaskConsult
   -> gatekeeper.UseCase.PublicLineTaskConsult
   -> guard.ValidateLineTaskConsult
-  -> buildLineTaskCommand (AIExecutionMode=live forced)
+  -> buildLineTaskCommand (AIExecutionMode=live forced, supportedTaskTypes default calendar)
   -> builder.ConsultUseCase.Consult
      -> ExtractTaskBuilder
      -> AssembleExtractPrompt
@@ -824,6 +825,8 @@ local/dev test path
 補充：
 - 這條線第一版不跑 `promptguard`。
 - `referenceTime` 與 `timeZone` 對 builder prompt 仍是必要值，但現在由 usecase 在缺省時自動補系統時間 / 系統時區。
+- `supportedTaskTypes` 也是 usecase command 的一部分；若 caller 沒送，現在預設為 `["calendar"]`。
+- `taskType` 是 AI extraction 的必填輸出欄位，後續 LineBot server 會用它分派到 calendar 或未來其他功能 module。
 - `buildLineTaskCommand()` 現在明確設定 `AIExecutionMode: infra.AIExecutionModeLive`，確保 extraction 永遠走 live 路徑；即使環境 `AIDefaultMode` 或 `AIPreviewMode` 開了 preview，也不會影響 line task extraction。這是因為 extraction response 必須是 AI 產生的結構化 JSON，不可以是 preview instructions。
 - gRPC `LineTaskConsult` 會做 external app 驗證；HTTP `POST /api/line-task-consult` 只做 local/dev 基本驗證，不承擔 external app auth。
 - HTTP `POST /api/line-task-consult` 的 `appId` 只是 optional builder context hint，不會觸發 external app authorization。
@@ -835,11 +838,13 @@ instructions
 ├─ [TASK]
 ├─ [REFERENCE_TIME]
 ├─ [TIME_ZONE]
+├─ [SUPPORTED_TASK_TYPES]
 ├─ [INPUT_TEXT]
 ├─ [TIME_RULES]
 └─ [OUTPUT_SCHEMA]
 
 response schema
+├─ taskType
 ├─ operation
 ├─ summary
 ├─ startAt
@@ -855,6 +860,7 @@ response schema
 - 只能回 JSON，不可夾帶說明文字
 
 補充：
+- `taskType` 由 AI 從 supported task type list 中選出；第一版 local/dev 預設只有 `calendar`。
 - `taskCode / builderCode / appId / requestId / rawText` 不要求 AI 回，這些由程式自己持有。
 - `grpcapi` 會在回 gRPC 前把 extraction JSON 轉成 typed protobuf；HTTP local route 會把同一份 extraction JSON 轉成 typed `APIResponse.data`，兩邊都不是 raw JSON string 直出。
 
@@ -1071,6 +1077,7 @@ HTTP
 HTTP LineTaskConsult
   -> business response 的 Response 視為 extraction JSON
   -> 轉成 typed APIResponse.data
+     ├─ taskType
      ├─ operation
      ├─ summary
      ├─ startAt
@@ -1088,7 +1095,7 @@ gRPC ProfileConsult
 
 gRPC LineTaskConsult
   -> 先把 business response 的 Response 當 extraction JSON parse
-  -> normalize operation / summary / startAt / endAt / location / missingFields
+  -> normalize taskType / operation / summary / startAt / endAt / location / missingFields
   -> 映射成 pb.LineTaskConsultResponse
 ```
 
@@ -1337,6 +1344,7 @@ Review 範圍：LineTask extraction、BuilderFactory，以及 local/dev HTTP `PO
 │
 └─ 2. LineTask Extraction 端到端路線
    ├─ proto + pb generated
+   ├─ supportedTaskTypes / taskType contract
    ├─ grpcapi LineTaskConsult adapter
    ├─ gatekeeper validation + external validation
    ├─ gatekeeper local/dev HTTP /api/line-task-consult
@@ -1358,7 +1366,8 @@ Review 範圍：LineTask extraction、BuilderFactory，以及 local/dev HTTP `PO
 | builder | task_builder_factory_test.go | 新增 (factory selection + extract build test) |
 | builder | consult_usecase.go | 修改 (改用 taskBuilder 取代 switch) |
 | builder | model.go | 修改 (新增 ConsultModeExtract / ReferenceTime / TimeZone) |
-| builder | assemble_service.go | 修改 (新增 AssembleExtractPrompt + extraction sections) |
+| builder | model.go | 修改 (新增 SupportedTaskTypes) |
+| builder | assemble_service.go | 修改 (新增 AssembleExtractPrompt + supported task type / extraction sections) |
 | builder | assemble_service_test.go | 修改 (新增 extraction prompt test) |
 | builder | ai_route_test.go | 修改 (test mode 改為 ConsultModeExtract) |
 | gatekeeper | service.go | 修改 (新增 ValidateLineTaskConsult / ValidateExternalLineTaskConsult) |
@@ -1392,7 +1401,9 @@ Review 範圍：LineTask extraction、BuilderFactory，以及 local/dev HTTP `PO
 │  └─ 兩個 provider (Gemma / OpenAI) 不需要自己判斷 contract 類型
 │
 ├─ Extraction Prompt
-│  ├─ 區塊分明：TASK / REFERENCE_TIME / TIME_ZONE / INPUT_TEXT / TIME_RULES / OUTPUT_SCHEMA
+│  ├─ 區塊分明：TASK / REFERENCE_TIME / TIME_ZONE / SUPPORTED_TASK_TYPES / INPUT_TEXT / TIME_RULES / OUTPUT_SCHEMA
+│  ├─ supportedTaskTypes 缺值時會預設為 calendar
+│  ├─ schema 會要求 AI 回 taskType
 │  ├─ 不重用 profile 的 [SUBJECT_PROFILE] / [REQUEST_INTENT]
 │  └─ 明確寫入預設時間規則供 Gemma 遵循
 │
@@ -1415,41 +1426,44 @@ Review 範圍：LineTask extraction、BuilderFactory，以及 local/dev HTTP `PO
    └─ app /api/line-task-consult flow (app_integration_test.go)
 ```
 
-## B. 問題
+## B. 目前限制
 
-### B-1. consultTaskBuilderFactory 每次 Consult 都 new
-
-```text
-consult_usecase.go:103
-└─ taskBuilder := newConsultTaskBuilderFactory(u.defaultAIRoute).BuilderFor(command)
-```
-
-`consultTaskBuilderFactory` 是 stateless struct，每次 new 沒有效能問題。
-但語意上 factory 屬於 `ConsultUseCase` 的組件，可在建構時初始化一次存成 field，不需要每次 Consult 都 new。
-
-### B-2. extraction prompt 缺少 AI 回傳結果解析容錯的測試
+### B-1. supportedTaskTypes 目前只有預設 calendar
 
 ```text
-aiclient/response_contract.go
-├─ ParseExtractionStructuredResponse
-│  ├─ 先 json.Unmarshal
-│  ├─ 失敗 → normalizeStructuredJSONObject (strip markdown fence / extract first JSON object)
-│  └─ 再 Unmarshal
-│
-└─ 現有 test
-   └─ TestAnalyzeLiveModeDirectGemmaSupportsStructuredExtractionContract
-      └─ 只測 happy path (AI 回乾淨 JSON)
+LineTask request
+├─ supportedTaskTypes 有值 -> normalize / dedupe / lowercase
+└─ supportedTaskTypes 空值 -> ["calendar"]
 ```
 
-目前沒有測試 AI 回 markdown code fence 包裹的 extraction JSON 或夾帶說明文字的情境。
-`normalizeStructuredJSONObject` 本身在 consult path 可能有其他測試覆蓋，但 extraction contract 走這條 fallback 的行為沒有獨立驗證。
+目前 code 已經支援傳入多個 task type，也會把清單寫進 prompt。
+但 runtime seed、測試頁、LineBot server 規劃第一版都只使用 `calendar`，所以多 task dispatch 還沒有在上游真正落地。
 
-## C. 修正優先順序
+### B-2. aiclient 只驗 taskType 非空，不驗是否在 supportedTaskTypes
 
-| 優先 | 項目 | 位置 |
-|------|------|------|
-| **低** | factory 可初始化一次存 field | builder/consult_usecase.go:103 |
-| **低** | extraction fallback parse 缺少測試 | aiclient/response_contract.go |
+```text
+builder prompt
+└─ 要求 AI 只能從 supportedTaskTypes 選 taskType
+
+aiclient parser
+├─ normalize taskType
+├─ taskType 空 -> error
+└─ 不知道當次 supportedTaskTypes 清單
+```
+
+這代表「taskType 是否真的在 supportedTaskTypes 內」目前主要靠 prompt 約束。
+如果未來要更嚴格，應該在 builder/gatekeeper flow 保留清單並在 parse 後做 deterministic validation。
+
+## C. 已驗證項目
+
+| 項目 | 驗證 |
+|------|------|
+| proto 欄位 | `supported_task_types=7`、`task_type=7` 已加入並 regenerate pb |
+| HTTP local/dev | `/api/line-task-consult` request 可帶 `supportedTaskTypes`，response data 帶 `taskType` |
+| gRPC | `LineTaskConsult` request mapping 保留 `supported_task_types`，response mapping 回 `task_type` |
+| builder prompt | prompt 會包含 `[SUPPORTED_TASK_TYPES]` 與 `taskType` schema |
+| aiclient parser | extraction JSON 必須包含 non-empty `taskType` |
+| 測試 | `go test ./...`、`go vet ./...` 通過 |
 
 ## D. 總結
 
@@ -1458,6 +1472,7 @@ aiclient/response_contract.go
 - aiclient 的 response contract routing 讓 Gemma / OpenAI provider 不需要各自判斷 schema 類型。
 - grpcapi 的 `parseLineTaskResponse` 已改成直接委派 `aiclient.ParseExtractionStructuredResponse`，消除了先前重複 parse/normalize 的問題。
 - 新增的 `PublicLineTaskConsult` 與 `POST /api/line-task-consult` 已把 local/dev 測試入口和正式 gRPC external path 分清楚。
-- `buildLineTaskCommand(...)` 現在已把 local/dev 與 external path 的 command 組裝、缺省系統時間 / 系統時區補值、以及強制 `AIExecutionModeLive` 集中到單一 helper，確保 extraction 不會因環境 preview 預設而走錯路徑。
+- `buildLineTaskCommand(...)` 現在已把 local/dev 與 external path 的 command 組裝、缺省系統時間 / 系統時區補值、supportedTaskTypes 預設補值、以及強制 `AIExecutionModeLive` 集中到單一 helper，確保 extraction 不會因環境 preview 預設而走錯路徑。
+- LineTask extraction contract 現在已能回 `taskType`，讓後續 LineBot server 可依 `calendar` 或未來其他 task type 分派到對應 module。
 
-目前主要剩下的是 **builder factory 可初始化一次存 field** 與 **extraction fallback parse test** 這類收尾項。 
+目前主要限制是：第一版實際只使用 `calendar`，而 parser 尚未 deterministic 驗證 `taskType ∈ supportedTaskTypes`。

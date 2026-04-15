@@ -147,6 +147,7 @@ LineTaskConsult
       ├─ messageText 必填
       ├─ referenceTime 空 -> usecase 補系統時間
       ├─ timeZone 空 -> usecase 補系統時區
+      ├─ supportedTaskTypes 空 -> usecase 補 calendar
       ├─ set ConsultModeExtract
       ├─ force AIExecutionMode = live
       └─ 第一版跳過 promptguard
@@ -169,6 +170,10 @@ LineTaskConsult
   When gatekeeper usecase 建立 extraction command
   Then 應以 backend 系統時區補值
 
+- Given `LineTaskConsult` 缺少 `supportedTaskTypes`
+  When gatekeeper usecase 建立 extraction command
+  Then 應以 `calendar` 作為預設 supported task type
+
 - Given `LineTaskConsult` 通過驗證
   When gatekeeper usecase 建立 extraction command
   Then command 的 `AIExecutionMode` 應為 `live`
@@ -187,6 +192,7 @@ POST /api/line-task-consult
       ├─ builderId / messageText
       ├─ referenceTime optional override
       ├─ timeZone optional override
+      ├─ supportedTaskTypes optional
       ├─ local/dev only
       └─ 走 `UseCase.PublicLineTaskConsult`
 ```
@@ -200,6 +206,10 @@ POST /api/line-task-consult
 - Given local/dev tester 另外帶入 `referenceTime` 與 `timeZone`
   When gatekeeper handler 解析該 request
   Then 應把它們視為測試覆蓋值往下傳
+
+- Given local/dev tester 另外帶入 `supportedTaskTypes=["calendar"]`
+  When gatekeeper handler 解析該 request
+  Then 應把 supported task types 往下傳給 extraction command
 
 - Given `POST /api/line-task-consult` 缺少 `messageText`
   When gatekeeper handler 驗證 request

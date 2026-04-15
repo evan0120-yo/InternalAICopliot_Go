@@ -154,6 +154,7 @@ func (s *Service) LineTaskConsult(ctx context.Context, request *grpcpb.LineTaskC
 		strings.TrimSpace(request.GetMessageText()),
 		strings.TrimSpace(request.GetReferenceTime()),
 		strings.TrimSpace(request.GetTimeZone()),
+		request.GetSupportedTaskTypes(),
 		clientIP,
 	)
 	if err != nil {
@@ -166,6 +167,7 @@ func (s *Service) LineTaskConsult(ctx context.Context, request *grpcpb.LineTaskC
 	}
 
 	return &grpcpb.LineTaskConsultResponse{
+		TaskType:      parsed.TaskType,
 		Operation:     parsed.Operation,
 		Summary:       parsed.Summary,
 		StartAt:       parsed.StartAt,

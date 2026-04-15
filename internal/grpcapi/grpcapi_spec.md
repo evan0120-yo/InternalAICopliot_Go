@@ -121,11 +121,13 @@ LineTaskConsultRequest
 ├─ message_text
 ├─ reference_time
 ├─ time_zone
+├─ supported_task_types[]
 └─ client_ip optional
 ```
 
 ```text
 LineTaskConsultResponse
+├─ task_type
 ├─ operation
 ├─ summary
 ├─ start_at
@@ -137,6 +139,8 @@ LineTaskConsultResponse
 規則：
 - `message_text` 應是 LineBot server 已去掉 `AI:` 前綴後的自然語言內容。
 - `reference_time` 與 `time_zone` 是讓下游 AI 將 `明天 / 下午三點` 轉成絕對時間所必需的欄位。
+- `supported_task_types` 是 caller 可執行的功能類型清單；第一版 LineBot server 會傳 `calendar`。
+- `task_type` 必須是 `supported_task_types` 中的一個值，供 LineBot server 分派功能 module。
 - `LineTaskConsult` 對應 `ConsultModeExtract`。
 - `LineTaskConsult` 的 response 應是 typed protobuf contract，不應只回 raw JSON string。
 - grpcapi 不解析 AI JSON；它只接收下游已驗證的 extraction result，再映射成 protobuf response。

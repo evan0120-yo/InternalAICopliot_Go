@@ -157,7 +157,7 @@ func (s *AnalyzeService) mockAnalyze(request analyzeRequest) infra.ConsultBusine
 		return infra.ConsultBusinessResponse{
 			Status:         true,
 			StatusAns:      "LINE_TASK_EXTRACTED",
-			Response:       `{"operation":"create","summary":"mock event","startAt":"2026-04-15 15:00:00","endAt":"2026-04-15 15:30:00","location":"","missingFields":[]}`,
+			Response:       `{"taskType":"calendar","operation":"create","summary":"mock event","startAt":"2026-04-15 15:00:00","endAt":"2026-04-15 15:30:00","location":"","missingFields":[]}`,
 			ResponseDetail: "mock extraction fallback",
 		}
 	}

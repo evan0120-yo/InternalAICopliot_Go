@@ -167,23 +167,23 @@ func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID in
 
 // PublicLineTaskConsult validates and forwards a local/dev LineTask extraction request.
 // appID is treated as an optional builder context hint and does not trigger external app authorization.
-func (u *UseCase) PublicLineTaskConsult(ctx context.Context, appID string, builderID int, messageText, referenceTime, timeZone, clientIP string) (infra.ConsultBusinessResponse, error) {
+func (u *UseCase) PublicLineTaskConsult(ctx context.Context, appID string, builderID int, messageText, referenceTime, timeZone string, supportedTaskTypes []string, clientIP string) (infra.ConsultBusinessResponse, error) {
 	builderConfig, err := u.guardService.ValidateLineTaskConsult(ctx, builderID, messageText, clientIP)
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
 
-	return u.builderConsult.Consult(ctx, buildLineTaskCommand(appID, builderID, messageText, referenceTime, timeZone, clientIP, builderConfig))
+	return u.builderConsult.Consult(ctx, buildLineTaskCommand(appID, builderID, messageText, referenceTime, timeZone, supportedTaskTypes, clientIP, builderConfig))
 }
 
 // LineTaskConsult validates and forwards a LineBot extraction request.
-func (u *UseCase) LineTaskConsult(ctx context.Context, appID string, builderID int, messageText, referenceTime, timeZone, clientIP string) (infra.ConsultBusinessResponse, error) {
+func (u *UseCase) LineTaskConsult(ctx context.Context, appID string, builderID int, messageText, referenceTime, timeZone string, supportedTaskTypes []string, clientIP string) (infra.ConsultBusinessResponse, error) {
 	_, builderConfig, err := u.guardService.ValidateExternalLineTaskConsult(ctx, appID, builderID, messageText, clientIP)
 	if err != nil {
 		return infra.ConsultBusinessResponse{}, err
 	}
 
-	return u.builderConsult.Consult(ctx, buildLineTaskCommand(appID, builderID, messageText, referenceTime, timeZone, clientIP, builderConfig))
+	return u.builderConsult.Consult(ctx, buildLineTaskCommand(appID, builderID, messageText, referenceTime, timeZone, supportedTaskTypes, clientIP, builderConfig))
 }
 
 func (u *UseCase) evaluatePromptGuard(ctx context.Context, appID string, builderConfig infra.BuilderConfig, userText, intentText string) (*infra.ConsultBusinessResponse, error) {
@@ -234,20 +234,41 @@ func shouldRunPromptGuard(builderConfig infra.BuilderConfig, userText, intentTex
 	return strings.TrimSpace(builderConfig.BuilderCode) == "linkchat-astrology"
 }
 
-func buildLineTaskCommand(appID string, builderID int, messageText, referenceTime, timeZone, clientIP string, builderConfig infra.BuilderConfig) builder.ConsultCommand {
+func buildLineTaskCommand(appID string, builderID int, messageText, referenceTime, timeZone string, supportedTaskTypes []string, clientIP string, builderConfig infra.BuilderConfig) builder.ConsultCommand {
 	resolvedReferenceTime, resolvedTimeZone := resolveLineTaskExecutionContext(referenceTime, timeZone)
 
 	return builder.ConsultCommand{
-		Mode:             builder.ConsultModeExtract,
-		AIExecutionMode:  infra.AIExecutionModeLive,
-		AppID:            strings.TrimSpace(appID),
-		BuilderID:        builderID,
-		PreloadedBuilder: &builderConfig,
-		Text:             strings.TrimSpace(messageText),
-		ReferenceTime:    resolvedReferenceTime,
-		TimeZone:         resolvedTimeZone,
-		ClientIP:         clientIP,
+		Mode:               builder.ConsultModeExtract,
+		AIExecutionMode:    infra.AIExecutionModeLive,
+		AppID:              strings.TrimSpace(appID),
+		BuilderID:          builderID,
+		PreloadedBuilder:   &builderConfig,
+		Text:               strings.TrimSpace(messageText),
+		ReferenceTime:      resolvedReferenceTime,
+		TimeZone:           resolvedTimeZone,
+		SupportedTaskTypes: normalizeLineTaskSupportedTaskTypes(supportedTaskTypes),
+		ClientIP:           clientIP,
 	}
+}
+
+func normalizeLineTaskSupportedTaskTypes(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.ToLower(strings.TrimSpace(value))
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	if len(normalized) == 0 {
+		return []string{"calendar"}
+	}
+	return normalized
 }
 
 func resolveLineTaskExecutionContext(referenceTime, timeZone string) (string, string) {

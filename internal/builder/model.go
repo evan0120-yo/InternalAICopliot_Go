@@ -25,20 +25,21 @@ type BuilderSummary struct {
 
 // ConsultCommand is the builder consult entry input.
 type ConsultCommand struct {
-	Mode             ConsultMode
-	AIExecutionMode  infra.AIExecutionMode
-	AppID            string
-	BuilderID        int
-	PreloadedBuilder *infra.BuilderConfig
-	Text             string
-	ReferenceTime    string
-	TimeZone         string
-	UserText         string
-	IntentText       string
-	OutputFormat     *infra.OutputFormat
-	Attachments      []infra.Attachment
-	ClientIP         string
-	SubjectProfile   *SubjectProfile
+	Mode               ConsultMode
+	AIExecutionMode    infra.AIExecutionMode
+	AppID              string
+	BuilderID          int
+	PreloadedBuilder   *infra.BuilderConfig
+	Text               string
+	ReferenceTime      string
+	TimeZone           string
+	SupportedTaskTypes []string
+	UserText           string
+	IntentText         string
+	OutputFormat       *infra.OutputFormat
+	Attachments        []infra.Attachment
+	ClientIP           string
+	SubjectProfile     *SubjectProfile
 }
 
 type promptAssemblyResult struct {
