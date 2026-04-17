@@ -275,6 +275,9 @@ func TestLineTaskConsultHandlerReturnsTypedEnvelope(t *testing.T) {
 	if response.TaskType != "calendar" || response.Operation != "create" || response.Summary == "" || response.StartAt == "" || response.EndAt == "" {
 		t.Fatalf("unexpected line task response: %+v", response)
 	}
+	if response.EventID != "" || response.QueryStartAt != "" || response.QueryEndAt != "" {
+		t.Fatalf("expected create response to keep new fields empty, got %+v", response)
+	}
 }
 
 func TestLineTaskConsultHandlerRejectsMissingMessageText(t *testing.T) {

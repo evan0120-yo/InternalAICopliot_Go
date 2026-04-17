@@ -210,7 +210,7 @@ func TestAnalyzeLiveModeDirectGemmaSupportsStructuredExtractionContract(t *testi
 			t.Fatalf("expected responseJsonSchema, got %+v", configSection["responseJsonSchema"])
 		}
 		properties, ok := schema["properties"].(map[string]any)
-		if !ok || properties["taskType"] == nil || properties["startAt"] == nil || properties["missingFields"] == nil {
+		if !ok || properties["taskType"] == nil || properties["eventId"] == nil || properties["startAt"] == nil || properties["queryStartAt"] == nil || properties["queryEndAt"] == nil || properties["missingFields"] == nil {
 			t.Fatalf("expected extraction response schema, got %+v", schema)
 		}
 
@@ -220,7 +220,7 @@ func TestAnalyzeLiveModeDirectGemmaSupportsStructuredExtractionContract(t *testi
 					"content": map[string]any{
 						"parts": []map[string]any{
 							{
-								"text": `{"taskType":"calendar","operation":"create","summary":"找小傑吃飯","startAt":"2026-04-15 15:00:00","endAt":"2026-04-15 15:30:00","location":"","missingFields":[]}`,
+								"text": `{"taskType":"calendar","operation":"create","eventId":"","summary":"找小傑吃飯","startAt":"2026-04-15 15:00:00","endAt":"2026-04-15 15:30:00","queryStartAt":"","queryEndAt":"","location":"","missingFields":[]}`,
 							},
 						},
 					},
@@ -251,6 +251,9 @@ func TestAnalyzeLiveModeDirectGemmaSupportsStructuredExtractionContract(t *testi
 	}
 	if !strings.Contains(response.Response, `"startAt":"2026-04-15 15:00:00"`) {
 		t.Fatalf("expected normalized extraction JSON in response, got %+v", response)
+	}
+	if !strings.Contains(response.Response, `"eventId":""`) || !strings.Contains(response.Response, `"queryStartAt":""`) || !strings.Contains(response.Response, `"queryEndAt":""`) {
+		t.Fatalf("expected extraction JSON to include new fields, got %+v", response)
 	}
 }
 

@@ -99,6 +99,9 @@ message LineTaskConsultResponse {
   string location = 5;
   repeated string missing_fields = 6;
   string task_type = 7;
+  string event_id = 8;
+  string query_start_at = 9;
+  string query_end_at = 10;
 }
 
 message FilePayload {

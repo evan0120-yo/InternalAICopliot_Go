@@ -12,9 +12,12 @@ import (
 type ExtractionStructuredResponse struct {
 	TaskType      string   `json:"taskType"`
 	Operation     string   `json:"operation"`
+	EventID       string   `json:"eventId"`
 	Summary       string   `json:"summary"`
 	StartAt       string   `json:"startAt"`
 	EndAt         string   `json:"endAt"`
+	QueryStartAt  string   `json:"queryStartAt"`
+	QueryEndAt    string   `json:"queryEndAt"`
 	Location      string   `json:"location"`
 	MissingFields []string `json:"missingFields"`
 }
@@ -48,13 +51,16 @@ func extractionResponseSchema() map[string]any {
 				"type": "string",
 				"enum": []string{"create", "update", "delete", "query"},
 			},
+			"eventId":       map[string]any{"type": "string"},
 			"summary":       map[string]any{"type": "string"},
 			"startAt":       map[string]any{"type": "string"},
 			"endAt":         map[string]any{"type": "string"},
+			"queryStartAt":  map[string]any{"type": "string"},
+			"queryEndAt":    map[string]any{"type": "string"},
 			"location":      map[string]any{"type": "string"},
 			"missingFields": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		},
-		"required":             []string{"taskType", "operation", "summary", "startAt", "endAt", "location", "missingFields"},
+		"required":             []string{"taskType", "operation", "eventId", "summary", "startAt", "endAt", "queryStartAt", "queryEndAt", "location", "missingFields"},
 		"additionalProperties": false,
 	}
 }
@@ -98,9 +104,12 @@ func ParseExtractionStructuredResponse(raw []byte, code, message string) (Extrac
 
 	result.TaskType = strings.ToLower(strings.TrimSpace(result.TaskType))
 	result.Operation = strings.ToLower(strings.TrimSpace(result.Operation))
+	result.EventID = strings.TrimSpace(result.EventID)
 	result.Summary = strings.TrimSpace(result.Summary)
 	result.StartAt = strings.TrimSpace(result.StartAt)
 	result.EndAt = strings.TrimSpace(result.EndAt)
+	result.QueryStartAt = strings.TrimSpace(result.QueryStartAt)
+	result.QueryEndAt = strings.TrimSpace(result.QueryEndAt)
 	result.Location = strings.TrimSpace(result.Location)
 	result.MissingFields = normalizeMissingFields(result.MissingFields)
 

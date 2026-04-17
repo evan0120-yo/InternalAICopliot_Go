@@ -123,6 +123,7 @@ line task change
 - supportedTaskTypes default
 - referenceTime / timeZone fallback
 - typed extraction response parse
+- typed response new fields (`eventId / queryStartAt / queryEndAt`)
 - local/dev HTTP route 與 gRPC route 是否同步
 
 ### C. 改 PromptGuard

@@ -764,9 +764,12 @@ func buildExtractionOutputSchemaSection(supportedTaskTypes []string) string {
 {
   "taskType": "%s",
   "operation": "create | update | delete | query",
+  "eventId": "",
   "summary": "",
   "startAt": "YYYY-MM-DD HH:mm:ss",
   "endAt": "YYYY-MM-DD HH:mm:ss",
+  "queryStartAt": "YYYY-MM-DD HH:mm:ss",
+  "queryEndAt": "YYYY-MM-DD HH:mm:ss",
   "location": "",
   "missingFields": []
 }

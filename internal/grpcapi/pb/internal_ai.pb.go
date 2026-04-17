@@ -787,6 +787,9 @@ type LineTaskConsultResponse struct {
 	Location      string                 `protobuf:"bytes,5,opt,name=location,proto3" json:"location,omitempty"`
 	MissingFields []string               `protobuf:"bytes,6,rep,name=missing_fields,json=missingFields,proto3" json:"missing_fields,omitempty"`
 	TaskType      string                 `protobuf:"bytes,7,opt,name=task_type,json=taskType,proto3" json:"task_type,omitempty"`
+	EventId       string                 `protobuf:"bytes,8,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	QueryStartAt  string                 `protobuf:"bytes,9,opt,name=query_start_at,json=queryStartAt,proto3" json:"query_start_at,omitempty"`
+	QueryEndAt    string                 `protobuf:"bytes,10,opt,name=query_end_at,json=queryEndAt,proto3" json:"query_end_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -866,6 +869,27 @@ func (x *LineTaskConsultResponse) GetMissingFields() []string {
 func (x *LineTaskConsultResponse) GetTaskType() string {
 	if x != nil {
 		return x.TaskType
+	}
+	return ""
+}
+
+func (x *LineTaskConsultResponse) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *LineTaskConsultResponse) GetQueryStartAt() string {
+	if x != nil {
+		return x.QueryStartAt
+	}
+	return ""
+}
+
+func (x *LineTaskConsultResponse) GetQueryEndAt() string {
+	if x != nil {
+		return x.QueryEndAt
 	}
 	return ""
 }
@@ -1004,7 +1028,7 @@ const file_api_grpc_internal_ai_proto_rawDesc = "" +
 	"\x0ereference_time\x18\x04 \x01(\tR\rreferenceTime\x12\x1b\n" +
 	"\ttime_zone\x18\x05 \x01(\tR\btimeZone\x12\x1b\n" +
 	"\tclient_ip\x18\x06 \x01(\tR\bclientIp\x120\n" +
-	"\x14supported_task_types\x18\a \x03(\tR\x12supportedTaskTypes\"\xe3\x01\n" +
+	"\x14supported_task_types\x18\a \x03(\tR\x12supportedTaskTypes\"\xc6\x02\n" +
 	"\x17LineTaskConsultResponse\x12\x1c\n" +
 	"\toperation\x18\x01 \x01(\tR\toperation\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x19\n" +
@@ -1012,7 +1036,12 @@ const file_api_grpc_internal_ai_proto_rawDesc = "" +
 	"\x06end_at\x18\x04 \x01(\tR\x05endAt\x12\x1a\n" +
 	"\blocation\x18\x05 \x01(\tR\blocation\x12%\n" +
 	"\x0emissing_fields\x18\x06 \x03(\tR\rmissingFields\x12\x1b\n" +
-	"\ttask_type\x18\a \x01(\tR\btaskType\"a\n" +
+	"\ttask_type\x18\a \x01(\tR\btaskType\x12\x19\n" +
+	"\bevent_id\x18\b \x01(\tR\aeventId\x12$\n" +
+	"\x0equery_start_at\x18\t \x01(\tR\fqueryStartAt\x12 \n" +
+	"\fquery_end_at\x18\n" +
+	" \x01(\tR\n" +
+	"queryEndAt\"a\n" +
 	"\vFilePayload\x12\x1b\n" +
 	"\tfile_name\x18\x01 \x01(\tR\bfileName\x12!\n" +
 	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x12\n" +

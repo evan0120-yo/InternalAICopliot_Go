@@ -3,6 +3,7 @@ package grpcapi
 import (
 	"context"
 	"encoding/base64"
+	"log"
 	"net"
 	"strings"
 
@@ -147,6 +148,7 @@ func (s *Service) ProfileConsult(ctx context.Context, request *grpcpb.ProfileCon
 // LineTaskConsult forwards LineBot extraction requests into the gatekeeper flow.
 func (s *Service) LineTaskConsult(ctx context.Context, request *grpcpb.LineTaskConsultRequest) (*grpcpb.LineTaskConsultResponse, error) {
 	clientIP := resolveClientIP(ctx, request.GetClientIp())
+	log.Printf("[INFO] grpc line-task request: appID=%s builderID=%d messageText=%q referenceTime=%q timeZone=%q supportedTaskTypes=%v clientIP=%q", strings.TrimSpace(request.GetAppId()), request.GetBuilderId(), strings.TrimSpace(request.GetMessageText()), strings.TrimSpace(request.GetReferenceTime()), strings.TrimSpace(request.GetTimeZone()), request.GetSupportedTaskTypes(), clientIP)
 	result, err := s.useCase.LineTaskConsult(
 		ctx,
 		strings.TrimSpace(request.GetAppId()),
@@ -158,23 +160,37 @@ func (s *Service) LineTaskConsult(ctx context.Context, request *grpcpb.LineTaskC
 		clientIP,
 	)
 	if err != nil {
+		log.Printf("[INFO] grpc line-task usecase failed: err=%v", err)
 		return nil, asGRPCError(err)
 	}
 
 	parsed, err := parseLineTaskResponse(result.Response)
 	if err != nil {
+		log.Printf("[INFO] grpc line-task parse failed: err=%v raw=%q", err, previewGRPCLineTaskResponse(result.Response, 240))
 		return nil, asGRPCError(err)
 	}
+	log.Printf("[INFO] grpc line-task response: taskType=%s operation=%s eventID=%q summary=%q startAt=%q endAt=%q queryStartAt=%q queryEndAt=%q missingFields=%v", parsed.TaskType, parsed.Operation, parsed.EventID, parsed.Summary, parsed.StartAt, parsed.EndAt, parsed.QueryStartAt, parsed.QueryEndAt, parsed.MissingFields)
 
 	return &grpcpb.LineTaskConsultResponse{
 		TaskType:      parsed.TaskType,
 		Operation:     parsed.Operation,
+		EventId:       parsed.EventID,
 		Summary:       parsed.Summary,
 		StartAt:       parsed.StartAt,
 		EndAt:         parsed.EndAt,
+		QueryStartAt:  parsed.QueryStartAt,
+		QueryEndAt:    parsed.QueryEndAt,
 		Location:      parsed.Location,
 		MissingFields: parsed.MissingFields,
 	}, nil
+}
+
+func previewGRPCLineTaskResponse(raw string, max int) string {
+	trimmed := strings.TrimSpace(raw)
+	if max <= 0 || len(trimmed) <= max {
+		return trimmed
+	}
+	return trimmed[:max] + "..."
 }
 
 func effectiveProfileUserText(request *grpcpb.ProfileConsultRequest) string {

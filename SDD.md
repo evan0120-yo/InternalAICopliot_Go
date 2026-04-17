@@ -209,6 +209,8 @@ local/dev HTTP or gRPC LineTaskConsult
 關鍵點：
 - local/dev HTTP route 不做 external app auth
 - external gRPC route 會驗 appId 與 allowed builders
+- typed line-task response 現在除 `taskType / operation / summary / startAt / endAt / location / missingFields` 外，
+  也要帶 `eventId / queryStartAt / queryEndAt`
 
 ### E. Admin Graph / Templates
 

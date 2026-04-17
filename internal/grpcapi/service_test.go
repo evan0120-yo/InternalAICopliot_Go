@@ -96,17 +96,23 @@ func TestParseLineTaskResponseNormalizesFields(t *testing.T) {
 	response, err := parseLineTaskResponse(`{
 		"taskType":" Calendar ",
 		"operation":"create",
+		"eventId":" event-1 ",
 		"summary":" 找小傑吃飯 ",
 		"startAt":" 2026-04-15 15:00:00 ",
 		"endAt":" 2026-04-15 15:30:00 ",
+		"queryStartAt":" 2026-04-15 00:00:00 ",
+		"queryEndAt":" 2026-04-16 00:00:00 ",
 		"location":" ",
 		"missingFields":["", "location", " location "]
 	}`)
 	if err != nil {
 		t.Fatalf("parseLineTaskResponse returned error: %v", err)
 	}
-	if response.TaskType != "calendar" || response.Operation != "create" || response.Summary != "找小傑吃飯" {
+	if response.TaskType != "calendar" || response.Operation != "create" || response.EventID != "event-1" || response.Summary != "找小傑吃飯" {
 		t.Fatalf("unexpected parsed response: %+v", response)
+	}
+	if response.QueryStartAt != "2026-04-15 00:00:00" || response.QueryEndAt != "2026-04-16 00:00:00" {
+		t.Fatalf("expected normalized query range, got %+v", response)
 	}
 	if len(response.MissingFields) != 1 || response.MissingFields[0] != "location" {
 		t.Fatalf("expected normalized missingFields, got %+v", response)

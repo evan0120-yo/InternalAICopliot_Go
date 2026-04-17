@@ -231,9 +231,12 @@ type lineTaskConsultRequest struct {
 type lineTaskConsultResponse struct {
 	TaskType      string   `json:"taskType"`
 	Operation     string   `json:"operation"`
+	EventID       string   `json:"eventId"`
 	Summary       string   `json:"summary"`
 	StartAt       string   `json:"startAt"`
 	EndAt         string   `json:"endAt"`
+	QueryStartAt  string   `json:"queryStartAt"`
+	QueryEndAt    string   `json:"queryEndAt"`
 	Location      string   `json:"location"`
 	MissingFields []string `json:"missingFields"`
 }

@@ -517,7 +517,10 @@ func TestAssembleExtractPromptBuildsLineTaskSections(t *testing.T) {
 		"## [SUPPORTED_TASK_TYPES]\ncalendar",
 		"## [INPUT_TEXT]\n小傑 明天 下午三點找我吃飯",
 		`"taskType": "calendar"`,
+		`"eventId": ""`,
 		`"startAt": "YYYY-MM-DD HH:mm:ss"`,
+		`"queryStartAt": "YYYY-MM-DD HH:mm:ss"`,
+		`"queryEndAt": "YYYY-MM-DD HH:mm:ss"`,
 		"## [PROMPT_BLOCK-1]\n補充 extraction 指示",
 	} {
 		if !strings.Contains(result.Instructions, fragment) {

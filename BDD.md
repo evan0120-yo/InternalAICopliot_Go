@@ -139,9 +139,12 @@ LineTaskConsult
   When response 返回
   Then typed result 應包含 taskType
   And typed result 應包含 operation
+  And typed result 應包含 eventId
   And typed result 應包含 summary
   And typed result 應包含 startAt
   And typed result 應包含 endAt
+  And typed result 應包含 queryStartAt
+  And typed result 應包含 queryEndAt
   And typed result 應包含 location
   And typed result 應包含 missingFields
 
