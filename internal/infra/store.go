@@ -188,7 +188,9 @@ func firestoreEmulatorHostFromEnv() string {
 	if value := os.Getenv("FIRESTORE_EMULATOR_HOST"); value != "" {
 		return value
 	}
-	return "localhost:8090"
+	// Return empty string → use real Firestore with Application Default Credentials.
+	// For local dev, set FIRESTORE_EMULATOR_HOST=localhost:8090 explicitly.
+	return ""
 }
 
 func newFirestoreClient(ctx context.Context, projectID, emulatorHost string) (*firestore.Client, error) {

@@ -1,0 +1,9 @@
+.git
+*.md
+*_test.go
+*.test.exe
+firestore-debug.log
+pubsub-debug.log
+.env
+.env.*
+deployee/

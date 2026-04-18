@@ -1,19 +1,23 @@
 // Package main is the entry point for the Internal AI Copilot API server.
+// On Cloud Run, HTTP and gRPC are served on the same PORT via h2c (HTTP/2 cleartext).
+// Cloud Run terminates TLS externally; the container receives plain HTTP/2.
 package main
 
 import (
 	"context"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"com.citrus.internalaicopilot/internal/app"
 	"com.citrus.internalaicopilot/internal/infra"
 
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 )
 
@@ -29,24 +33,26 @@ func main() {
 		}
 	}()
 
-	httpServer := &http.Server{
+	grpcServer := grpc.NewServer()
+	application.RegisterGRPC(grpcServer)
+
+	// Route incoming requests: gRPC → grpcServer, everything else → HTTP handler.
+	// h2c allows HTTP/2 over cleartext so Cloud Run can forward gRPC traffic.
+	combined := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			grpcServer.ServeHTTP(w, r)
+		} else {
+			application.Handler().ServeHTTP(w, r)
+		}
+	})
+
+	server := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           application.Handler(),
+		Handler:           h2c.NewHandler(combined, &http2.Server{}),
 		ReadHeaderTimeout: cfg.ServerReadTimeout,
 		ReadTimeout:       cfg.ServerReadTimeout,
 		WriteTimeout:      cfg.ServerWriteTimeout,
 	}
-	grpcServer := grpc.NewServer()
-	application.RegisterGRPC(grpcServer)
-
-	grpcListener, err := net.Listen("tcp", cfg.GRPCAddr)
-	if err != nil {
-		log.Fatalf("gRPC listen failed: %v", err)
-	}
-	defer grpcListener.Close()
-
-	log.Printf("Internal AI Copilot HTTP listening on %s", cfg.Addr)
-	log.Printf("Internal AI Copilot gRPC listening on %s", cfg.GRPCAddr)
 
 	shutdownCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -55,32 +61,15 @@ func main() {
 		<-shutdownCtx.Done()
 		drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := httpServer.Shutdown(drainCtx); err != nil {
+		if err := server.Shutdown(drainCtx); err != nil {
 			log.Printf("graceful shutdown failed: %v", err)
 		}
-		stopped := make(chan struct{})
-		go func() {
-			grpcServer.GracefulStop()
-			close(stopped)
-		}()
-		select {
-		case <-stopped:
-		case <-drainCtx.Done():
-			grpcServer.Stop()
-		}
+		grpcServer.GracefulStop()
 	}()
 
-	go func() {
-		if err := grpcServer.Serve(grpcListener); err != nil {
-			if shutdownCtx.Err() != nil {
-				return
-			}
-			log.Printf("gRPC server stopped: %v", err)
-			stop()
-		}
-	}()
+	log.Printf("Internal AI Copilot listening on %s (HTTP + gRPC via h2c)", cfg.Addr)
 
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("http server stopped: %v", err)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("server stopped: %v", err)
 	}
 }

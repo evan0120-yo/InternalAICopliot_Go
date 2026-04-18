@@ -2,7 +2,9 @@ package builder
 
 import (
 	"context"
+	"log"
 	"sync"
+	"time"
 
 	"com.citrus.internalaicopilot/internal/aiclient"
 	"com.citrus.internalaicopilot/internal/infra"
@@ -34,6 +36,9 @@ func NewConsultUseCase(store *infra.Store, ragUseCase *rag.ResolveUseCase, aiUse
 
 // Consult runs the full builder consult orchestration.
 func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (infra.ConsultBusinessResponse, error) {
+	start := time.Now()
+	log.Printf("builder consult start: mode=%d builderID=%d appID=%q clientIP=%q", command.Mode, command.BuilderID, command.AppID, command.ClientIP)
+
 	var (
 		builderConfig infra.BuilderConfig
 		builderOK     bool
@@ -86,27 +91,35 @@ func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (i
 	waitGroup.Wait()
 	if builderErr != nil {
 		if infra.IsContextCancelled(builderErr) {
+			log.Printf("builder consult cancelled at store load: mode=%d builderID=%d elapsed_ms=%d", command.Mode, command.BuilderID, time.Since(start).Milliseconds())
 			return infra.ConsultBusinessResponse{}, infra.NewError("REQUEST_CANCELLED", "Request was cancelled.", 499)
 		}
+		log.Printf("builder consult store load failed: mode=%d builderID=%d elapsed_ms=%d err=%v", command.Mode, command.BuilderID, time.Since(start).Milliseconds(), builderErr)
 		return infra.ConsultBusinessResponse{}, builderErr
 	}
 	if sourceErr != nil {
 		if infra.IsContextCancelled(sourceErr) {
+			log.Printf("builder consult cancelled at store load: mode=%d builderID=%d elapsed_ms=%d", command.Mode, command.BuilderID, time.Since(start).Milliseconds())
 			return infra.ConsultBusinessResponse{}, infra.NewError("REQUEST_CANCELLED", "Request was cancelled.", 499)
 		}
+		log.Printf("builder consult source load failed: mode=%d builderID=%d elapsed_ms=%d err=%v", command.Mode, command.BuilderID, time.Since(start).Milliseconds(), sourceErr)
 		return infra.ConsultBusinessResponse{}, sourceErr
 	}
 	if err := ctx.Err(); err != nil {
+		log.Printf("builder consult cancelled at store load: mode=%d builderID=%d elapsed_ms=%d", command.Mode, command.BuilderID, time.Since(start).Milliseconds())
 		return infra.ConsultBusinessResponse{}, infra.NewError("REQUEST_CANCELLED", "Request was cancelled.", 499)
 	}
+	log.Printf("builder consult store loaded: mode=%d builderID=%d elapsed_ms=%d", command.Mode, command.BuilderID, time.Since(start).Milliseconds())
 
 	taskBuilder := newConsultTaskBuilderFactory(u.defaultAIRoute).BuilderFor(command)
 	filteredSources, err := taskBuilder.PrepareSources(ctx, u.assembleService, command, sources)
 	if err != nil {
+		log.Printf("builder consult prepare sources failed: mode=%d builderID=%d elapsed_ms=%d err=%v", command.Mode, command.BuilderID, time.Since(start).Milliseconds(), err)
 		return infra.ConsultBusinessResponse{}, err
 	}
 	sources = filteredSources
 	if len(sources) == 0 {
+		log.Printf("builder consult no sources: mode=%d builderID=%d elapsed_ms=%d", command.Mode, command.BuilderID, time.Since(start).Milliseconds())
 		return infra.ConsultBusinessResponse{}, infra.NewError("SOURCE_ENTRIES_NOT_FOUND", "No source prompt entries were found for the requested builder.", 500)
 	}
 
@@ -139,13 +152,17 @@ func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (i
 	ragWaitGroup.Wait()
 	if ragErr != nil {
 		if infra.IsContextCancelled(ragErr) {
+			log.Printf("builder consult cancelled at rag: mode=%d builderID=%d elapsed_ms=%d", command.Mode, command.BuilderID, time.Since(start).Milliseconds())
 			return infra.ConsultBusinessResponse{}, infra.NewError("REQUEST_CANCELLED", "Request was cancelled.", 499)
 		}
+		log.Printf("builder consult rag failed: mode=%d builderID=%d elapsed_ms=%d err=%v", command.Mode, command.BuilderID, time.Since(start).Milliseconds(), ragErr)
 		return infra.ConsultBusinessResponse{}, ragErr
 	}
 	if err := ctx.Err(); err != nil {
+		log.Printf("builder consult cancelled at rag: mode=%d builderID=%d elapsed_ms=%d", command.Mode, command.BuilderID, time.Since(start).Milliseconds())
 		return infra.ConsultBusinessResponse{}, infra.NewError("REQUEST_CANCELLED", "Request was cancelled.", 499)
 	}
+	log.Printf("builder consult rag loaded: mode=%d builderID=%d elapsed_ms=%d", command.Mode, command.BuilderID, time.Since(start).Milliseconds())
 
 	buildResult, err := taskBuilder.Build(ctx, u.assembleService, consultTaskBuildInput{
 		Command:        command,
@@ -154,11 +171,14 @@ func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (i
 		RagsBySourceID: ragsBySourceID,
 	})
 	if err != nil {
+		log.Printf("builder consult prompt build failed: mode=%d builderID=%d elapsed_ms=%d err=%v", command.Mode, command.BuilderID, time.Since(start).Milliseconds(), err)
 		return infra.ConsultBusinessResponse{}, err
 	}
 	if err := ctx.Err(); err != nil {
+		log.Printf("builder consult cancelled after prompt build: mode=%d builderID=%d elapsed_ms=%d", command.Mode, command.BuilderID, time.Since(start).Milliseconds())
 		return infra.ConsultBusinessResponse{}, infra.NewError("REQUEST_CANCELLED", "Request was cancelled.", 499)
 	}
+	log.Printf("builder consult prompt built: mode=%d builderID=%d route=%s elapsed_ms=%d", command.Mode, command.BuilderID, buildResult.Route, time.Since(start).Milliseconds())
 
 	businessResponse, err := u.aiUseCase.Analyze(ctx, aiclient.AnalyzeCommand{
 		Route:             buildResult.Route,
@@ -170,12 +190,19 @@ func (u *ConsultUseCase) Consult(ctx context.Context, command ConsultCommand) (i
 		Mode:              command.AIExecutionMode,
 	})
 	if err != nil {
+		log.Printf("builder consult ai failed: mode=%d builderID=%d elapsed_ms=%d err=%v", command.Mode, command.BuilderID, time.Since(start).Milliseconds(), err)
 		return infra.ConsultBusinessResponse{}, err
 	}
 
-	return u.outputUseCase.Render(output.RenderCommand{
+	result, err := u.outputUseCase.Render(output.RenderCommand{
 		BuilderConfig:    builderConfig,
 		OutputFormat:     command.OutputFormat,
 		BusinessResponse: businessResponse,
 	})
+	if err != nil {
+		log.Printf("builder consult render failed: mode=%d builderID=%d elapsed_ms=%d err=%v", command.Mode, command.BuilderID, time.Since(start).Milliseconds(), err)
+		return infra.ConsultBusinessResponse{}, err
+	}
+	log.Printf("builder consult completed: mode=%d builderID=%d duration_ms=%d", command.Mode, command.BuilderID, time.Since(start).Milliseconds())
+	return result, nil
 }

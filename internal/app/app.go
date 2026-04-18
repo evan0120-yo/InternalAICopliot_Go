@@ -113,6 +113,9 @@ func New(cfg infra.Config) (*App, error) {
 	gatekeeperHandler := gatekeeper.NewHandler(gatekeeperUseCase)
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 	gatekeeperHandler.Register(mux)
 	builderHandler.Register(mux)
 

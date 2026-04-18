@@ -62,10 +62,10 @@ func LoadConfigFromEnv() Config {
 	}
 
 	return Config{
-		Addr:                  getenvCompat("INTERNAL_AI_COPILOT_ADDR", "REWARDBRIDGE_ADDR", ":8082"),
+		Addr:                  getenvCompat("INTERNAL_AI_COPILOT_ADDR", "REWARDBRIDGE_ADDR", portAddr(":8082")),
 		GRPCAddr:              getenvCompat("INTERNAL_AI_COPILOT_GRPC_ADDR", "REWARDBRIDGE_GRPC_ADDR", ":9091"),
 		FirestoreProjectID:    getenvCompat("INTERNAL_AI_COPILOT_FIRESTORE_PROJECT_ID", "REWARDBRIDGE_FIRESTORE_PROJECT_ID", getenv("GCLOUD_PROJECT", getenv("GOOGLE_CLOUD_PROJECT", "dailo-467502"))),
-		FirestoreEmulatorHost: getenvCompat("INTERNAL_AI_COPILOT_FIRESTORE_EMULATOR_HOST", "REWARDBRIDGE_FIRESTORE_EMULATOR_HOST", getenv("FIRESTORE_EMULATOR_HOST", "localhost:8090")),
+		FirestoreEmulatorHost: getenvCompat("INTERNAL_AI_COPILOT_FIRESTORE_EMULATOR_HOST", "REWARDBRIDGE_FIRESTORE_EMULATOR_HOST", getenv("FIRESTORE_EMULATOR_HOST", "")),
 		StoreResetOnStart:     getenvBoolCompat("INTERNAL_AI_COPILOT_STORE_RESET_ON_START", "REWARDBRIDGE_STORE_RESET_ON_START", false),
 		CORSAllowedOrigins:    getenvCSVCompat("INTERNAL_AI_COPILOT_CORS_ALLOWED_ORIGINS", "REWARDBRIDGE_CORS_ALLOWED_ORIGINS", []string{"http://localhost:3000", "http://127.0.0.1:3000"}),
 		ConsultMaxFiles:       getenvIntCompat("INTERNAL_AI_COPILOT_CONSULT_MAX_FILES", "REWARDBRIDGE_CONSULT_MAX_FILES", 10),
@@ -110,6 +110,14 @@ func (c Config) ResolvedAIModel() string {
 		}
 		return DefaultOpenAIModel
 	}
+}
+
+// portAddr returns ":PORT" from Cloud Run's PORT env var, or the given fallback.
+func portAddr(fallback string) string {
+	if port := os.Getenv("PORT"); port != "" {
+		return ":" + port
+	}
+	return fallback
 }
 
 func getenvCompat(primaryKey, legacyKey, fallback string) string {

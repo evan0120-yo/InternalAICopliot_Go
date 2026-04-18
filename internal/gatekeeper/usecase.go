@@ -3,6 +3,7 @@ package gatekeeper
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -64,8 +65,10 @@ func (u *UseCase) ListExternalBuilders(ctx context.Context, appID string) ([]bui
 
 // Consult validates and forwards a consult request.
 func (u *UseCase) Consult(ctx context.Context, appID string, builderID int, text, outputFormat string, attachments []infra.Attachment, clientIP string) (infra.ConsultBusinessResponse, error) {
+	log.Printf("gatekeeper consult: builderID=%d appID=%q attachments=%d clientIP=%q", builderID, appID, len(attachments), clientIP)
 	builderConfig, parsedFormat, err := u.guardService.ValidateConsult(ctx, builderID, outputFormat, attachments, clientIP)
 	if err != nil {
+		log.Printf("gatekeeper consult validate failed: builderID=%d err=%v", builderID, err)
 		return infra.ConsultBusinessResponse{}, err
 	}
 	return u.builderConsult.Consult(ctx, builder.ConsultCommand{
@@ -112,8 +115,10 @@ func (u *UseCase) PublicProfileConsult(ctx context.Context, appID string, builde
 
 // ExternalConsult validates and forwards an external app consult request.
 func (u *UseCase) ExternalConsult(ctx context.Context, appID string, builderID int, text, outputFormat string, attachments []infra.Attachment, clientIP string) (infra.ConsultBusinessResponse, error) {
+	log.Printf("gatekeeper external consult: builderID=%d appID=%q attachments=%d clientIP=%q", builderID, appID, len(attachments), clientIP)
 	_, builderConfig, parsedFormat, err := u.guardService.ValidateExternalConsult(ctx, appID, builderID, outputFormat, attachments, clientIP)
 	if err != nil {
+		log.Printf("gatekeeper external consult validate failed: builderID=%d appID=%q err=%v", builderID, appID, err)
 		return infra.ConsultBusinessResponse{}, err
 	}
 	return u.builderConsult.Consult(ctx, builder.ConsultCommand{
@@ -132,6 +137,11 @@ func (u *UseCase) ExternalConsult(ctx context.Context, appID string, builderID i
 func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID int, subjectProfile *builder.SubjectProfile, userText, intentText, clientIP string) (infra.ConsultBusinessResponse, error) {
 	userText = strings.TrimSpace(userText)
 	intentText = strings.TrimSpace(intentText)
+	subjectID := ""
+	if subjectProfile != nil {
+		subjectID = subjectProfile.SubjectID
+	}
+	log.Printf("gatekeeper profile consult: builderID=%d appID=%q subjectID=%q clientIP=%q", builderID, appID, subjectID, clientIP)
 
 	var (
 		builderConfig     infra.BuilderConfig
@@ -144,6 +154,7 @@ func (u *UseCase) ProfileConsult(ctx context.Context, appID string, builderID in
 		_, builderConfig, normalizedProfile, err = u.guardService.ValidateExternalProfileConsult(ctx, appID, builderID, subjectProfile, userText, intentText, clientIP)
 	}
 	if err != nil {
+		log.Printf("gatekeeper profile consult validate failed: builderID=%d appID=%q err=%v", builderID, appID, err)
 		return infra.ConsultBusinessResponse{}, err
 	}
 	if blockedResponse, err := u.evaluatePromptGuard(ctx, appID, builderConfig, userText, intentText); err != nil || blockedResponse != nil {
@@ -178,8 +189,10 @@ func (u *UseCase) PublicLineTaskConsult(ctx context.Context, appID string, build
 
 // LineTaskConsult validates and forwards a LineBot extraction request.
 func (u *UseCase) LineTaskConsult(ctx context.Context, appID string, builderID int, messageText, referenceTime, timeZone string, supportedTaskTypes []string, clientIP string) (infra.ConsultBusinessResponse, error) {
+	log.Printf("gatekeeper line-task consult: builderID=%d appID=%q supportedTaskTypes=%v clientIP=%q", builderID, appID, supportedTaskTypes, clientIP)
 	_, builderConfig, err := u.guardService.ValidateExternalLineTaskConsult(ctx, appID, builderID, messageText, clientIP)
 	if err != nil {
+		log.Printf("gatekeeper line-task consult validate failed: builderID=%d appID=%q err=%v", builderID, appID, err)
 		return infra.ConsultBusinessResponse{}, err
 	}
 
